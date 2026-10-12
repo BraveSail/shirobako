@@ -272,12 +272,21 @@ def test_parser_exposes_author_and_metadata():
     assert result.content.startswith("Starting life in a dream-like fantasy world")
 
 
-def test_parser_renders_the_poll_as_a_table():
+def test_parser_renders_the_poll_as_a_placeholder_with_structured_data():
+    """投票在正文里只留占位符行; 头部「投票 · 共 N 票」与单列表格由渲染层本地化拼装。"""
     result = _parse_fixture("youtube_post_poll.html", POLL_ID)
-    assert "投票 · 共 1,800,000 票" in result.content
-    assert "| 选项 |" in result.content
-    assert "| 100 Years Of No Aging |" in result.content
-    assert "| 1 Billion Dollars |" in result.content
+    assert "{{poll:0}}" in result.content, result.content
+    assert "投票" not in result.content, result.content
+    assert "| 选项 |" not in result.content, result.content
+    # 位置: 正文之后
+    assert result.content.index("Would you rather") < result.content.index("{{poll:0}}")
+    # 结构化数据: 匿名拿不到单项票数 ⇒ count 一律 None, 只有总票数
+    assert len(result.polls) == 1
+    poll = result.polls[0]
+    assert [o.text for o in poll.options] == ["100 Years Of No Aging", "1 Billion Dollars"]
+    assert all(o.count is None for o in poll.options)
+    assert poll.total_votes == 1_800_000
+    assert poll.voters is None
     assert result.media == []
 
 

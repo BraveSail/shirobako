@@ -7,6 +7,8 @@ from .parsers.base import BaseParser
 from .types import Platform
 from .types.callback import ProgressCallback
 from .types.result import AnyParseResult, DownloadResult
+from .types.result import Poll as Poll
+from .types.result import PollOption as PollOption
 from .utils.helpers import SecretCookie, run_sync
 
 logger.disable(__name__)

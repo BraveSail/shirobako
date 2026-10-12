@@ -208,6 +208,7 @@ class TestParseResultToDict(unittest.TestCase):
                     "height": 1080,
                     "duration": 90,
                 },
+                "polls": [],
             },
         )
 

@@ -17,6 +17,8 @@ from ...types import (
     MultimediaParseResult,
     ParseError,
     Platform,
+    Poll,
+    PollOption,
     RichTextParseResult,
     VideoRef,
 )
@@ -56,8 +58,11 @@ class TwitterParser(BaseParser):
         return tweet
 
     @staticmethod
-    def _quote_block(source: TwitterTweet) -> str:
+    def _quote_block(source: TwitterTweet, poll_index: int | None = None) -> str:
         """把一条被回复/被引用的推文渲染成引用块 (排版统一由公共 helper 决定).
+
+        :param poll_index: 这条推文的 poll 占位符索引 (``{{poll:N}}``); 由调用方按
+            「占位符在正文里的出现顺序」分配 (见 ``_poll_pairs``)。
 
         ⚠️ ``sign_only=bool(source.media)``: **正文为空但有媒体的推文**（很常见 ——
         推文只有一个媒体短链, 还原后正文是空串）必须照样产出引用块。不产的话
@@ -69,10 +74,10 @@ class TwitterParser(BaseParser):
         放进块内。既没文字也没媒体时仍返回空 (一块孤零零的署名没有意义)。
         """
         # 投票跟着**它所属的那条推文**的正文走 —— 被引用/被回复的推文带投票时,
-        # 表格渲染在它自己的引用块里（与 X 上一致）。
+        # 占位符渲染在它自己的引用块里（与 X 上一致）。
         body = source.full_text or ""
-        if poll := TwitterParser._build_poll(source):
-            body = f"{body}\n\n{poll}"
+        if placeholder := TwitterParser._poll_placeholder(source, poll_index):
+            body = f"{body}\n\n{placeholder}"
         return format_quote_block(
             body,
             format_author_link(
@@ -84,44 +89,64 @@ class TwitterParser(BaseParser):
         )
 
     @staticmethod
-    def _poll_cell(text: str) -> str:
-        """表格单元格转义 —— 选项文案里的 ``|`` 会把列切断。"""
-        return text.replace("|", "\\|")
+    def _has_poll(source: TwitterTweet) -> bool:
+        """这条推文有没有投票 (有选项才算)。"""
+        return bool(source.poll and source.poll.choices)
 
     @staticmethod
-    def _build_poll(tweet: TwitterTweet) -> str:
-        """投票 -> markdown 表格, 没有投票时返回空串。
+    def _poll_placeholder(source: TwitterTweet, index: int | None = None) -> str:
+        """投票 -> 正文里独立一行的占位符 ``{{poll:N}}``, 没有投票 (或索引未知) 时返回空串。
 
-        形态与 linux.do 的投票一致（选项 / 票数 / 占比三列）—— 表格由渲染层
-        转成服务端的 Table 块, 所以这里用 markdown 表格语法即可。
-
-        占比按**总票数**算（不是"最高票"）; 一票都还没有时占比记 0%, 不抛错。
-
-        选项文案里的 ``|`` 要转义 —— 否则会把表格的列切断。
+        **lib 只输出占位符, 不拼表格**: 「选项/票数/占比」那套文案由渲染层按用户
+        语言拼装 (``result.polls`` 里带结构化数据)。
         """
-        poll = tweet.poll
-        if not poll or not poll.choices:
+        if not TwitterParser._has_poll(source) or index is None:
             return ""
-        total = sum(count for _, count in poll.choices)
-        rows = [
-            "| 选项 | 票数 | 占比 |",
-            "| --- | --- | --- |",
-        ]
-        rows.extend(
-            f"| {TwitterParser._poll_cell(label)} | {count} | {round(count * 100 / total) if total else 0}% |"
-            for label, count in poll.choices
+        return f"{{{{poll:{index}}}}}"
+
+    @staticmethod
+    def _poll_pairs(tweet: TwitterTweet) -> list[tuple[str, TwitterTweet]]:
+        """带投票的推文, **按占位符在正文里的出现顺序**: reply → 主帖 → quoted。
+
+        索引纪律 (lib ↔ 渲染层的契约): ``result.polls[i]`` 对应正文里第 i 个
+        ``{{poll:N}}`` 占位符; 这里就是索引的**唯一分配点**。
+        """
+        pairs: list[tuple[str, TwitterTweet]] = []
+        for role, source in (("reply", tweet.reply_to), ("main", tweet), ("quoted", tweet.quoted_status)):
+            if source is not None and TwitterParser._has_poll(source):
+                pairs.append((role, source))
+        return pairs
+
+    @staticmethod
+    def _poll_indexes(tweet: TwitterTweet) -> dict[str, int]:
+        """每个位置 (``reply`` / ``main`` / ``quoted``) 的占位符索引; 没投票的位置缺席。"""
+        return {role: index for index, (role, _source) in enumerate(TwitterParser._poll_pairs(tweet))}
+
+    @staticmethod
+    def _to_result_poll(source: TwitterTweet) -> Poll:
+        """推文的投票 -> 结构化 ``Poll`` (票数与选项**照平台给的原样**, 不算占比)。"""
+        choices = source.poll.choices if source.poll else []
+        return Poll(
+            options=[PollOption(text=label, count=count) for label, count in choices],
+            total_votes=sum(count for _, count in choices),
+            is_finished=bool(source.poll.is_final) if source.poll else False,
         )
-        return "\n".join(rows)
 
     @staticmethod
     def _build_quote(tweet: TwitterTweet) -> str:
         """把被回复的推文渲染成 Markdown 引用块, 不是回复或内容为空时返回空串."""
-        return TwitterParser._quote_block(tweet.reply_to) if tweet.reply_to else ""
+        if not tweet.reply_to:
+            return ""
+        return TwitterParser._quote_block(tweet.reply_to, TwitterParser._poll_indexes(tweet).get("reply"))
 
     @staticmethod
     def _build_quoted_block(tweet: TwitterTweet) -> str:
         """把被引用的推文渲染成 Markdown 引用块, 不是引用推文或内容为空时返回空串."""
-        return TwitterParser._quote_block(tweet.quoted_status) if tweet.quoted_status else ""
+        if not tweet.quoted_status:
+            return ""
+        return TwitterParser._quote_block(
+            tweet.quoted_status, TwitterParser._poll_indexes(tweet).get("quoted")
+        )
 
     @staticmethod
     def _quote_roles(tweet: TwitterTweet) -> list[str]:
@@ -144,8 +169,8 @@ class TwitterParser(BaseParser):
         :param reply_yt: 被回复推文正文里的 YouTube 卡片, 追加进**回复**引用块
         :param quoted_yt: 被引用推文正文里的 YouTube 卡片, 追加进**被引用**引用块
         """
-        if poll := TwitterParser._build_poll(tweet):
-            body = f"{body}\n\n{poll}"
+        if placeholder := TwitterParser._poll_placeholder(tweet, TwitterParser._poll_indexes(tweet).get("main")):
+            body = f"{body}\n\n{placeholder}"
         reply_block = TwitterParser._append_inside_quote(TwitterParser._build_quote(tweet), reply_yt)
         text = f"{reply_block}{body}"
         # strip: 引用块自带末尾空行（``format_quote_block`` 的块结束约定），
@@ -280,6 +305,9 @@ class TwitterParser(BaseParser):
             if (tweet.reply_to and (TwitterParser._build_quote(tweet) or reply_yt_quote))
             else 0
         )
+        # 投票: 结构化数据按**占位符出现顺序**收集 (reply → 主帖 → quoted) ——
+        # 与 ``_compose`` / ``_quote_block`` 分配索引时用的是同一份 ``_poll_pairs``
+        polls = [TwitterParser._to_result_poll(source) for _role, source in TwitterParser._poll_pairs(tweet)]
         if article := tweet.article:
             return RichTextParseResult(
                 markdown_content=TwitterParser._compose(
@@ -300,6 +328,7 @@ class TwitterParser(BaseParser):
                 quote_roles=TwitterParser._quote_roles(tweet),
                 # 标签走**平台实体**（服务端算好的边界），渲染层据此精确链接化
                 hashtags=TwitterParser._hashtags(tweet),
+                polls=polls,
             )
         return MultimediaParseResult(
             content=TwitterParser._compose(
@@ -317,6 +346,7 @@ class TwitterParser(BaseParser):
             reply_media_count=reply_total,
             quote_roles=TwitterParser._quote_roles(tweet),
             hashtags=TwitterParser._hashtags(tweet),
+            polls=polls,
         )
 
 

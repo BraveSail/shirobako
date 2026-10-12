@@ -8,6 +8,8 @@ from ...types import (
     ImageRef,
     ParseError,
     Platform,
+    Poll,
+    PollOption,
     RichTextParseResult,
 )
 from ...utils.helpers import image_ext_from_url, profile_url
@@ -46,6 +48,17 @@ class LinuxDoParser(BaseParser):
             ImageRef(url=i.url, thumb_url=i.url, width=i.width, height=i.height, ext=image_ext_from_url(i.url))
             for i in topic.images
         ]
+        # 投票: provider 的结构化数据 -> 结果层的 ``Poll`` (顺序 = 正文里
+        # ``{{poll:N}}`` 占位符的出现顺序, 原样搬移)
+        polls = [
+            Poll(
+                options=[PollOption(text=o.text, count=o.count) for o in p.options],
+                total_votes=p.total_votes,
+                voters=p.voters,
+                title=p.title,
+            )
+            for p in topic.polls
+        ]
         # 媒体**不进 common**: 两个结果类的参数名不同 (RichText 是 ``media``,
         # Image 是 ``photo``) —— 放进公共字典会让纯图话题那条分支直接 TypeError
         # (既存 bug, pylint E1123 抓到)。
@@ -64,6 +77,8 @@ class LinuxDoParser(BaseParser):
             "view_count": topic.view_count,
             "like_count": topic.like_count,
             "tags": topic.tags,
+            # 投票的结构化数据 (两个结果类都要) —— 渲染层按占位符索引取用
+            "polls": polls,
             # 楼层号: 引用块里的其它层早已标了 (` · #N`), 本层不标就不对称
             # (用户报「主楼标楼层号了但是回复没标」)。主楼解析出来就是 ``#1``。
             "position_label": f"#{topic.post_number}" if topic.post_number else "",

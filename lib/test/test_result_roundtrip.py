@@ -303,6 +303,83 @@ class RoundtripTest(unittest.TestCase):
         )
         json.dumps(result_to_cache_dict(result))
 
+    def test_polls_survive_the_roundtrip(self):
+        """**核心**: 投票的结构化数据必须往返无损 —— 漏了它缓存命中时正文里的
+        ``{{poll:N}}`` 占位符就找不到数据 (投票静默消失)。
+
+        ``polls`` 同时进 ``to_dict()`` (公开格式, 被 test_core_offline 冻住) 与
+        缓存格式, 这里按缓存那条路往返。
+        """
+        from parsehub.types.result import MultimediaParseResult, Poll, PollOption
+
+        original = MultimediaParseResult(
+            content="正文\n\n{{poll:0}}\n\n{{poll:1}}",
+            polls=[
+                Poll(
+                    options=[PollOption(text="选项|甲", count=71), PollOption(text="乙", count=None)],
+                    total_votes=71,
+                    voters=222,
+                    title="标题",
+                    is_finished=True,
+                ),
+                Poll(options=[PollOption(text="只有文字")]),
+            ],
+        )
+        back = _roundtrip(original)
+
+        self.assertEqual(len(back.polls), 2)
+        self.assertEqual(type(back.polls[0]), Poll)
+        self.assertEqual(type(back.polls[0].options[0]), PollOption)
+        self.assertEqual(back.polls[0].options[0].text, "选项|甲")
+        self.assertEqual(back.polls[0].options[0].count, 71)
+        # None (平台不给单项票数) 不能被压成 0
+        self.assertIsNone(back.polls[0].options[1].count)
+        self.assertEqual(back.polls[0].total_votes, 71)
+        self.assertEqual(back.polls[0].voters, 222)
+        self.assertEqual(back.polls[0].title, "标题")
+        self.assertIs(back.polls[0].is_finished, True)
+        # 第二条: 全部默认值也要原样回来
+        self.assertEqual(back.polls[1].options[0].text, "只有文字")
+        self.assertIsNone(back.polls[1].options[0].count)
+        self.assertIsNone(back.polls[1].total_votes)
+        self.assertIsNone(back.polls[1].voters)
+        self.assertEqual(back.polls[1].title, "")
+        self.assertIs(back.polls[1].is_finished, False)
+
+    def test_an_empty_poll_list_roundtrips_as_empty(self):
+        """普通结果 (无投票) 的 ``polls`` 往返后仍是空列表 (渲染层据此跳过替换)"""
+        from parsehub.types.result import MultimediaParseResult
+
+        back = _roundtrip(MultimediaParseResult(content="正文"))
+        self.assertEqual(back.polls, [])
+
+    def test_an_old_cache_entry_without_polls_still_loads(self):
+        """**向后兼容**: 改动之前写下的缓存条目没有这个键 —— 取默认空列表, 不是崩掉"""
+        from parsehub.types.result import VideoParseResult
+
+        data = result_to_cache_dict(VideoParseResult(title="t", content="c"))
+        data.pop("polls")
+        back = result_from_cache_dict(data)
+        self.assertEqual(back.polls, [])
+
+    def test_the_polls_do_not_disturb_the_other_fields(self):
+        """回归: 加字段不能把邻居弄丢（媒体计数 / 位置标记 / 引用角色）"""
+        from parsehub.types.result import MultimediaParseResult, Poll, PollOption
+
+        result = MultimediaParseResult(
+            content="c",
+            quoted_media_count=2,
+            reply_media_count=1,
+            position_label="#4",
+            quote_roles=["reply"],
+            polls=[Poll(options=[PollOption(text="A", count=1)], total_votes=1)],
+        )
+        rebuilt = result_from_cache_dict(result_to_cache_dict(result))
+        self.assertEqual((rebuilt.quoted_media_count, rebuilt.reply_media_count), (2, 1))
+        self.assertEqual(rebuilt.position_label, "#4")
+        self.assertEqual(rebuilt.quote_roles, ["reply"])
+        self.assertEqual(rebuilt.polls[0].options[0].text, "A")
+
     def test_post_type_is_preserved(self):
         for result in (
             VideoParseResult(title="t"),

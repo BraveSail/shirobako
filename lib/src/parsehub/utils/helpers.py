@@ -223,6 +223,11 @@ def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) 
 #: 一坨带竖线的斜体文本（用户报「引用里的投票也格式化一下」）。
 _QUOTE_TABLE_ROW_RE = re.compile(r"^\|.*\|$")
 
+#: 引用块里的 **poll 占位符行**（``{{poll:N}}`` —— lib 只放占位符, 渲染层替换成本地化表格）。
+#: 与表格行同理**不能**包 ``<i>``: 渲染层要把整行（含 ``> `` 前缀）替换成表格,
+#: 残留的斜体标记会污染替换产物。
+_QUOTE_POLL_PLACEHOLDER_RE = re.compile(r"^\{\{poll:\d+\}\}$")
+
 
 def _quote_line(line: str) -> str:
     """引用块里的一行 —— 整行斜体, 但**行尾的硬换行标记要留在标签外面**。
@@ -237,11 +242,13 @@ def _quote_line(line: str) -> str:
 
     **表格行例外**: 原样放进块里（不带斜体、也不补硬换行两空格）—— 表格语义
     由行本身承载, 包上标签就会失效。
+
+    **poll 占位符行例外**: 同理原样输出 ``> {{poll:N}}`` —— 渲染层要按整行替换。
     """
     stripped = line.rstrip()
     if not stripped:
         return ">"
-    if _QUOTE_TABLE_ROW_RE.match(stripped):
+    if _QUOTE_TABLE_ROW_RE.match(stripped) or _QUOTE_POLL_PLACEHOLDER_RE.match(stripped):
         return f"> {stripped}"
     trailing = line[len(stripped) :]  # 行尾空白（markdownify 的 br 给两空格）
     return f"> <i>{stripped}</i>{trailing}"

@@ -667,6 +667,8 @@ class BangumiTopic:
         # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间。
         # 章节页给**章节名**（带 ``/ep/<id>`` 链接）—— 用户看的是"哪部番的哪一集"，
         # 条目名已经在标题里了。
+        # 「讨论」用**可翻译片段占位符**（``{{t:讨论}}``）—— 渲染层按用户语言替换
+        # （lib 不认识用户语言；形态与 poll 占位符同一套）。
         origin_line = ""
         if episode_name:
             url = f"https://bgm.tv/ep/{topic_id}"
@@ -677,7 +679,9 @@ class BangumiTopic:
                 if context_url
                 else html.escape(context_name)
             )
-            origin_line = f"**{label}** » 讨论"
+            # ⚠️ f-string 里要写**四个**花括号: `{{{{t:讨论}}}}` —— f-string 把每对 `{{` 折成
+            # 一个 `{`，两个花括号打出来只有一层（踩过：输出成了 `{t:讨论}`，匹配不上）。
+            origin_line = f"**{label}** » {{{{t:讨论}}}}"
 
         markdown_content = cls._compose(context_quote, body)
         text_content = cls._to_text(context_name, context_quote, plain)

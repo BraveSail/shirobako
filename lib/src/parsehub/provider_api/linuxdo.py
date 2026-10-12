@@ -53,6 +53,29 @@ class LinuxDoImage:
 
 
 @dataclass
+class LinuxDoPollOption:
+    """投票的一个选项。"""
+
+    text: str
+    count: int | None = None
+    """该选项票数; None = 拿不到结构化数据 (老站点) 或平台不给单项票数。"""
+
+
+@dataclass
+class LinuxDoPoll:
+    """帖子里的一个投票 (**结构化**, 不含任何拼好的文案)。
+
+    lib 在正文对应位置只放占位符行 ``{{poll:N}}``; 「选项/票数/占比/人参与」那套
+    文案由渲染层按用户语言拼装 (索引 N 与 ``LinuxDoTopic.polls`` 一致)。
+    """
+
+    options: list[LinuxDoPollOption] = field(default_factory=list)
+    total_votes: int | None = None
+    voters: int | None = None
+    title: str = ""
+
+
+@dataclass
 class LinuxDoTopic:
     """一个主题（楼主帖 + 主题级统计）。"""
 
@@ -68,6 +91,9 @@ class LinuxDoTopic:
     reply_count: int | None = None
     tags: list[str] = field(default_factory=list)
     images: list[LinuxDoImage] = field(default_factory=list)
+    #: 帖子里的**投票** (结构化, 不含任何拼好的文案), 顺序 = 正文里 ``{{poll:N}}``
+    #: 占位符的出现顺序。渲染层按索引取数据再本地化。
+    polls: list[LinuxDoPoll] = field(default_factory=list)
     #: images 末尾有多少张属于**上下文引用块** (主楼/被回复楼层), bot 侧据此把它们
     #: 放进引用块内部而不是正文媒体。块在正文**前** ⇒ 走 ``reply_media_count`` 那一档。
     reply_media_count: int = 0
@@ -282,7 +308,10 @@ class LinuxDoTopic:
         soup = BeautifulSoup(cooked, "lxml")
         # 投票: cooked 里的 poll 只是个**占位壳**（人数恒为 0），真实数据在同一次响应的
         # ``post["polls"]`` 结构化字段里（`options[].votes` / `voters`）—— 不需要额外请求。
-        polls = [p for p in (first.get("polls") or []) if isinstance(p, dict)]
+        raw_polls = [p for p in (first.get("polls") or []) if isinstance(p, dict)]
+        # 上下文引用块先算: 它们排在正文**最前**, 自带的投票先占占位符索引 (0..., 与
+        # 正文出现顺序一致)。图片与纯文本兜底也在这里接上 (见下)。
+        context_quotes, context_images, context_polls = cls._context_quotes(posts, first)
         images = cls._extract_images(soup)
         # ⚠️ 必须在取纯文本**之前**清 lightbox: 它的包裹里除了 img 还有一段**说明文字**
         # (``span.filename`` 文件名 + ``span.informations`` 的"分辨率 体积", 如 ``746×330 24.3 KB``)。
@@ -292,14 +321,16 @@ class LinuxDoTopic:
         text_content = soup.get_text("\n", strip=True)
         # 引用块先抽出来 (改写成占位符), 转完 markdown 再回填公共 helper 渲染的结果
         rendered_quotes = cls._extract_quotes(soup)
-        cls._simplify(soup, polls=polls)
+        # 本层投票: ``_simplify`` 原地把 ``div.poll`` 改写成占位符行, 结构化数据
+        # 由返回值带出来。索引从上下文之后继续 (它们在正文里排在上下文块之后)。
+        pool = cls._simplify(soup, polls=raw_polls, offset=len(context_polls))
+        polls = [*context_polls, *pool]
         markdown_content = cls._to_markdown(str(soup))
         for placeholder, block in rendered_quotes:
             markdown_content = markdown_content.replace(placeholder, block)
 
         # 上下文引用块放正文**之前**, 从远到近: 主楼 → 被回复的楼层 → 当前楼层正文
         # (用户要求: 分享楼层时把主楼做成回复; 楼层互回时被回复的那层也要带上)
-        context_quotes, context_images = cls._context_quotes(posts, first)
         # 上下文层的图片接在 media 末尾 —— bot 侧按"引用块媒体"放进引用块内部
         # （块在正文前 ⇒ reply 那一档）
         reply_media_count = len(context_images)
@@ -346,6 +377,9 @@ class LinuxDoTopic:
             reply_count=to_int(payload.get("reply_count")),
             tags=tags,
             images=images,
+            # 投票 (结构化): 顺序 = 正文里 ``{{poll:N}}`` 占位符的出现顺序
+            # (上下文引用块里的在前, 本层的在后)。渲染层按索引本地化。
+            polls=polls,
             reply_media_count=reply_media_count,
             # 上下文引用块排在正文**最前** ⇒ 角色 ``reply``（媒体走 reply 段）
             quote_roles=["reply"] * len(context_quotes),
@@ -359,15 +393,19 @@ class LinuxDoTopic:
     _QUOTE_PLACEHOLDER = "@@linuxdo-quote-{}@@"
 
     @classmethod
-    def _post_to_quote(cls, post: dict[str, Any]) -> tuple[str, list[LinuxDoImage]]:
-        """把**另一层**的内容渲染成引用块 + 它自己的图片。
+    def _post_to_quote(
+        cls, post: dict[str, Any], poll_offset: int
+    ) -> tuple[str, list[LinuxDoImage], list[LinuxDoPoll]]:
+        """把**另一层**的内容渲染成引用块 + 它自己的图片 + 它自己的投票。
 
-        返回 ``(引用块 markdown, 该层的图片)``:
+        返回 ``(引用块 markdown, 该层的图片, 该层的投票)``:
 
         - 引用块**不内联图片** —— 只给作者行与文字, 图片由调用方按"引用块媒体"
           的通道单独带过去 (与 twitter 的被引用帖媒体同一机制)。
         - **纯图楼层也要返回引用块**(只有作者行): 这层确实在回应它, 直接把整层丢掉
           是**有损**的 —— 用户看不到"在回复谁"。
+        - 投票在引用块里放占位符行, 索引从 ``poll_offset`` 起 (上下文块在正文前 ⇒
+          先占索引, 与「占位符出现顺序」一致)。
         """
         cooked = post.get("cooked") or ""
         username = str(post.get("username") or "")
@@ -377,17 +415,18 @@ class LinuxDoTopic:
         floor = post.get("post_number")
         head = f"{author} · #{floor}" if floor else author
         if not cooked:
-            return "", []
+            return "", [], []
 
         soup = BeautifulSoup(cooked, "lxml")
         images = cls._extract_images(soup)  # 图片先取出来 (下面会清理掉)
         # 先摘掉引用块与媒体外壳, 只要这一层自己的文字
         for aside in soup.find_all("aside", class_="quote"):
             aside.decompose()
-        cls._simplify(soup)
+        raw_polls = [p for p in (post.get("polls") or []) if isinstance(p, dict)]
+        polls = cls._simplify(soup, polls=raw_polls, offset=poll_offset)
         text = soup.get_text("\n", strip=True)
         # 没文字也出引用块 (sign_only) —— 纯图楼层只有署名, 图片按引用块媒体接进块内
-        return format_quote_block(text, head, sign_only=True), images
+        return format_quote_block(text, head, sign_only=True), images, polls
 
     @staticmethod
     def _quote_to_plain(block: str) -> str:
@@ -399,18 +438,22 @@ class LinuxDoTopic:
     @classmethod
     def _context_quotes(
         cls, posts: list[dict[str, Any]], current: dict[str, Any]
-    ) -> tuple[list[str], list[LinuxDoImage]]:
-        """当前楼层的上下文: 引用块 (**从远到近**) + 这些层的图片。
+    ) -> tuple[list[str], list[LinuxDoImage], list[LinuxDoPoll]]:
+        """当前楼层的上下文: 引用块 (**从远到近**) + 这些层的图片 + 这些层的投票。
 
         用户要求: 分享某一层时要把**主楼**也带上 (那一层常是在回应主楼/前文);
         楼层回复了别的楼层时, 被回复的那层也要带上。
 
         被带上的那些层自己的图片也一并返回 —— 由调用方按"引用块媒体"通道发送
         (纯图楼层只有图片, 不带就等于把主楼丢了)。
+
+        这些层自带的投票同样返回 —— 它们的占位符在引用块里 (正文**最前**) ⇒
+        **先占索引**; 当前层的投票索引从它们之后继续 (与「占位符出现顺序」一致)。
         """
         wanted = current.get("post_number")
         blocks: list[str] = []
         images: list[LinuxDoImage] = []
+        polls: list[LinuxDoPoll] = []
         targets: list[dict[str, Any]] = []
         # ① 主楼: 当前就是主楼时不用带
         if wanted != 1:
@@ -423,11 +466,12 @@ class LinuxDoTopic:
                 targets.append(rp)
 
         for post in targets:
-            block, post_images = cls._post_to_quote(post)
+            block, post_images, post_polls = cls._post_to_quote(post, poll_offset=len(polls))
             if block:
                 blocks.append(block)
             images.extend(post_images)
-        return blocks, images
+            polls.extend(post_polls)
+        return blocks, images, polls
 
     @classmethod
     def _extract_quotes(cls, soup: BeautifulSoup) -> list[tuple[str, str]]:
@@ -462,7 +506,9 @@ class LinuxDoTopic:
             wrapper.decompose()
 
     @staticmethod
-    def _simplify(soup: BeautifulSoup, polls: list[dict[str, Any]] | None = None) -> None:
+    def _simplify(
+        soup: BeautifulSoup, polls: list[dict[str, Any]] | None = None, offset: int = 0
+    ) -> list[LinuxDoPoll]:
         """清理 Discourse 特有的包裹结构，避免转换出噪音。
 
         - ``div.lightbox-wrapper``：图片会作为媒体单独发送，正文里不再重复
@@ -470,7 +516,11 @@ class LinuxDoTopic:
         - ``div.spoiler``：只保留内容
         - ``img.emoji`` / ``img.avatar``：直接去掉 —— emoji 的 alt 是 ``:name:`` 形式,
           留在正文里既不美观也不是原样文本; 头像则是引用回复头部的装饰
-        - ``div.poll``：改写成结构化的投票块（见 ``_convert_polls``）
+        - ``div.poll``：改写成**占位符行**（见 ``_convert_polls``）
+
+        :param offset: poll 索引的起点 —— 上下文引用块 (排在正文最前) 里的投票
+            已经占掉的索引个数; 本层的投票从 ``offset`` 起编。
+        :return: 结构化投票列表 (DOM 顺序); 调用方把它带进 ``LinuxDoTopic.polls``。
         """
         for tag in soup.find_all("img", class_=["emoji", "avatar"]):
             tag.decompose()
@@ -481,15 +531,20 @@ class LinuxDoTopic:
             summary.decompose()
         for spoiler in soup.find_all("div", class_="spoiler"):
             spoiler.unwrap()
-        LinuxDoTopic._convert_polls(soup, polls or [])
+        return LinuxDoTopic._convert_polls(soup, polls or [], offset=offset)
 
     @staticmethod
-    def _convert_polls(soup: BeautifulSoup, polls: list[dict[str, Any]]) -> None:
-        """把 Discourse 的投票改写成「标题（人数）+ 选项列表（票数 / 占比）」。
+    def _convert_polls(
+        soup: BeautifulSoup, polls: list[dict[str, Any]], offset: int = 0
+    ) -> list[LinuxDoPoll]:
+        """把 Discourse 的 ``div.poll`` 原地改写成**占位符行** ``{{poll:N}}``, 返回结构化数据。
+
+        N = 占位符在正文里的出现顺序 (``div.poll`` 的 DOM 顺序 + ``offset`` 起点) ——
+        渲染层按 ``result.polls[N]`` 取数据、按用户语言拼「选项/票数/占比」表格。
+        **lib 侧不再生成任何投票文案**。
 
         不处理的话，poll 就是一段 HTML，直接转 markdown 会把**选项与人数标签**
-        糊成一串裸文字（如 ``选项A / 选项B / 0 / 投票人``）—— 看不出这是投票，
-        最后那个 ``0 投票人`` 还像是正文的残句。
+        糊成一串裸文字（如 ``选项A / 选项B / 0 / 投票人``）—— 看不出这是投票。
 
         **真实数据在同一次响应的 ``post["polls"]`` 结构化字段里**
         （``options[].votes`` / ``voters``）—— ``cooked`` 里那个 ``info-number``
@@ -498,73 +553,49 @@ class LinuxDoTopic:
 
         ⚠️ 教训: 判断"数据拿不到"之前要把**同一个响应里的其它字段**翻一遍 ——
         只看 ``cooked`` 会得出"票数要另请求"的错误结论（踩过）。
-        没有结构化数据时（老版本站点）退化成「📊 投票」+ 选项，**不显示那个假 0**。
+        没有结构化数据时（老版本站点）退化成只有选项文字 (``count=None``)、
+        ``voters=None`` —— 渲染层渲染成单列表格, **不显示那个假 0**。
         """
         by_name = {str(p.get("name")): p for p in polls}
+        structured: list[LinuxDoPoll] = []
         for index, poll in enumerate(soup.find_all("div", class_="poll")):
             name = str(poll.get("data-poll-name") or "")
             data = by_name.get(name) or (polls[index] if index < len(polls) else {})
             raw_options = data.get("options") or []
-            rows: list[tuple[str, int | None]] = []
+            options: list[LinuxDoPollOption] = []
             for option in raw_options:
                 if isinstance(option, dict):
-                    rows.append((LinuxDoTopic._option_text(option), to_int(option.get("votes"))))
-            if not rows:
+                    options.append(
+                        LinuxDoPollOption(
+                            text=LinuxDoTopic._option_text(option),
+                            count=to_int(option.get("votes")),
+                        )
+                    )
+            if not options:
                 # 没有结构化数据: 退回 cooked 里的选项文字 (不带票数, 见 docstring)
-                rows = [
-                    (li.get_text(" ", strip=True), None) for li in poll.select("li[data-poll-option-id]")
+                options = [
+                    LinuxDoPollOption(text=li.get_text(" ", strip=True))
+                    for li in poll.select("li[data-poll-option-id]")
                 ]
-            if not rows:
+            if not options:
+                # 连选项都没有: 不要留下空壳 (占位符行也不放)
+                poll.decompose()
                 continue
             voters = to_int(data.get("voters")) or 0
-            title = str(data.get("title") or "").strip()
-
-            block = soup.new_tag("div")
-            head = soup.new_tag("p")
-            parts = ["📊 投票"]
-            if title:
-                parts.append(f"「{title}」")
-            if voters > 0:
-                parts.append(f"{voters} 人参与")
-            head.string = parts[0] + (f"（{' · '.join(parts[1:])}）" if len(parts) > 1 else "")
-            block.append(head)
-
-            if all(votes is not None for _, votes in rows) and voters > 0:
-                # 有真实票数 ⇒ 表格（markdownify 会转成 markdown 表格语法, 服务端
-                # 解析成 RichBlockTable —— 已实测）
-                block.append(LinuxDoTopic._poll_table(soup, rows, voters))
-            else:
-                # 没有结构化数据（老站点）: 只列选项, **不显示那个恒为 0 的占位人数**
-                options_list = soup.new_tag("ul")
-                for text, _votes in rows:
-                    item = soup.new_tag("li")
-                    item.string = text
-                    options_list.append(item)
-                block.append(options_list)
-            poll.replace_with(block)
-
-    @staticmethod
-    def _poll_table(soup: BeautifulSoup, rows: list[tuple[str, int | None]], voters: int):
-        """把投票选项构造成 HTML 表格（→ markdown 表格 → 服务端的 Table 块）。"""
-        table = soup.new_tag("table")
-        thead = soup.new_tag("thead")
-        head_row = soup.new_tag("tr")
-        for label in ("选项", "票数", "占比"):
-            th = soup.new_tag("th")
-            th.string = label
-            head_row.append(th)
-        thead.append(head_row)
-        table.append(thead)
-        tbody = soup.new_tag("tbody")
-        for text, votes in rows:
-            tr = soup.new_tag("tr")
-            for value in (text, str(votes), f"{round((votes or 0) * 100 / voters)}%"):
-                td = soup.new_tag("td")
-                td.string = value
-                tr.append(td)
-            tbody.append(tr)
-        table.append(tbody)
-        return table
+            has_counts = all(option.count is not None for option in options)
+            structured.append(
+                LinuxDoPoll(
+                    options=options,
+                    total_votes=sum(option.count or 0 for option in options) if has_counts else None,
+                    voters=voters if voters > 0 else None,
+                    title=str(data.get("title") or "").strip(),
+                )
+            )
+            # 占位符**独立成行** (包一个 ``p``): markdown 转换后就是正文里的一行
+            placeholder = soup.new_tag("p")
+            placeholder.string = f"{{{{poll:{offset + len(structured) - 1}}}}}"
+            poll.replace_with(placeholder)
+        return structured
 
     @staticmethod
     def _option_text(option: dict[str, Any]) -> str:
@@ -613,4 +644,4 @@ class LinuxDoTopic:
         return images
 
 
-__all__ = ["LinuxDoError", "LinuxDoImage", "LinuxDoTopic"]
+__all__ = ["LinuxDoError", "LinuxDoImage", "LinuxDoPoll", "LinuxDoPollOption", "LinuxDoTopic"]

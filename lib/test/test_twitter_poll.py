@@ -18,8 +18,9 @@
 **选项数不固定**：卡片名形如 ``poll{2,3,4}choice_{text_only,image}``，键是
 ``choice{N}_label`` / ``choice{N}_count`` ⇒ 按 N 递增取，别硬编码 2 个。
 
-**形态**：与 linux.do 的投票一致（选项 / 票数 / 占比三列）—— 表格由渲染层转成
-服务端的 Table 块。
+**形态（2026-10-12 改造）**：lib 不再拼表格, 只在正文原来放表格的位置放独立一行
+占位符 ``{{poll:N}}``, 结构化数据 (选项/票数) 进 ``result.polls`` ——
+「选项 / 票数 / 占比」表格由渲染层按用户语言拼装。
 """
 
 import asyncio
@@ -28,6 +29,7 @@ from pathlib import Path
 
 from parsehub.parsers.parser.twitter import TwitterParser
 from parsehub.provider_api.twitter import Twitter, TwitterPoll, TwitterTweet
+from parsehub.types import Poll, PollOption
 
 FIXTURE = Path(__file__).parent / "fixtures" / "twitter_poll_card.json"
 
@@ -46,8 +48,12 @@ def _poll(choices, **kwargs) -> TwitterPoll:
     return TwitterPoll(choices=choices, **kwargs)
 
 
+def _parse(tweet: TwitterTweet):
+    return asyncio.run(TwitterParser.media_parse(tweet))
+
+
 def _render(tweet: TwitterTweet) -> str:
-    return asyncio.run(TwitterParser.media_parse(tweet)).content
+    return _parse(tweet).content
 
 
 # ---------------------------------------------------------------- 解析（真实响应）
@@ -116,86 +122,123 @@ def test_a_poll_card_yields_no_cover_photo():
     assert Twitter._parse_card_photo(node) is None
 
 
-# ---------------------------------------------------------------- 渲染
+# ---------------------------------------------------------------- 渲染（占位符 + 结构化数据）
 
 
-def test_the_poll_renders_as_a_table():
-    """**核心**: 渲染成三列表格（与 linux.do 的投票同一形态）"""
-    text = _render(_tweet(poll=_real_tweet().poll))
-    assert "| 选项 | 票数 | 占比 |" in text, text
-    assert "| --- | --- | --- |" in text, text
-    assert "| 👌(good day) | 11805 | 25% |" in text, text
-    assert "| 🫨 (needs a reset) | 34875 | 75% |" in text, text
+def test_the_poll_becomes_a_placeholder_with_structured_data():
+    """**核心**: 正文里放占位符 ``{{poll:0}}``; 选项/票数/占比文案不再由 lib 拼。"""
+    result = _parse(_tweet(poll=_real_tweet().poll))
+    assert "{{poll:0}}" in result.content, result.content
+    assert "| 选项 |" not in result.content, "lib 不该再拼表格"
+    assert result.polls == [
+        Poll(
+            options=[
+                PollOption(text="👌(good day)", count=11805),
+                PollOption(text="🫨 (needs a reset)", count=34875),
+            ],
+            total_votes=46680,
+        )
+    ], result.polls
 
 
-def test_the_percentage_is_of_the_total():
-    """占比按**总票数**算（11805/46680=25%, 34875/46680=75%）"""
-    text = _render(_tweet(poll=_poll([("少", 1), ("多", 3)])))
-    assert "| 少 | 1 | 25% |" in text, text
-    assert "| 多 | 3 | 75% |" in text, text
+def test_the_total_votes_and_final_flag_are_carried():
+    """总票数与"是否已结束"进结构化数据（渲染层的占比要总票数）"""
+    result = _parse(_tweet(poll=_poll([("少", 1), ("多", 3)], is_final=True)))
+    (poll,) = result.polls
+    assert poll.total_votes == 4
+    assert poll.is_finished is True
+    assert [(o.text, o.count) for o in poll.options] == [("少", 1), ("多", 3)]
 
 
-def test_the_body_is_kept_above_the_table():
-    """作者写的正文照旧保留在表格上方"""
+def test_the_body_is_kept_above_the_placeholder():
+    """作者写的正文照旧保留在投票占位符上方"""
     text = _render(_tweet(poll=_poll([("A", 1)])))
     assert text.startswith("Vote"), text
-    assert text.index("Vote") < text.index("| 选项 |")
+    assert text.index("Vote") < text.index("{{poll:0}}")
 
 
-def test_a_poll_with_no_votes_does_not_blow_up():
-    """一票都没有时不抛错, 占比记 0%"""
-    text = _render(_tweet(poll=_poll([("A", 0), ("B", 0)])))
-    assert "| A | 0 | 0% |" in text, text
+def test_a_poll_with_no_votes_still_yields_the_options():
+    """一票都没有时不抛错; 选项照旧带出来 (count 是 0, 不是 None)"""
+    result = _parse(_tweet(poll=_poll([("A", 0), ("B", 0)])))
+    (poll,) = result.polls
+    assert [(o.text, o.count) for o in poll.options] == [("A", 0), ("B", 0)]
+    assert poll.total_votes == 0
 
 
-def test_a_pipe_in_an_option_does_not_break_the_table():
-    """选项文案里的 ``|`` 要转义 —— 否则会把列切断"""
-    text = _render(_tweet(poll=_poll([("a|b", 1)])))
-    assert r"| a\|b | 1 | 100% |" in text, text
+def test_a_pipe_in_an_option_is_kept_verbatim():
+    """选项文案**原样**进结构化数据 —— 表格转义已移到渲染层, lib 不动它"""
+    result = _parse(_tweet(poll=_poll([("a|b", 1)])))
+    (poll,) = result.polls
+    assert poll.options[0].text == "a|b"
 
 
-def test_a_tweet_without_a_poll_has_no_table():
-    text = _render(_tweet())
-    assert "| 选项 |" not in text
-    assert text.strip() == "Vote"
+def test_a_tweet_without_a_poll_has_no_placeholder():
+    result = _parse(_tweet())
+    assert "{{poll:" not in result.content
+    assert result.polls == []
+    assert result.content.strip() == "Vote"
 
 
 def test_an_empty_choices_list_renders_nothing():
-    assert TwitterParser._build_poll(_tweet(poll=_poll([]))) == ""
+    assert TwitterParser._poll_placeholder(_tweet(poll=_poll([])), 0) == ""
+    result = _parse(_tweet(poll=_poll([])))
+    assert "{{poll:" not in result.content
+    assert result.polls == []
 
 
 # ---------------------------------------------------------------- 引用/回复里的投票
 
 
 def test_a_poll_inside_the_quoted_post_renders_in_its_own_block():
-    """被引用推文带投票时, 表格渲染在**它自己的引用块里**（与 X 上一致）"""
+    """被引用推文带投票时, 占位符渲染在**它自己的引用块里**（与 X 上一致）"""
     quoted = _tweet(tweet_id="2", full_text="引用里的投票", poll=_poll([("A", 3), ("B", 1)]))
-    text = _render(_tweet(full_text="主帖", quoted_status=quoted))
-    lines = text.splitlines()
-    table_at = next(i for i, ln in enumerate(lines) if "| 选项 |" in ln)
-    assert all(ln.startswith("> ") for ln in lines[table_at : table_at + 4]), lines[table_at : table_at + 4]
+    result = _parse(_tweet(full_text="主帖", quoted_status=quoted))
+    lines = result.content.splitlines()
+    placeholder_at = next(i for i, ln in enumerate(lines) if "{{poll:" in ln)
+    assert lines[placeholder_at] == "> {{poll:0}}", lines[placeholder_at]
+    # 结构化数据在 polls[0], 顺序与占位符一致
+    assert [(o.text, o.count) for o in result.polls[0].options] == [("A", 3), ("B", 1)]
 
 
 def test_a_poll_inside_the_replied_post_renders_in_its_own_block():
     reply = _tweet(tweet_id="3", full_text="回复里的投票", poll=_poll([("A", 1)]))
-    text = _render(_tweet(full_text="主帖", reply_to=reply))
-    lines = text.splitlines()
-    table_at = next(i for i, ln in enumerate(lines) if "| 选项 |" in ln)
-    assert lines[table_at].startswith("> "), lines[table_at]
+    result = _parse(_tweet(full_text="主帖", reply_to=reply))
+    lines = result.content.splitlines()
+    placeholder_at = next(i for i, ln in enumerate(lines) if "{{poll:" in ln)
+    assert lines[placeholder_at] == "> {{poll:0}}", lines[placeholder_at]
+    assert result.polls[0].options[0].text == "A"
 
 
-def test_the_quoted_poll_table_has_no_italic_wrapper():
-    """引用块里的表格行不能包 `<i>` —— 包了服务端就不再当它是表格
-    （用户报「引用里的投票也格式化一下」）；正文行仍要斜体。"""
+def test_the_quoted_poll_placeholder_has_no_italic_wrapper():
+    """引用块里的占位符行不能包 `<i>` —— 渲染层要按整行替换, 斜体标记会污染产物。"""
     quoted = _tweet(tweet_id="2", full_text="引用里的投票", poll=_poll([("A", 3), ("B", 1)]))
-    text = _render(_tweet(full_text="主帖", quoted_status=quoted))
-    lines = text.splitlines()
-    table_at = next(i for i, ln in enumerate(lines) if "| 选项 |" in ln)
-    for ln in lines[table_at : table_at + 4]:
-        assert ln.startswith("> "), ln
-        assert "<i>" not in ln, f"表格行被斜体包裹: {ln}"
+    result = _parse(_tweet(full_text="主帖", quoted_status=quoted))
+    lines = result.content.splitlines()
+    placeholder_at = next(i for i, ln in enumerate(lines) if "{{poll:" in ln)
+    assert lines[placeholder_at] == "> {{poll:0}}", lines[placeholder_at]
+    assert "<i>" not in lines[placeholder_at], f"占位符行被斜体包裹: {lines[placeholder_at]}"
     body_at = next(i for i, ln in enumerate(lines) if "引用里的投票" in ln)
     assert "<i>" in lines[body_at], lines[body_at]
+
+
+def test_the_indexes_follow_the_placeholder_order():
+    """**索引纪律**: polls[i] 对应正文里第 i 个占位符 —— reply → 主帖 → quoted。"""
+    reply = _tweet(tweet_id="3", full_text="回复里的投票", poll=_poll([("R", 1)]))
+    quoted = _tweet(tweet_id="2", full_text="引用里的投票", poll=_poll([("Q", 2)]))
+    result = _parse(_tweet(full_text="主帖", reply_to=reply, quoted_status=quoted, poll=_poll([("M", 3)])))
+
+    assert [p.options[0].text for p in result.polls] == ["R", "M", "Q"], result.polls
+    lines = result.content.splitlines()
+    order = [ln.strip() for ln in lines if "{{poll:" in ln]
+    assert order == ["> {{poll:0}}", "{{poll:1}}", "> {{poll:2}}"], lines
+
+
+def test_a_poll_only_in_the_reply_still_starts_at_zero():
+    """只有 reply 带投票时索引从 0 开始 (不因为主帖没投票而跳号)"""
+    reply = _tweet(tweet_id="3", full_text="回复里的投票", poll=_poll([("R", 1)]))
+    result = _parse(_tweet(full_text="主帖", reply_to=reply))
+    assert [p.options[0].text for p in result.polls] == ["R"]
+    assert any(ln.strip() == "> {{poll:0}}" for ln in result.content.splitlines()), result.content
 
 
 if __name__ == "__main__":

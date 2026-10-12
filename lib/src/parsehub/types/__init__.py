@@ -10,6 +10,8 @@ from .result import (
     ImageParseResult,
     MultimediaParseResult,
     ParseResult,
+    Poll,
+    PollOption,
     RichTextParseResult,
     VideoParseResult,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "LivePhotoRef",
     "DownloadResult",
     "ParseResult",
+    "Poll",
+    "PollOption",
     "ImageParseResult",
     "VideoParseResult",
     "MultimediaParseResult",

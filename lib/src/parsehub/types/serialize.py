@@ -21,6 +21,7 @@ from typing import Any
 
 from loguru import logger
 
+from ..utils.helpers import to_int
 from .media_ref import AniRef, ImageRef, LivePhotoRef, MediaRef, VideoRef
 from .platform import Platform
 from .post import PostType
@@ -29,6 +30,8 @@ from .result import (
     ImageParseResult,
     MultimediaParseResult,
     ParseResult,
+    Poll,
+    PollOption,
     RichTextParseResult,
     VideoParseResult,
 )
@@ -104,7 +107,7 @@ def _constructor_param(cls: type) -> str | None:
 _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
     "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
-    "position_label", "quote_roles", "origin_line", "reply_count", "content", "video", "photo", "media",
+    "position_label", "quote_roles", "origin_line", "reply_count", "polls", "content", "video", "photo", "media",
     "markdown_content",
 })
 
@@ -199,6 +202,34 @@ def _as_list(payload: Any) -> list[Any]:
     return payload if isinstance(payload, list) else [payload]
 
 
+def _polls_to_payload(polls: Sequence[Poll]) -> list[dict[str, Any]]:
+    """投票 → 可 JSON 化的字典列表 (``to_dict()`` 已有同一形态, 这里保持同一份算法)。"""
+    return [asdict(poll) for poll in polls]
+
+
+def _polls_from_payload(payload: Any) -> list[Poll]:
+    """字典列表 → ``Poll`` 对象列表; 老缓存没有这个键、或结构异常时退化成空列表。"""
+    polls: list[Poll] = []
+    for item in payload or []:
+        if not isinstance(item, dict):
+            continue
+        options = [
+            PollOption(text=str(option.get("text") or ""), count=to_int(option.get("count")))
+            for option in item.get("options") or []
+            if isinstance(option, dict)
+        ]
+        polls.append(
+            Poll(
+                options=options,
+                total_votes=to_int(item.get("total_votes")),
+                voters=to_int(item.get("voters")),
+                title=str(item.get("title") or ""),
+                is_finished=bool(item.get("is_finished")),
+            )
+        )
+    return polls
+
+
 def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
     """结果对象 → 可 JSON 化的字典 (媒体带 ``kind``, 且记录**具体类名**)。
 
@@ -220,6 +251,9 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         "origin_line": result.origin_line,
         # 回复数同理（页脚那一段）
         "reply_count": result.reply_count,
+        # 投票 (结构化) —— 漏了它缓存命中时正文里的 ``{{poll:N}}`` 占位符
+        # 会找不到数据 (渲染层只能整行删掉, 投票静默消失)
+        "polls": _polls_to_payload(result.polls),
         "impl": type(result).__name__,
     }
 
@@ -258,6 +292,8 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "quote_roles": data.get("quote_roles") or [],
         "origin_line": data.get("origin_line", ""),
         "reply_count": data.get("reply_count"),
+        # 老缓存没有这个键 -> 空列表 (渲染层拿不到数据时删掉占位符行)
+        "polls": _polls_from_payload(data.get("polls")),
     }
 
     # content 只在**非 RichText** 时回填 —— 那个类的 content 是派生属性

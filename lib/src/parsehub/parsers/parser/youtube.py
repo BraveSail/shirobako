@@ -45,6 +45,8 @@ from ...types import (
     MultimediaParseResult,
     ParseError,
     Platform,
+    Poll,
+    PollOption,
     ProgressCallback,
     VideoFile,
     VideoParseResult,
@@ -128,7 +130,7 @@ class YtbParse(BaseParser):
 
         blocks = [post.text.strip()]
         if post.poll:
-            blocks.append(YtbParse._build_poll(post.poll))
+            blocks.append(YtbParse._poll_placeholder(0))
         if post.video:
             blocks.append(YtbParse._build_video_link(post.video))
 
@@ -141,26 +143,29 @@ class YtbParse(BaseParser):
             published_at=post.published_at,
             like_count=post.like_count,
             hashtags=post.hashtags,
+            polls=[YtbParse._to_result_poll(post.poll)] if post.poll else [],
         )
 
     @staticmethod
-    def _poll_cell(text: str) -> str:
-        """表格单元格转义 —— 选项文案里的 ``|`` 会把列切断。"""
-        return text.replace("|", "\\|")
+    def _poll_placeholder(index: int) -> str:
+        """投票 -> 正文里独立一行的占位符 ``{{poll:N}}``。
+
+        **lib 只输出占位符**: 「投票 · 共 N 票」这类头部文案与单列表格由渲染层
+        按用户语言拼装 (结构化数据在 ``result.polls`` 里)。
+        """
+        return f"{{{{poll:{index}}}}}"
 
     @staticmethod
-    def _build_poll(poll: YoutubePostPoll) -> str:
-        """投票 -> 「总数 + 选项表」。
+    def _to_result_poll(poll: YoutubePostPoll) -> Poll:
+        """帖子的投票 -> 结构化 ``Poll``。
 
-        与 twitter / linux.do 的投票同为 markdown 表格（渲染层转成服务端 Table 块）。
-        只有一列：**每项的票数匿名拿不到**（页面只给 ``signinEndpoint``）, 登录才有。
+        **每项的票数匿名拿不到**（页面只给 ``signinEndpoint``, 登录才有）⇒
+        ``count`` 一律 None, 只有总票数; 因此也不给 ``voters``。
         """
-        header = "投票"
-        if poll.total_votes:
-            header = f"{header} · 共 {poll.total_votes:,} 票"
-        rows = [header, "", "| 选项 |", "| --- |"]
-        rows.extend(f"| {YtbParse._poll_cell(choice)} |" for choice in poll.choices)
-        return "\n".join(rows)
+        return Poll(
+            options=[PollOption(text=choice) for choice in poll.choices],
+            total_votes=poll.total_votes,
+        )
 
     @staticmethod
     def _build_video_link(video: YoutubePostVideo) -> str:

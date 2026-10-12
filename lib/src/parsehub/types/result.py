@@ -3,7 +3,7 @@ import shutil
 import time
 from abc import ABC
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -35,6 +35,35 @@ def _media_to_dict(media: AnyMediaRef) -> dict:
     return data
 
 
+@dataclass
+class PollOption:
+    """投票的一个选项。"""
+
+    text: str
+    count: int | None = None
+    """该选项的票数; None = 平台不给 (如 YouTube 匿名只看得到总票数)。"""
+
+
+@dataclass
+class Poll:
+    """投票的结构化数据。
+
+    **lib 只出数据, 不拼文案** —— 正文里对应的位置放独立一行 ``{{poll:N}}``
+    (N = 它在 ``result.polls`` 里的索引, 按占位符在正文里的出现顺序从 0 递增),
+    「选项/票数/占比」这类表格文案由渲染层按用户语言拼装。
+    """
+
+    options: list[PollOption]
+    total_votes: int | None = None
+    """总票数。"""
+    voters: int | None = None
+    """参与人数 (仅 linux.do 给)。"""
+    title: str = ""
+    """投票标题 (仅 linux.do 有)。"""
+    is_finished: bool = False
+    """投票是否已结束 (仅 twitter/threads 给)。"""
+
+
 class ParseResult(ABC):  # noqa: B024
     """解析结果基类"""
 
@@ -61,6 +90,7 @@ class ParseResult(ABC):  # noqa: B024
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
+        polls: Sequence[Poll] | None = None,
     ):
         """
         :param title: 标题
@@ -99,6 +129,8 @@ class ParseResult(ABC):  # noqa: B024
 
             现在角色由平台显式声明, 位置不再参与判断; 渲染层按角色取对应的媒体通道。
             留空时渲染层**回退**到位置推断 (老缓存与未改的平台照旧)。
+        :param polls: **投票的结构化数据**, 顺序 = 正文里 ``{{poll:N}}`` 占位符的出现顺序
+            (lib 不拼表格文案; 渲染层按占位符索引取这里的数据再本地化)。
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -125,6 +157,8 @@ class ParseResult(ABC):  # noqa: B024
         """归属行 (这条内容属于哪里); 渲染层放在标题与作者行之间"""
         self.reply_count = to_int(reply_count)
         """回复数; 平台没提供时为 None (渲染层跳过那一段)"""
+        self.polls: list[Poll] = list(polls or [])
+        """投票的结构化数据; 顺序 = 正文里 ``{{poll:N}}`` 占位符的出现顺序"""
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -182,6 +216,7 @@ class ParseResult(ABC):  # noqa: B024
             "quoted_media_count": self.quoted_media_count,
             "reply_media_count": self.reply_media_count,
             "media": media,
+            "polls": [asdict(p) for p in self.polls],
         }
 
     async def _do_download(
@@ -419,6 +454,7 @@ class VideoParseResult(ParseResult):
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
+        polls: Sequence[Poll] | None = None,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -440,6 +476,7 @@ class VideoParseResult(ParseResult):
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
+            polls=polls,
         )
 
 
@@ -468,6 +505,7 @@ class ImageParseResult(ParseResult):
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
+        polls: Sequence[Poll] | None = None,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -489,6 +527,7 @@ class ImageParseResult(ParseResult):
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
+            polls=polls,
         )
 
 
@@ -517,6 +556,7 @@ class MultimediaParseResult(ParseResult):
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
+        polls: Sequence[Poll] | None = None,
     ):
         super().__init__(
             title=title,
@@ -537,6 +577,7 @@ class MultimediaParseResult(ParseResult):
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
+            polls=polls,
         )
 
 
@@ -571,6 +612,7 @@ class RichTextParseResult(ParseResult):
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
+        polls: Sequence[Poll] | None = None,
     ):
         """
         :param title: 标题
@@ -597,6 +639,7 @@ class RichTextParseResult(ParseResult):
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
+            polls=polls,
         )
 
     def __repr__(self) -> str:

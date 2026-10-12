@@ -183,8 +183,8 @@ POLL_STRUCTURED = [
 ]
 
 
-def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
-    """投票要渲染成「标题 + 选项列表」—— 不能糊成一串裸文字。
+def test_a_poll_renders_as_a_placeholder_with_structured_data():
+    """投票在正文里只留占位符行; 选项/票数/「人参与」文案全部由渲染层本地化拼装。
 
     以前 poll 就是一段 HTML，转 markdown 后选项与"人数标签"混在一起，
     末尾孤零零一个 `0 / 投票人` 看起来像正文的残句（用户报障就是这个）。
@@ -197,41 +197,82 @@ def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
 
     # 正文段落还在
     assert "没被a/封过号" in md
-    # 投票标题带**真实**参与人数（来自同一次响应的 post["polls"]，不是 cooked 里那个 0）
-    assert "📊 投票（222 人参与）" in md, md
+    # 投票位置是一行占位符, 正文里**没有**任何拼好的投票文案
+    assert "{{poll:0}}" in md, md
+    assert "📊" not in md, md
+    assert "投票" not in md, md
+    assert "人参与" not in md, md
     assert "0 人参与" not in md, md
-    # 选项渲染成**表格**（服务端解析 markdown 表格 → RichBlockTable, 已实测）
-    assert "| 选项 | 票数 | 占比 |" in md, md
-    assert "| --- | --- | --- |" in md, md
-    assert "| 还在用a/感觉良好 | 71 | 32% |" in md, md
-    assert "| 一直觉得a/比o/恶心 | 80 | 36% |" in md, md
-    assert md.count("\n| ") == 6, md  # 表头 + 分隔 + 4 行数据
+    assert "| 选项 |" not in md, md
+    # 结构化数据: 选项/票数来自同一次响应的 post["polls"] (不是 cooked 里那个 0)
+    assert len(topic.polls) == 1
+    poll = topic.polls[0]
+    assert [(o.text, o.count) for o in poll.options] == [
+        ("还在用a/感觉良好", 71),
+        ("没用过a/，感觉o/实在恶心", 31),
+        ("即使被a/封过付费号，也觉得o/比a/不当人", 40),
+        ("一直觉得a/比o/恶心", 80),
+    ]
+    assert poll.voters == 222
+    assert poll.total_votes == 222
+    assert poll.title == ""
 
 
-def test_a_poll_without_structured_data_falls_back_to_a_bare_list():
-    """没有结构化 ``polls`` 字段时（老站点）: 只列选项, **不显示那个假的 0**"""
+def test_a_poll_without_structured_data_still_carries_its_options():
+    """没有结构化 ``polls`` 字段时（老站点）: 占位符照放, 选项文字从 cooked 里取,
+    count=None + voters=None —— 渲染层按单列表格处理, **不显示那个假的 0**"""
     payload = make_payload()
     payload["post_stream"]["posts"][0]["cooked"] = POLL_COOKIE_PLACEHOLDER
     topic = LinuxDoTopic._from_payload(payload, "2979226")
     md = topic.markdown_content
-    assert "📊 投票" in md, md
+
+    assert "{{poll:0}}" in md, md
+    assert "📊" not in md, md
     assert "人参与" not in md, md
-    assert "投票人" not in md, md
-    assert "* 还在用a/感觉良好" in md, md
-    # "投票人" 这个标签词不该再作为裸文字出现（已并入标题）
     assert "投票人" not in md, md
     # 不泄漏 Discourse 的内部属性
     assert "data-poll" not in md
     assert "info-number" not in md
+    # 结构化数据只有选项文字, 没有票数/人数
+    assert len(topic.polls) == 1
+    poll = topic.polls[0]
+    assert [o.text for o in poll.options] == [
+        "还在用a/感觉良好",
+        "没用过a/，感觉o/实在恶心",
+        "即使被a/封过付费号，也觉得o/比a/不当人",
+        "一直觉得a/比o/恶心",
+    ]
+    assert all(o.count is None for o in poll.options)
+    assert poll.voters is None and poll.total_votes is None
 
 
 def test_a_poll_without_options_is_dropped():
-    """poll 里没有选项时不要留下空壳"""
+    """poll 里没有选项时不要留下空壳 (占位符行也不放)"""
     payload = make_payload()
     payload["post_stream"]["posts"][0]["cooked"] = '<p>正文</p><div class="poll"></div>'
     topic = LinuxDoTopic._from_payload(payload, "2979226")
-    assert "📊" not in topic.markdown_content
+    assert "{{poll:" not in topic.markdown_content
     assert "正文" in topic.markdown_content
+    assert topic.polls == []
+
+
+def test_the_poll_indexes_follow_the_div_order():
+    """**索引纪律**: 多个 poll 时占位符索引 = ``div.poll`` 的 DOM 出现顺序。"""
+    cooked = (
+        "<p>甲</p>"
+        '<div class="poll" data-poll-name="poll"><ul>'
+        '<li data-poll-option-id="a">选项甲</li></ul></div>'
+        "<p>乙</p>"
+        '<div class="poll" data-poll-name="poll2"><ul>'
+        '<li data-poll-option-id="b">选项乙</li></ul></div>'
+    )
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = cooked
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    md = topic.markdown_content
+
+    assert md.index("{{poll:0}}") < md.index("{{poll:1}}"), md
+    assert [p.options[0].text for p in topic.polls] == ["选项甲", "选项乙"], topic.polls
 
 
 def test_floor_counts_come_from_the_floor_not_the_topic():

@@ -172,18 +172,25 @@ def test_the_quote_comes_first_with_no_affiliation_in_the_body():
     md = _topic("4062141").markdown_content
     lines = md.splitlines()
     assert lines[0].startswith("> <i>"), lines[:2]
-    assert "» 讨论" not in md, "归属行不该出现在正文里"
+    # 归属行（含它的可翻译片段形态）不该出现在正文里
+    assert "» 讨论" not in md and "{{t:讨论}}" not in md, "归属行不该出现在正文里"
     last_quote = max(i for i, ln in enumerate(lines) if ln.startswith("> "))
     assert lines[last_quote + 1] == "", lines
     assert lines[last_quote + 2] == "两年四百+少了，很喜欢牛逼火腿一句话，你看点短的不就好了", lines
 
 
 def test_the_affiliation_becomes_the_origin_line():
-    """**核心**（用户要求）: 归属行走 ``origin_line``，内容是「条目/小组名 » 讨论」+ 链接"""
+    """**核心**（用户要求）: 归属行走 ``origin_line``，内容是「条目/小组名 » 讨论」+ 链接。
+
+    「讨论」以**可翻译片段占位符**（``{{t:讨论}}``）交给渲染层 —— lib 不认识用户语言，
+    替换由 bot 侧 ``replace_translatable_fragments`` 按 lang 完成。
+    """
     topic = _topic("4062141")
-    assert topic.origin_line == '**<a href="https://bgm.tv/group/fillgrids">补旧番</a>** » 讨论', topic.origin_line
+    assert topic.origin_line == (
+        '**<a href="https://bgm.tv/group/fillgrids">补旧番</a>** » {{t:讨论}}'
+    ), topic.origin_line
     # 主楼那条路也有归属行（只是没有引用块）
-    assert "» 讨论" in _topic().origin_line
+    assert "» {{t:讨论}}" in _topic().origin_line
 
 
 def test_a_bodyless_floor_keeps_the_quote_in_the_body():
@@ -195,7 +202,7 @@ def test_a_bodyless_floor_keeps_the_quote_in_the_body():
     reply = _floor("6", "#2", "2026-10-7 00:24", "甲", "a", "")
     topic = _from_html(reply, floor_id="6", main=main)
     assert topic.markdown_content.splitlines()[0].startswith("> <i>"), topic.markdown_content
-    assert "» 讨论" not in topic.markdown_content
+    assert "» 讨论" not in topic.markdown_content and "{{t:讨论}}" not in topic.markdown_content
 
 
 def test_the_opening_post_has_no_stray_blank_lines():
@@ -386,7 +393,7 @@ def test_a_floor_without_a_time_parses_to_none():
 def test_the_origin_line_carries_the_affiliation_only():
     """归属行只写「谁家的讨论」（层数不再需要 —— 只发一层）"""
     origin = _topic().origin_line
-    assert "补旧番" in origin and "» 讨论" in origin
+    assert "补旧番" in origin and "» {{t:讨论}}" in origin
     assert "层" not in origin
 
 

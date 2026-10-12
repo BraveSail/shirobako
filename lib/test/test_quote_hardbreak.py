@@ -41,6 +41,34 @@ def test_the_marker_is_kept_verbatim():
     assert _quote_line("行 ") == "> <i>行</i> "
 
 
+# ── poll 占位符行 ────────────────────────────────────────────────────────
+
+
+def test_a_poll_placeholder_line_is_not_italicised():
+    """**核心**: 引用块里的 ``{{poll:N}}`` 行要原样输出 —— 渲染层按整行替换成
+    本地化表格, 残留的 ``<i>`` 会污染替换产物 (与表格行同理)。
+
+    用户场景: 被引用/被回复的推文、楼层带投票时, 占位符就落在这个引用块里。
+    """
+    assert _quote_line("{{poll:0}}") == "> {{poll:0}}"
+    assert _quote_line("{{poll:12}}") == "> {{poll:12}}"
+    # 带行尾空白 (markdownify 的 br) 也照旧不带硬换行标记
+    assert _quote_line("{{poll:0}}  ") == "> {{poll:0}}"
+
+
+def test_a_block_with_a_poll_placeholder_keeps_the_line_bare():
+    """整块渲染: 占位符行不带斜体, 其它行照旧带"""
+    block = format_quote_block("正文\n{{poll:0}}")
+    assert block == "> <i>正文</i>\n> {{poll:0}}\n\n", block
+    assert "<i>{{poll" not in block, block
+
+
+def test_a_bare_poll_like_text_is_still_italicised():
+    """自检: 只有**独立一行**的占位符才豁免 —— 夹在文字里的是普通文本, 照旧斜体。"""
+    assert _quote_line("见 {{poll:0}} 处") == "> <i>见 {{poll:0}} 处</i>"
+    assert _quote_line("{{poll:x}}") == "> <i>{{poll:x}}</i>"
+
+
 # ── 整块 ───────────────────────────────────────────────────────────────
 
 def test_the_block_keeps_every_line_separate():

@@ -3,10 +3,18 @@ from ...provider_api.threads import (
     ThreadsAPIError,
     ThreadsMedia,
     ThreadsMediaType,
-    ThreadsPoll,
     ThreadsPost,
 )
-from ...types import AnyMediaRef, ImageRef, MultimediaParseResult, ParseError, Platform, VideoRef
+from ...types import (
+    AnyMediaRef,
+    ImageRef,
+    MultimediaParseResult,
+    ParseError,
+    Platform,
+    Poll,
+    PollOption,
+    VideoRef,
+)
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
@@ -28,21 +36,32 @@ class ThreadsParser(BaseParser):
         # 再用 ``reply_media_count`` 告诉渲染层"末尾这几个属于回复卡片"。
         reply_media = ThreadsParser._to_refs(post.reply_to.media if post.reply_to else None)
         media.extend(reply_media)
-        quote = ThreadsParser._build_quote(post)
+        # 投票按**占位符出现顺序**收集: 被回复帖(若有) → 主帖 —— 与正文里的顺序一致。
+        # 索引纪律: ``result.polls[i]`` 对应正文里第 i 个 ``{{poll:N}}``。
+        reply_has_poll = ThreadsParser._has_poll(post.reply_to)
+        main_has_poll = ThreadsParser._has_poll(post)
+        polls = [
+            *([ThreadsParser._to_result_poll(post.reply_to)] if reply_has_poll else []),
+            *([ThreadsParser._to_result_poll(post)] if main_has_poll else []),
+        ]
+        # reply 块在正文最前 ⇒ 有它才有索引 0; 主帖占位符排在正文之后
+        quote = ThreadsParser._build_quote(post, poll_index=0 if reply_has_poll else None)
         # 帖子附带的**长文块**（caption 底下的"阅读更多"内容）渲染成**引用块**,
         # 排在正文之后（用户要求:「这个长文改成引用块」）。走公共 helper ——
         # 与其它平台的引用块同形（整块斜体）。
         snippet_quote = format_quote_block(post.snippet) if post.snippet else ""
-        # 帖子附带的**投票**（caption 下方的贴纸）渲染成 markdown 表格,
-        # 摆在正文之后、长文引用块之前（与 twitter 的投票同一形态与位置）。
-        poll_table = ThreadsParser._build_poll(post)
+        # 帖子附带的**投票**（caption 下方的贴纸）在正文里放占位符行,
+        # 摆在正文之后、长文引用块之前（与 twitter 的投票同一位置）。
+        poll_placeholder = ThreadsParser._poll_placeholder(
+            post, 1 if (reply_has_poll and main_has_poll) else (0 if main_has_poll else None)
+        )
         # 引用块的角色按出现顺序声明: 被回复帖在前（reply），长文块在后（quoted）——
         # 渲染层据此归位，不靠位置猜。
         roles = (["reply"] if quote else []) + (["quoted"] if snippet_quote else [])
-        # 四段按序拼接: 被回复帖引用块 → caption 正文 → 投票表格 → 长文引用块。
+        # 四段按序拼接: 被回复帖引用块 → caption 正文 → 投票占位符 → 长文引用块。
         # 每段各自 strip（``format_quote_block`` 末尾自带空行，直接 join 会堆出多余空行）。
         content = "\n\n".join(
-            p for p in (quote.strip(), post.content.strip(), poll_table, snippet_quote.strip()) if p
+            p for p in (quote.strip(), post.content.strip(), poll_placeholder, snippet_quote.strip()) if p
         )
         return MultimediaParseResult(
             content=content,
@@ -56,37 +75,34 @@ class ThreadsParser(BaseParser):
             reply_media_count=len(reply_media),
             # 引用块的角色（被回复帖在最前）—— 渲染层据此归位媒体, 不再靠位置
             quote_roles=roles,
+            polls=polls,
         )
 
     @staticmethod
-    def _poll_cell(text: str) -> str:
-        """表格单元格转义 —— 选项文案里的 ``|`` 会把列切断。"""
-        return text.replace("|", "\\|")
+    def _has_poll(post: ThreadsPost | None) -> bool:
+        """这条帖有没有投票 (有选项才算)。"""
+        return bool(post and post.poll and post.poll.choices)
 
     @staticmethod
-    def _build_poll(post: ThreadsPost) -> str:
-        """投票 -> markdown 表格, 没有投票时返回空串。
+    def _poll_placeholder(post: ThreadsPost, index: int | None) -> str:
+        """投票 -> 正文里独立一行的占位符 ``{{poll:N}}``, 没有投票 (或索引未知) 时返回空串。
 
-        形态与 twitter / linux.do 的投票一致（选项 / 票数 / 占比三列）——
-        表格由渲染层转成服务端的 Table 块。
-
-        占比按**总票数**算; 一票都还没有时占比记 0%, 不抛错。
-
-        选项文案里的 ``|`` 要转义 —— 否则会把表格的列切断。
+        **lib 只输出占位符**: 「选项/票数/占比」那套文案由渲染层按用户语言拼装
+        (``result.polls`` 里带结构化数据)。
         """
-        poll: ThreadsPoll | None = post.poll
-        if not poll or not poll.choices:
+        if not ThreadsParser._has_poll(post) or index is None:
             return ""
-        total = sum(count for _, count in poll.choices)
-        rows = [
-            "| 选项 | 票数 | 占比 |",
-            "| --- | --- | --- |",
-        ]
-        rows.extend(
-            f"| {ThreadsParser._poll_cell(label)} | {count} | {round(count * 100 / total) if total else 0}% |"
-            for label, count in poll.choices
+        return f"{{{{poll:{index}}}}}"
+
+    @staticmethod
+    def _to_result_poll(post: ThreadsPost | None) -> Poll:
+        """帖子的投票 -> 结构化 ``Poll`` (选项与票数照平台给的原样)。"""
+        choices = post.poll.choices if post and post.poll else []
+        return Poll(
+            options=[PollOption(text=text, count=count) for text, count in choices],
+            total_votes=sum(count for _, count in choices),
+            is_finished=bool(post.poll.is_finished) if post and post.poll else False,
         )
-        return "\n".join(rows)
 
     @staticmethod
     def _to_refs(raw: "ThreadsMedia | list[ThreadsMedia] | None") -> list[AnyMediaRef]:
@@ -111,16 +127,20 @@ class ThreadsParser(BaseParser):
         return out
 
     @staticmethod
-    def _build_quote(post: ThreadsPost) -> str:
-        """把被回复的帖子渲染成引用块 (排版统一由公共 helper 决定)."""
+    def _build_quote(post: ThreadsPost, poll_index: int | None = None) -> str:
+        """把被回复的帖子渲染成引用块 (排版统一由公共 helper 决定).
+
+        :param poll_index: 被回复帖的 poll 占位符索引 (``{{poll:N}}``); 由 ``_do_parse``
+            按「占位符在正文里的出现顺序」分配 (reply 块在最前 ⇒ 索引 0)。
+        """
         reply = post.reply_to
         if not reply:
             return ""
         # 投票跟着**它所属的那条帖**的正文走 —— 被回复帖带投票时,
-        # 表格渲染在它自己的引用块里（与 twitter 的处理一致）。
+        # 占位符渲染在它自己的引用块里（与 twitter 的处理一致）。
         body = reply.content or ""
-        if poll_table := ThreadsParser._build_poll(reply):
-            body = f"{body}\n\n{poll_table}"
+        if placeholder := ThreadsParser._poll_placeholder(reply, poll_index):
+            body = f"{body}\n\n{placeholder}"
         return format_quote_block(
             body,
             format_author_link(
