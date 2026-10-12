@@ -1,0 +1,536 @@
+{
+ "data": {
+  "data": {
+   "edges": [
+    {
+     "node": {
+      "header": null,
+      "thread_items": [
+       {
+        "view_replies_cta_string": "Show replies",
+        "reply_facepile_users": [],
+        "post": {
+         "pk": "4006200659913898054",
+         "user": {
+          "profile_pic_url": "https://scontent-icn2-1.cdninstagram.com/v/t51.82787-19/685326420_17963020599100096_8309473742355190520_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-icn2-1.cdninstagram.com&_nc_cat=104&_nc_oc=Q6cZ2gHOgYczPdkZlAFF-g67uLpfYsYWBzieVuyE56c2U3d677N2X6RqqszXrCVl9wsIb_g&_nc_ohc=sy_4qdLW_ocQ7kNvwHxLPWP&_nc_gid=XQ9AnE6EdJkG7T8f-PH4rA&edm=ALvRx_oBAAAA&ccb=7-5&oh=00_AQPRUokF41b0egZ32-aCX563nytMwGaHezEhzMS0JtkyGw&oe=6AD27421&_nc_sid=ecb15b",
+          "id": "63086020095",
+          "pk": "63086020095",
+          "friendship_status": null,
+          "username": "snowmaple_official",
+          "interop_messaging_user_fbid": null,
+          "full_name": "雪楓Yuki",
+          "transparency_label": null,
+          "transparency_product": null,
+          "transparency_product_enabled": false,
+          "is_verified": false,
+          "has_onboarded_to_text_post_app": true,
+          "text_post_app_is_private": false
+         },
+         "id": "4006200659913898054_63086020095",
+         "text_post_app_info": {
+          "ghost_post_exp_time_ms": null,
+          "is_ghost_post": false,
+          "reply_approval_info": {
+           "hidden_reply_reason": null,
+           "pending_reply_status": null,
+           "pending_reply_count": null,
+           "ignored_reply_count": null
+          },
+          "hush_info": null,
+          "id": "XDTTextPostAppMediaInfo:17930847582164914",
+          "show_header_follow": false,
+          "self_thread_info": null,
+          "is_spoiler_media": false,
+          "is_markup": false,
+          "ghost_post_approximate_like_count_str": null,
+          "ghost_post_reply_type": null,
+          "ghost_post_approximate_reply_count_str": null,
+          "direct_reply_count": 2,
+          "repost_count": 0,
+          "quote_count": 0,
+          "reshare_count": null,
+          "attachment_tombstone_info": null,
+          "custom_feed_preview_info": null,
+          "platform_podcast_episode_info": null,
+          "platform_podcast_info": null,
+          "link_preview_attachment": null,
+          "link_preview_response": null,
+          "linked_inline_media": null,
+          "snippet_attachment_info": null,
+          "special_effects_enabled_str": "",
+          "text_fragments": {
+           "fragments": [
+            {
+             "fragment_type": "plaintext",
+             "link_fragment": null,
+             "mention_fragment": null,
+             "plaintext": "一般的には、「相反する」の読み方はなんですか？",
+             "inline_sticker_fragment": null,
+             "linkified_web_url": null,
+             "linkified_in_app_url": null,
+             "styling_info": null
+            }
+           ]
+          },
+          "can_reply": false,
+          "share_info": {
+           "quoted_attachment_author_attribution_allowed": true,
+           "quoted_attachment_post_unavailable": false,
+           "quoted_attachment_post": null,
+           "quoted_post": null,
+           "reposted_post": null
+          },
+          "is_reply": false,
+          "reply_to_author": null,
+          "root_post_author": null,
+          "reply_control": "everyone",
+          "private_reply_partner": null,
+          "self_thread_count": 0,
+          "tag_header": {
+           "display_name": "日文學習",
+           "id": "18410042275004307",
+           "is_community": false,
+           "tag_cluster_name": "日文學習",
+           "community_emoji": null
+          },
+          "is_liked_by_root_author": false,
+          "pinned_post_info": {
+           "is_pinned_to_parent_post": false,
+           "is_pinned_to_profile": false
+          },
+          "related_trends_info": null,
+          "is_post_unavailable": false,
+          "post_unavailable_reason": null,
+          "post_tombstone_info": null,
+          "can_private_reply": false,
+          "gen_ai_reply_bot_on_media_deny_reason": "UNAVAILABLE",
+          "fediverse_info": null,
+          "is_reply_approval_enabled": null
+         },
+         "logging_info_token": null,
+         "is_paid_partnership": null,
+         "audio": null,
+         "caption": {
+          "text": "一般的には、「相反する」の読み方はなんですか？",
+          "has_translation": true,
+          "pk": "17930847585164914",
+          "text_translation": null
+         },
+         "caption_is_edited": false,
+         "transcription_data": null,
+         "carousel_media": null,
+         "code": "DeY4kZBGnhG",
+         "image_versions2": {
+          "candidates": []
+         },
+         "original_height": 612,
+         "original_width": 612,
+         "accessibility_caption": null,
+         "usertags": null,
+         "video_versions": null,
+         "has_audio": null,
+         "media_type": 19,
+         "caption_add_on": {
+          "poll": {
+           "__typename": "XDTPollSticker",
+           "expires_at": 1791882759,
+           "finished": false,
+           "tallies": [
+            {
+             "count": 11,
+             "text": "あいはんする"
+            },
+            {
+             "count": 8,
+             "text": "そうはんする"
+            }
+           ],
+           "viewer_can_vote": false,
+           "viewer_is_owner": false,
+           "viewer_vote": null,
+           "poll_id": "17906331861593035",
+           "id": "polling_sticker_vibrant"
+          }
+         },
+         "like_count": 0,
+         "has_viewer_saved": null,
+         "giphy_media_info": null,
+         "text_app_glimmer_post_info": null,
+         "original_lang_for_translations": null,
+         "detected_language": "ja",
+         "media_overlay_info": null,
+         "metaPlace": null,
+         "meta_place": null,
+         "gen_ai_detection_method": null,
+         "audience": null,
+         "taken_at": 1791796356,
+         "organic_tracking_token": "eyJ2ZXJzaW9uIjo1LCJwYXlsb2FkIjp7ImlzX2FuYWx5dGljc190cmFja2VkIjpmYWxzZSwidXVpZCI6IjJhMWVlYWQ0NzQ3ZjRkN2JiOGI1YTU1ZTI3Yjk5M2ZjNDAwNjIwMDY1OTkxMzg5ODA1NCJ9LCJzaWduYXR1cmUiOiIifQ==",
+         "__token": null,
+         "triage_comments": null,
+         "canonical_url": null,
+         "seo_ocr_for_related_post": null,
+         "seo_transcript_for_related_post": null,
+         "like_and_view_counts_disabled": false,
+         "is_fb_only": null,
+         "is_internal_only": null,
+         "text_app_music_info": null
+        },
+        "can_inline_expand_below": false,
+        "inline_expansion_info": null,
+        "parent_post_unavailable_reason": null
+       }
+      ],
+      "thread_type": "thread",
+      "id": "4006200659913898054",
+      "__typename": "XDTThread"
+     },
+     "cursor": ""
+    },
+    {
+     "node": {
+      "header": null,
+      "thread_items": [
+       {
+        "view_replies_cta_string": "Show replies",
+        "reply_facepile_users": [],
+        "post": {
+         "pk": "4006200660408824895",
+         "user": {
+          "profile_pic_url": "https://scontent-icn2-1.cdninstagram.com/v/t51.82787-19/685326420_17963020599100096_8309473742355190520_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-icn2-1.cdninstagram.com&_nc_cat=104&_nc_oc=Q6cZ2gHOgYczPdkZlAFF-g67uLpfYsYWBzieVuyE56c2U3d677N2X6RqqszXrCVl9wsIb_g&_nc_ohc=sy_4qdLW_ocQ7kNvwHxLPWP&_nc_gid=XQ9AnE6EdJkG7T8f-PH4rA&edm=ALvRx_oBAAAA&ccb=7-5&oh=00_AQPRUokF41b0egZ32-aCX563nytMwGaHezEhzMS0JtkyGw&oe=6AD27421&_nc_sid=ecb15b",
+          "id": "63086020095",
+          "pk": "63086020095",
+          "friendship_status": null,
+          "username": "snowmaple_official",
+          "interop_messaging_user_fbid": null,
+          "full_name": "雪楓Yuki",
+          "transparency_label": null,
+          "transparency_product": null,
+          "transparency_product_enabled": false,
+          "is_verified": false,
+          "has_onboarded_to_text_post_app": true,
+          "text_post_app_is_private": false
+         },
+         "id": "4006200660408824895_63086020095",
+         "text_post_app_info": {
+          "ghost_post_exp_time_ms": null,
+          "is_ghost_post": false,
+          "reply_approval_info": {
+           "hidden_reply_reason": null,
+           "pending_reply_status": null,
+           "pending_reply_count": null,
+           "ignored_reply_count": null
+          },
+          "hush_info": null,
+          "id": "XDTTextPostAppMediaInfo:17902493595606280",
+          "show_header_follow": false,
+          "self_thread_info": null,
+          "is_spoiler_media": false,
+          "is_markup": false,
+          "ghost_post_approximate_like_count_str": null,
+          "ghost_post_reply_type": null,
+          "ghost_post_approximate_reply_count_str": null,
+          "direct_reply_count": 0,
+          "repost_count": 0,
+          "quote_count": 0,
+          "reshare_count": null,
+          "attachment_tombstone_info": null,
+          "custom_feed_preview_info": null,
+          "platform_podcast_episode_info": null,
+          "platform_podcast_info": null,
+          "link_preview_attachment": null,
+          "link_preview_response": null,
+          "linked_inline_media": null,
+          "snippet_attachment_info": null,
+          "special_effects_enabled_str": "",
+          "text_fragments": {
+           "fragments": [
+            {
+             "fragment_type": "plaintext",
+             "link_fragment": null,
+             "mention_fragment": null,
+             "plaintext": "正解は「あいはんする」です。\n\n相反だけなら「そうはん」。\n相反する、という使い方なら「あいはん」。\n\nそうはんする\n→名詞「相反（そうはん）」に「する」がついた形。法律用語や数学・物理などの専門分野、または「利益相反（りえきそうはん）」のような特定の熟語で使われます。",
+             "inline_sticker_fragment": null,
+             "linkified_web_url": null,
+             "linkified_in_app_url": null,
+             "styling_info": null
+            }
+           ]
+          },
+          "can_reply": false,
+          "share_info": {
+           "quoted_attachment_author_attribution_allowed": true,
+           "quoted_attachment_post_unavailable": false,
+           "quoted_attachment_post": null,
+           "quoted_post": null,
+           "reposted_post": null
+          },
+          "is_reply": true,
+          "reply_to_author": null,
+          "root_post_author": null,
+          "reply_control": "everyone",
+          "private_reply_partner": null,
+          "self_thread_count": 0,
+          "tag_header": {
+           "display_name": "日文學習",
+           "id": "18410042275004307",
+           "is_community": false,
+           "tag_cluster_name": "日文學習",
+           "community_emoji": null
+          },
+          "is_liked_by_root_author": false,
+          "pinned_post_info": {
+           "is_pinned_to_parent_post": false,
+           "is_pinned_to_profile": false
+          },
+          "related_trends_info": null,
+          "is_post_unavailable": false,
+          "post_unavailable_reason": null,
+          "post_tombstone_info": null,
+          "can_private_reply": false,
+          "gen_ai_reply_bot_on_media_deny_reason": "UNAVAILABLE",
+          "fediverse_info": null,
+          "is_reply_approval_enabled": null
+         },
+         "logging_info_token": null,
+         "is_paid_partnership": null,
+         "audio": null,
+         "caption": {
+          "text": "正解は「あいはんする」です。\n\n相反だけなら「そうはん」。\n相反する、という使い方なら「あいはん」。\n\nそうはんする\n→名詞「相反（そうはん）」に「する」がついた形。法律用語や数学・物理などの専門分野、または「利益相反（りえきそうはん）」のような特定の熟語で使われます。",
+          "has_translation": true,
+          "pk": "17902495257606280",
+          "text_translation": null
+         },
+         "caption_is_edited": false,
+         "transcription_data": null,
+         "carousel_media": null,
+         "code": "DeY4kZemnQ_",
+         "image_versions2": {
+          "candidates": []
+         },
+         "original_height": 612,
+         "original_width": 612,
+         "accessibility_caption": null,
+         "usertags": null,
+         "video_versions": null,
+         "has_audio": null,
+         "media_type": 19,
+         "caption_add_on": null,
+         "like_count": 0,
+         "has_viewer_saved": null,
+         "giphy_media_info": null,
+         "text_app_glimmer_post_info": null,
+         "original_lang_for_translations": null,
+         "detected_language": "ja",
+         "media_overlay_info": null,
+         "metaPlace": null,
+         "meta_place": null,
+         "gen_ai_detection_method": null,
+         "audience": null,
+         "taken_at": 1791796356,
+         "organic_tracking_token": "eyJ2ZXJzaW9uIjo1LCJwYXlsb2FkIjp7ImlzX2FuYWx5dGljc190cmFja2VkIjpmYWxzZSwidXVpZCI6IjJhMWVlYWQ0NzQ3ZjRkN2JiOGI1YTU1ZTI3Yjk5M2ZjNDAwNjIwMDY2MDQwODgyNDg5NSJ9LCJzaWduYXR1cmUiOiIifQ==",
+         "__token": null,
+         "triage_comments": null,
+         "canonical_url": null,
+         "seo_ocr_for_related_post": null,
+         "seo_transcript_for_related_post": null,
+         "like_and_view_counts_disabled": false,
+         "is_fb_only": null,
+         "is_internal_only": null,
+         "text_app_music_info": null
+        },
+        "can_inline_expand_below": false,
+        "inline_expansion_info": null,
+        "parent_post_unavailable_reason": null
+       }
+      ],
+      "thread_type": "thread",
+      "id": "4006200660408824895",
+      "__typename": "XDTThread"
+     },
+     "cursor": ""
+    },
+    {
+     "node": {
+      "header": null,
+      "thread_items": [
+       {
+        "view_replies_cta_string": "Show replies",
+        "reply_facepile_users": [],
+        "post": {
+         "pk": "4006203261481273203",
+         "user": {
+          "profile_pic_url": "https://scontent-icn2-1.cdninstagram.com/v/t51.82787-19/685326420_17963020599100096_8309473742355190520_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-icn2-1.cdninstagram.com&_nc_cat=104&_nc_oc=Q6cZ2gHOgYczPdkZlAFF-g67uLpfYsYWBzieVuyE56c2U3d677N2X6RqqszXrCVl9wsIb_g&_nc_ohc=sy_4qdLW_ocQ7kNvwHxLPWP&_nc_gid=XQ9AnE6EdJkG7T8f-PH4rA&edm=ALvRx_oBAAAA&ccb=7-5&oh=00_AQPRUokF41b0egZ32-aCX563nytMwGaHezEhzMS0JtkyGw&oe=6AD27421&_nc_sid=ecb15b",
+          "id": "63086020095",
+          "pk": "63086020095",
+          "friendship_status": null,
+          "username": "snowmaple_official",
+          "interop_messaging_user_fbid": null,
+          "full_name": "雪楓Yuki",
+          "transparency_label": null,
+          "transparency_product": null,
+          "transparency_product_enabled": false,
+          "is_verified": false,
+          "has_onboarded_to_text_post_app": true,
+          "text_post_app_is_private": false
+         },
+         "id": "4006203261481273203_63086020095",
+         "text_post_app_info": {
+          "ghost_post_exp_time_ms": null,
+          "is_ghost_post": false,
+          "reply_approval_info": {
+           "hidden_reply_reason": null,
+           "pending_reply_status": null,
+           "pending_reply_count": null,
+           "ignored_reply_count": null
+          },
+          "hush_info": null,
+          "id": "XDTTextPostAppMediaInfo:18115954066821593",
+          "show_header_follow": false,
+          "self_thread_info": null,
+          "is_spoiler_media": false,
+          "is_markup": false,
+          "ghost_post_approximate_like_count_str": null,
+          "ghost_post_reply_type": null,
+          "ghost_post_approximate_reply_count_str": null,
+          "direct_reply_count": 0,
+          "repost_count": 0,
+          "quote_count": 0,
+          "reshare_count": null,
+          "attachment_tombstone_info": null,
+          "custom_feed_preview_info": null,
+          "platform_podcast_episode_info": null,
+          "platform_podcast_info": null,
+          "link_preview_attachment": null,
+          "link_preview_response": null,
+          "linked_inline_media": null,
+          "snippet_attachment_info": null,
+          "special_effects_enabled_str": "",
+          "text_fragments": {
+           "fragments": [
+            {
+             "fragment_type": "plaintext",
+             "link_fragment": null,
+             "mention_fragment": null,
+             "plaintext": "「相反（あいはん）している因果と応報\n誠実さんはくたびれ儲け」",
+             "inline_sticker_fragment": null,
+             "linkified_web_url": null,
+             "linkified_in_app_url": null,
+             "styling_info": null
+            }
+           ]
+          },
+          "can_reply": false,
+          "share_info": {
+           "quoted_attachment_author_attribution_allowed": true,
+           "quoted_attachment_post_unavailable": false,
+           "quoted_attachment_post": null,
+           "quoted_post": null,
+           "reposted_post": null
+          },
+          "is_reply": true,
+          "reply_to_author": null,
+          "root_post_author": null,
+          "reply_control": "everyone",
+          "private_reply_partner": null,
+          "self_thread_count": 0,
+          "tag_header": {
+           "display_name": "日文學習",
+           "id": "18410042275004307",
+           "is_community": false,
+           "tag_cluster_name": "日文學習",
+           "community_emoji": null
+          },
+          "is_liked_by_root_author": false,
+          "pinned_post_info": {
+           "is_pinned_to_parent_post": false,
+           "is_pinned_to_profile": false
+          },
+          "related_trends_info": null,
+          "is_post_unavailable": false,
+          "post_unavailable_reason": null,
+          "post_tombstone_info": null,
+          "can_private_reply": false,
+          "gen_ai_reply_bot_on_media_deny_reason": "UNAVAILABLE",
+          "fediverse_info": null,
+          "is_reply_approval_enabled": null
+         },
+         "logging_info_token": null,
+         "is_paid_partnership": null,
+         "audio": null,
+         "caption": {
+          "text": "「相反（あいはん）している因果と応報\n誠実さんはくたびれ儲け」",
+          "has_translation": true,
+          "pk": "18115954069821593",
+          "text_translation": null
+         },
+         "caption_is_edited": false,
+         "transcription_data": null,
+         "carousel_media": null,
+         "code": "DeY5KP6mkdz",
+         "image_versions2": {
+          "candidates": []
+         },
+         "original_height": 612,
+         "original_width": 612,
+         "accessibility_caption": null,
+         "usertags": null,
+         "video_versions": null,
+         "has_audio": null,
+         "media_type": 19,
+         "caption_add_on": null,
+         "like_count": 0,
+         "has_viewer_saved": null,
+         "giphy_media_info": null,
+         "text_app_glimmer_post_info": null,
+         "original_lang_for_translations": null,
+         "detected_language": "ja",
+         "media_overlay_info": null,
+         "metaPlace": null,
+         "meta_place": null,
+         "gen_ai_detection_method": null,
+         "audience": null,
+         "taken_at": 1791796666,
+         "organic_tracking_token": "eyJ2ZXJzaW9uIjo1LCJwYXlsb2FkIjp7ImlzX2FuYWx5dGljc190cmFja2VkIjpmYWxzZSwidXVpZCI6IjJhMWVlYWQ0NzQ3ZjRkN2JiOGI1YTU1ZTI3Yjk5M2ZjNDAwNjIwMzI2MTQ4MTI3MzIwMyJ9LCJzaWduYXR1cmUiOiIifQ==",
+         "__token": null,
+         "triage_comments": null,
+         "canonical_url": null,
+         "seo_ocr_for_related_post": null,
+         "seo_transcript_for_related_post": null,
+         "like_and_view_counts_disabled": false,
+         "is_fb_only": null,
+         "is_internal_only": null,
+         "text_app_music_info": {
+          "music_consumable_video": {
+           "__typename": "XDTMusicConsumableVideo"
+          }
+         }
+        },
+        "can_inline_expand_below": false,
+        "inline_expansion_info": null,
+        "parent_post_unavailable_reason": null
+       }
+      ],
+      "thread_type": "thread",
+      "id": "4006203261481273203",
+      "__typename": "XDTThread"
+     },
+     "cursor": ""
+    }
+   ],
+   "page_info": {
+    "has_next_page": true,
+    "has_previous_page": false,
+    "end_cursor": null,
+    "start_cursor": null
+   }
+  }
+ },
+ "extensions": {
+  "is_final": true,
+  "server_metadata": {
+   "request_start_time_ms": 1791798141411,
+   "time_at_flush_ms": 1791798141663
+  }
+ },
+ "status": "ok"
+}

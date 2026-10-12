@@ -233,6 +233,28 @@ class ThreadsMedia:
 
 
 @dataclass
+class ThreadsPoll:
+    """帖子附带的投票（``caption_add_on.poll`` 里的 ``XDTPollSticker``）。
+
+    实测结构（2026-10-12, 真实响应见 ``test/fixtures/threads_poll.json``）::
+
+        post["caption_add_on"]["poll"] = {
+            "__typename": "XDTPollSticker",
+            "tallies": [{"count": 11, "text": "あいはんする"},
+                        {"count": 8,  "text": "そうはんする"}],
+            "finished": false,
+            "viewer_can_vote": false,
+            ...
+        }
+
+    票数就在同一次响应里（``tallies[].count``）—— 不需要额外请求。
+    """
+
+    choices: list[tuple[str, int]]
+    is_finished: bool = False
+
+
+@dataclass
 class ThreadsPost:
     content: str
     media: ThreadsMedia | list[ThreadsMedia] | None = None
@@ -245,6 +267,8 @@ class ThreadsPost:
     #: 帖子附带的**长文块**（caption 底下的"阅读更多"内容）—— 与 caption 分开存，
     #: 让 parser 决定它的渲染形态（现在是引用块，见 threads parser）。
     snippet: str = ""
+    #: 帖子附带的**投票**（caption 下方的贴纸）—— 渲染形态（表格）由 parser 决定。
+    poll: ThreadsPoll | None = None
 
     @classmethod
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
@@ -275,7 +299,38 @@ class ThreadsPost:
             view_count=to_int(post.get("view_count")),
             like_count=to_int(post.get("like_count")),
             snippet=snippet,
+            poll=cls._parse_poll(post),
         )
+
+    @staticmethod
+    def _parse_poll(post: dict[str, Any]) -> ThreadsPoll | None:
+        """投票 —— 数据在 ``post["caption_add_on"]["poll"]`` 里, 不在 caption 上。
+
+        与 ``snippet_attachment_info`` 同属"caption 底下的附加内容", 但键不同:
+        投票是 ``caption_add_on.poll``（实测 ``__typename`` = ``XDTPollSticker``）。
+        ``tallies`` 是 ``[{"count": N, "text": "选项"}]`` —— **票数就在同一次
+        响应里**（不需要额外请求, 规则同 linux.do 的 ``post["polls"]``）。
+
+        缺失票数按 0 算（选项本身仍要显示）；没有投票、结构异常时返回 ``None``。
+        """
+        add_on = post.get("caption_add_on")
+        if not isinstance(add_on, dict):
+            return None
+        poll = add_on.get("poll")
+        if not isinstance(poll, dict):
+            return None
+        tallies = poll.get("tallies") or []
+        choices: list[tuple[str, int]] = []
+        for item in tallies:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            choices.append((text, to_int(item.get("count")) or 0))
+        if not choices:
+            return None
+        return ThreadsPoll(choices=choices, is_finished=bool(poll.get("finished")))
 
     @staticmethod
     def _snippet_text(post: dict[str, Any]) -> str:
@@ -395,5 +450,6 @@ __all__ = [
     "ThreadsAPIError",
     "ThreadsMedia",
     "ThreadsMediaType",
+    "ThreadsPoll",
     "ThreadsPost",
 ]

@@ -1,4 +1,11 @@
-from ...provider_api.threads import ThreadsAPI, ThreadsAPIError, ThreadsMedia, ThreadsMediaType, ThreadsPost
+from ...provider_api.threads import (
+    ThreadsAPI,
+    ThreadsAPIError,
+    ThreadsMedia,
+    ThreadsMediaType,
+    ThreadsPoll,
+    ThreadsPost,
+)
 from ...types import AnyMediaRef, ImageRef, MultimediaParseResult, ParseError, Platform, VideoRef
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
@@ -26,12 +33,17 @@ class ThreadsParser(BaseParser):
         # 排在正文之后（用户要求:「这个长文改成引用块」）。走公共 helper ——
         # 与其它平台的引用块同形（整块斜体）。
         snippet_quote = format_quote_block(post.snippet) if post.snippet else ""
+        # 帖子附带的**投票**（caption 下方的贴纸）渲染成 markdown 表格,
+        # 摆在正文之后、长文引用块之前（与 twitter 的投票同一形态与位置）。
+        poll_table = ThreadsParser._build_poll(post)
         # 引用块的角色按出现顺序声明: 被回复帖在前（reply），长文块在后（quoted）——
         # 渲染层据此归位，不靠位置猜。
         roles = (["reply"] if quote else []) + (["quoted"] if snippet_quote else [])
-        # 三段按序拼接: 被回复帖引用块 → caption 正文 → 长文引用块。
+        # 四段按序拼接: 被回复帖引用块 → caption 正文 → 投票表格 → 长文引用块。
         # 每段各自 strip（``format_quote_block`` 末尾自带空行，直接 join 会堆出多余空行）。
-        content = "\n\n".join(p for p in (quote.strip(), post.content.strip(), snippet_quote.strip()) if p)
+        content = "\n\n".join(
+            p for p in (quote.strip(), post.content.strip(), poll_table, snippet_quote.strip()) if p
+        )
         return MultimediaParseResult(
             content=content,
             media=media,
@@ -45,6 +57,36 @@ class ThreadsParser(BaseParser):
             # 引用块的角色（被回复帖在最前）—— 渲染层据此归位媒体, 不再靠位置
             quote_roles=roles,
         )
+
+    @staticmethod
+    def _poll_cell(text: str) -> str:
+        """表格单元格转义 —— 选项文案里的 ``|`` 会把列切断。"""
+        return text.replace("|", "\\|")
+
+    @staticmethod
+    def _build_poll(post: ThreadsPost) -> str:
+        """投票 -> markdown 表格, 没有投票时返回空串。
+
+        形态与 twitter / linux.do 的投票一致（选项 / 票数 / 占比三列）——
+        表格由渲染层转成服务端的 Table 块。
+
+        占比按**总票数**算; 一票都还没有时占比记 0%, 不抛错。
+
+        选项文案里的 ``|`` 要转义 —— 否则会把表格的列切断。
+        """
+        poll: ThreadsPoll | None = post.poll
+        if not poll or not poll.choices:
+            return ""
+        total = sum(count for _, count in poll.choices)
+        rows = [
+            "| 选项 | 票数 | 占比 |",
+            "| --- | --- | --- |",
+        ]
+        rows.extend(
+            f"| {ThreadsParser._poll_cell(label)} | {count} | {round(count * 100 / total) if total else 0}% |"
+            for label, count in poll.choices
+        )
+        return "\n".join(rows)
 
     @staticmethod
     def _to_refs(raw: "ThreadsMedia | list[ThreadsMedia] | None") -> list[AnyMediaRef]:
@@ -74,8 +116,13 @@ class ThreadsParser(BaseParser):
         reply = post.reply_to
         if not reply:
             return ""
+        # 投票跟着**它所属的那条帖**的正文走 —— 被回复帖带投票时,
+        # 表格渲染在它自己的引用块里（与 twitter 的处理一致）。
+        body = reply.content or ""
+        if poll_table := ThreadsParser._build_poll(reply):
+            body = f"{body}\n\n{poll_table}"
         return format_quote_block(
-            reply.content or "",
+            body,
             format_author_link(
                 reply.author_name or "",
                 reply.author_handle or "",
