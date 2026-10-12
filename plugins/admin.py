@@ -2,14 +2,15 @@
 
 **两级权限**（2026-10-12）：
 
-- ``/add`` —— 加**白名单普通用户**（写库 ``role=user``）。
-- ``/promote`` / ``/demote`` —— 提升/降级**管理员**（``role=admin``），
+- ``/add`` —— 加**白名单普通用户**（写 ``users.role='user'``）。
+- ``/promote`` / ``/demote`` —— 提升/降级**管理员**（``role='admin'``），
   **仅超管（``.env`` 的 ``ADMIN_USERS``）可用**。
 - 管理命令（``/purge`` ``/list`` ``/del``）—— **管理员及以上**可用
   （白名单普通用户不是管理员）。
 
-**普通解析不受影响** —— 私聊/群解析无身份 gate（任何用户可用）；inline/guest
-走运行时的「与 bot 同群」判定（见 ``plugins/parse/access.py``，不写库）。
+**调用鉴权**（2026-10-12 权限模型）：群内自动匹配不鉴权；非同群调用（私聊 /
+inline / guest）只查本地库白名单（``users.role`` 非空 ∪ 配置超管），见
+``plugins/parse/handlers.py`` / ``inline.py`` / ``guest.py`` 的入口判定。
 """
 
 from pyrogram import Client, filters

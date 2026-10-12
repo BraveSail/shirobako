@@ -9,7 +9,6 @@ from parsehub.types import (
 )
 from parsehub.utils.helpers import strip_spoiler_flag
 from pyrogram import Client, raw, utils
-from pyrogram.enums import ChatType
 from pyrogram.errors import BadRequest
 from pyrogram.types import (
     ChosenInlineResult,
@@ -37,7 +36,6 @@ from plugins.helpers import (
     build_start_text,
     markdown_needs_blocks,
 )
-from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
@@ -52,7 +50,7 @@ from plugins.parse.inline_rich import (
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
-from services import ParseService, SettingsService, UserService
+from services import AdminUserService, ParseService, SettingsService, UserService
 from services.cache import CacheEntry, parse_cache, persistent_cache
 from services.pipeline import ParsePipeline
 from utils.helpers import to_list, with_request_id
@@ -208,10 +206,10 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
 
 
 def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResult:
-    """门禁不通过时返回的结果项 (不解析, 只说明原因)。"""
+    """鉴权不通过时返回的结果项 (不解析, 只说明原因)。"""
     return InlineQueryResultArticle(
         title=_t("无权限"),
-        description=_t("仅限指定群的成员使用"),
+        description=_t("仅限白名单用户使用"),
         input_message_content=InputTextMessageContent(
             _t("无权限"), link_preview_options=LinkPreviewOptions(is_disabled=True)
         ),
@@ -224,14 +222,15 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
             inline_query.from_user.id, inline_query.from_user.language_code
         )
         config = await SettingsService(session).get_config_by_user(inline_query.from_user.id)
+        # **inline 是"非同群调用", 一律鉴权**（2026-10-12 权限模型）: 只认本地库白名单
+        # （``users.role`` 非空 ∪ 配置超管）—— 不再检查"与 bot 同群"; 私聊唤起的 inline
+        # 也一视同仁（以前私聊豁免, 现在同样要白名单）。
+        allowed = await AdminUserService(session).is_whitelisted(inline_query.from_user.id)
 
-    # 门禁: 群/频道里的 inline 要求发起者与 bot 同在白名单群; 私聊里用户是主动找 bot, 不限制
-    if inline_query.chat_type != ChatType.PRIVATE and not await access_gate.is_allowed(
-        cli, inline_query.from_user.id
-    ):
+    if not allowed:
         _t = t_[lang]
         logger.info(
-            f"inline 被门禁拦截: user_id={inline_query.from_user.id}, chat_type={inline_query.chat_type}"
+            f"inline 被拦截(不在白名单): user_id={inline_query.from_user.id}, chat_type={inline_query.chat_type}"
         )
         await answer_inline(inline_query, [build_denied_result(_t)], lang=lang, cache_time=0)
         return

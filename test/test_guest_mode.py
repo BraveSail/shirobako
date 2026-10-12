@@ -1,12 +1,14 @@
-"""guest 查询的入口判定: 门禁 + 纯链接 + 有 query id 才回。
+"""guest 查询的入口判定: 鉴权 + 纯链接 + 有 query id 才回。
 
 guest 是"任何群都能召唤"的入口, 三条前置条件缺一不可。
+**鉴权只查本地库白名单**（2026-10-12 权限模型; 旧"与 bot 同群"的 AccessGate 已删除）。
 实际的解析/发送在 `_answer` 里 (需要真实网络), 这里把它换掉, 只验证入口逻辑。
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from plugins.parse import guest as guest_mod
 
@@ -23,7 +25,6 @@ def _msg(text=None, caption=None, user_id=1879026273, guest_query_id="q1", langu
 
 def _run(msg, allowed=True, locale="zh-hans") -> tuple[AsyncMock, AsyncMock]:
     """跑一次 guest_parse; 返回 (解析路径 _answer, 直发 answer_guest_query)。"""
-    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def fake_session():
@@ -32,14 +33,16 @@ def _run(msg, allowed=True, locale="zh-hans") -> tuple[AsyncMock, AsyncMock]:
     answer = AsyncMock(return_value=True)
     direct = AsyncMock(return_value=SimpleNamespace(inline_message_id="x"))
     cli = SimpleNamespace(answer_guest_query=direct, me=SimpleNamespace(username="shirobakobot"))
+    service = MagicMock()
+    service.is_whitelisted = AsyncMock(return_value=allowed)
     with (
-        patch.object(guest_mod.access_gate, "is_allowed", AsyncMock(return_value=allowed)),
+        patch.object(guest_mod, "AdminUserService", MagicMock(return_value=service)),
         patch.object(guest_mod, "_answer", answer),
         patch.object(guest_mod, "get_session", fake_session),
         patch.object(
             guest_mod,
             "UserService",
-            return_value=SimpleNamespace(ensure_lang=AsyncMock(return_value=locale)),
+            MagicMock(return_value=SimpleNamespace(ensure_lang=AsyncMock(return_value=locale))),
         ),
     ):
         asyncio.run(guest_mod.guest_parse(cli, msg))
@@ -85,7 +88,7 @@ def test_chatter_around_the_link_is_ignored():
 
 
 def test_denied_user_gets_a_permission_reply():
-    """门禁不通过: 不解析, 但要回一条"无权限"说明 (静默会让用户以为 bot 坏了)"""
+    """鉴权不通过: 不解析, 但要回一条"无权限"说明 (静默会让用户以为 bot 坏了)"""
     answer, direct = _run(_msg(text=LINK), allowed=False)
     answer.assert_not_awaited()          # 没走解析
     direct.assert_awaited_once()         # 直接回提示
@@ -99,7 +102,7 @@ def test_missing_guest_query_id_is_ignored():
 
 
 def test_missing_user_is_ignored():
-    """拿不到发起者就无法做门禁判定 → 拒绝 (fail-closed)"""
+    """拿不到发起者就无法做鉴权判定 → 拒绝 (fail-closed)"""
     answer, direct = _run(_msg(text=LINK, user_id=None), allowed=False)
     assert answer.await_count == 0
     direct.assert_awaited_once()

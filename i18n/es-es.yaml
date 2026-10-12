@@ -107,7 +107,6 @@
 9b3dbf3e3f85: Ocultar "Fuente" en la parte inferior
 a3e3b88377c8: Iniciar
 a4acafd79982: Ya está en la lista blanca
-a5eac262447d: Solo para miembros del grupo designado
 ab480060abb1: No mostrar registros de errores
 ad4fff48f141: Sin permiso
 ad66098d7867: Conservar registros de errores
@@ -126,6 +125,7 @@ c4638f9eedae: Eliminado de la lista blanca
 c909e6eb65aa: Porcentaje
 d2282636abc7: Panel de configuración
 d34addb9b2f0: Caché borrada
+d4b153707c28: Solo para usuarios en la lista blanca
 d5631690265c: No se puede reconocer el objetivo de configuración
 d5a73b0c7f2f: Subir
 7a425880c8d8: 'Todas las cachés vaciadas (Redis): {persistent} persistentes · {result} de resultado'

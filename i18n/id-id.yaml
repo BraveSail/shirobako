@@ -106,7 +106,6 @@
 9b3dbf3e3f85: Sembunyikan "Sumber" di bagian bawah
 a3e3b88377c8: Mulai
 a4acafd79982: Sudah ada di daftar putih
-a5eac262447d: Hanya untuk anggota grup yang ditentukan
 ab480060abb1: Jangan tampilkan log kesalahan
 ad4fff48f141: Tidak ada izin
 ad66098d7867: Simpan log kesalahan
@@ -126,6 +125,7 @@ c4638f9eedae: Dihapus dari daftar putih
 c909e6eb65aa: Persentase
 d2282636abc7: Panel konfigurasi
 d34addb9b2f0: Cache dihapus
+d4b153707c28: Hanya untuk pengguna daftar putih
 d5631690265c: Target konfigurasi tidak dikenali
 d5a73b0c7f2f: Unggah
 7a425880c8d8: 'Semua cache dibersihkan (Redis): {persistent} persisten · {result} hasil'

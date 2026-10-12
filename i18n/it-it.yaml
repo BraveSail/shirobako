@@ -107,7 +107,6 @@
 9b3dbf3e3f85: Nascondi "Fonte" in basso
 a3e3b88377c8: Inizia
 a4acafd79982: Già nella whitelist
-a5eac262447d: Solo per i membri del gruppo designato
 ab480060abb1: Non mostrare i log degli errori
 ad4fff48f141: Nessuna autorizzazione
 ad66098d7867: Conserva i log degli errori
@@ -126,6 +125,7 @@ c4638f9eedae: Rimosso dalla whitelist
 c909e6eb65aa: Quota
 d2282636abc7: Pannello di configurazione
 d34addb9b2f0: Cache cancellata
+d4b153707c28: Solo per gli utenti in whitelist
 d5631690265c: Obiettivo di configurazione non riconosciuto
 d5a73b0c7f2f: Carica
 7a425880c8d8: 'Tutte le cache svuotate (Redis): {persistent} persistenti · {result} di risultato'

@@ -107,7 +107,6 @@
 9b3dbf3e3f85: Ocultar "Source" na parte inferior
 a3e3b88377c8: Iniciar
 a4acafd79982: Já está na lista de permissões
-a5eac262447d: Apenas para membros do grupo designado
 ab480060abb1: Não mostrar logs de erro
 ad4fff48f141: Sem permissão
 ad66098d7867: Manter registro de erros
@@ -126,6 +125,7 @@ c4638f9eedae: Removido da lista de permissões
 c909e6eb65aa: Proporção
 d2282636abc7: Painel de configuração
 d34addb9b2f0: Cache limpo
+d4b153707c28: Apenas para usuários na lista de permissões
 d5631690265c: Alvo da configuração não reconhecido
 d5a73b0c7f2f: Enviar
 7a425880c8d8: 'Todos os caches limpos (Redis): {persistent} persistentes · {result} de resultado'

@@ -31,7 +31,6 @@ from db import get_session
 from i18n import t_
 from log import logger
 from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label, markdown_needs_blocks
-from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
@@ -41,7 +40,14 @@ from plugins.parse.inline_rich import (
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
-from services import ParsePipeline, ParseService, SettingsService, StatusReporter, UserService
+from services import (
+    AdminUserService,
+    ParsePipeline,
+    ParseService,
+    SettingsService,
+    StatusReporter,
+    UserService,
+)
 from services.cache import persistent_cache
 from utils.helpers import to_list, with_request_id
 
@@ -368,8 +374,12 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         )
     _t = t_[locale]
 
-    if not await access_gate.is_allowed(cli, user_id):
-        logger.info(f"guest 查询被门禁拦截: from_user={user_id}")
+    # **guest 是"非同群调用", 要鉴权**（2026-10-12 权限模型）: 只认本地库白名单
+    # （``users.role`` 非空 ∪ 配置超管）—— 不再检查"与 bot 同群"（旧 AccessGate）。
+    async with get_session() as session:
+        allowed = await AdminUserService(session).is_whitelisted(user_id)
+    if not allowed:
+        logger.info(f"guest 查询被拦截(不在白名单): from_user={user_id}")
         # 明确回一条"无权限": 静默拒绝会让用户以为 bot 坏了
         await cli.answer_guest_query(guest_query_id, _denied_result(_t("无权限")))
         return

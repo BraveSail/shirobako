@@ -1,4 +1,4 @@
-from .admin_user import AdminUserService, is_admin_user, is_super_admin
+from .admin_user import AdminUserService, is_admin_user, is_super_admin, is_whitelisted_user
 from .cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, parse_cache, persistent_cache
 from .chat import ChatService
 from .forum_topic import ForumTopicService
@@ -21,6 +21,7 @@ __all__ = [
     "AdminUserService",
     "is_admin_user",
     "is_super_admin",
+    "is_whitelisted_user",
     "UserService",
     "ChatService",
     "ForumTopicService",

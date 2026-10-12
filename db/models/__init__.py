@@ -1,4 +1,3 @@
-from db.models.admin_user import AdminUser
 from db.models.cache import Cache
 from db.models.chat import Chat, ChatType
 from db.models.forum_topic import ForumTopic
@@ -13,5 +12,4 @@ __all__ = [
     "Chat",
     "ChatType",
     "SettingsScope",
-    "AdminUser",
 ]

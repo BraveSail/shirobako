@@ -107,7 +107,6 @@
 9b3dbf3e3f85: Ukryj dolny „Źródło”
 a3e3b88377c8: Start
 a4acafd79982: Już na liście dozwolonych
-a5eac262447d: Tylko dla członków wyznaczonej grupy
 ab480060abb1: Nie pokazuj dziennika błędów
 ad4fff48f141: Brak uprawnień
 ad66098d7867: Zachowaj dziennik błędów
@@ -126,6 +125,7 @@ c4638f9eedae: Usunięto z listy dozwolonych
 c909e6eb65aa: Udział
 d2282636abc7: Panel konfiguracji
 d34addb9b2f0: Pamięć podręczna wyczyszczona
+d4b153707c28: Tylko dla użytkowników z białej listy
 d5631690265c: Nie można rozpoznać celu konfiguracji
 d5a73b0c7f2f: Przesyłanie
 7a425880c8d8: 'Wyczyszczono wszystkie pamięci podręczne (Redis): {persistent} trwałych · {result} wyników'

@@ -108,7 +108,6 @@
 9b3dbf3e3f85: Untere "Quelle" ausblenden
 a3e3b88377c8: Start
 a4acafd79982: Bereits in der Whitelist
-a5eac262447d: Nur für Mitglieder der festgelegten Gruppe
 ab480060abb1: Fehlerprotokolle nicht anzeigen
 ad4fff48f141: Keine Berechtigung
 ad66098d7867: Fehlerprotokolle behalten
@@ -128,6 +127,7 @@ c4638f9eedae: Von der Whitelist entfernt
 c909e6eb65aa: Anteil
 d2282636abc7: Konfigurationspanel
 d34addb9b2f0: Cache gelöscht
+d4b153707c28: Nur für Nutzer auf der Whitelist
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d5a73b0c7f2f: Hochladen
 7a425880c8d8: 'Alle Caches geleert (Redis): {persistent} persistent · {result} Ergebnis'

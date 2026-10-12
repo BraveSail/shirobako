@@ -4,16 +4,19 @@
 把几件事都钉死:
 - 两级权限: 白名单普通用户 (role=user) **不是**管理员; 管理员 (role=admin) 是;
   超管只认配置;
+- 鉴权判定: ``is_whitelisted`` 认 role 非空（user/admin/超管）; ``role=None`` 的路人 **不是**;
 - ``/add`` 加的是普通用户; ``/promote`` 提升管理员 (**仅超管可调**);
 - ``/add`` 回复转发消息时取的是**原转发者** (私聊里最容易加错人的地方);
 - ``/purge`` 用的是 ``get_raw_url`` 那把 key (拿原始输入去清会 hash 对不上、清不掉)。
+
+数据层: 白名单角色现在存 ``users.role`` 列（2026-10-12 从独立 admin_users 表并入）。
 """
 
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from db.models.admin_user import ROLE_ADMIN, ROLE_USER
+from db.models.user import ROLE_ADMIN, ROLE_USER
 from services.admin_user import AdminUserService
 
 CONFIGURED = 1879026273
@@ -21,14 +24,14 @@ FROM_DB = 111222333
 STRANGER = 999888777
 
 
-def _repo(*, existing: int | None = None, rows: list | None = None, role: str = ROLE_USER) -> MagicMock:
+def _repo(*, existing: int | None = None, rows: list | None = None, role: str | None = ROLE_USER) -> MagicMock:
     repo = MagicMock()
     repo.get_by_tg_user_id = AsyncMock(
         return_value=SimpleNamespace(telegram_user_id=existing, role=role) if existing else None
     )
-    repo.add = AsyncMock(return_value=SimpleNamespace(telegram_user_id=0, role=role))
+    repo.ensure_role = AsyncMock(return_value=SimpleNamespace(telegram_user_id=existing, role=role))
     repo.set_role = AsyncMock(return_value=SimpleNamespace(telegram_user_id=existing, role=role))
-    repo.list_all = AsyncMock(
+    repo.list_with_role = AsyncMock(
         return_value=[SimpleNamespace(telegram_user_id=uid, role=r) for uid, r in (rows or [])]
     )
     return repo
@@ -69,8 +72,23 @@ def test_a_db_plain_user_is_not_an_admin():
 
 
 def test_a_db_plain_user_is_still_whitelisted():
-    """但他是白名单成员（名单语义）"""
+    """但他是白名单成员（鉴权语义：role 非空就放行）"""
     repo = _repo(existing=FROM_DB, role=ROLE_USER)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
+        assert asyncio.run(svc.is_whitelisted(FROM_DB)) is True
+
+
+def test_a_db_row_without_a_role_is_not_whitelisted():
+    """``role=None``（只是用过 bot 的普通路人）**不是**白名单 —— 鉴权边界"""
+    repo = _repo(existing=FROM_DB, role=None)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
+        assert asyncio.run(svc.is_whitelisted(FROM_DB)) is False
+
+
+def test_an_admin_is_whitelisted():
+    repo = _repo(existing=FROM_DB, role=ROLE_ADMIN)
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
         assert asyncio.run(svc.is_whitelisted(FROM_DB)) is True
@@ -108,9 +126,9 @@ def test_adding_a_new_user_writes_to_the_db():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
         assert asyncio.run(svc.add(STRANGER, added_by=CONFIGURED)) is True
-    repo.add.assert_awaited_once()
+    repo.ensure_role.assert_awaited_once()
     # **/add 写的必须是 role=user**（普通用户），不是 admin
-    assert repo.add.await_args.kwargs.get("role") == ROLE_USER
+    assert repo.ensure_role.await_args.args[1] == ROLE_USER
 
 
 def test_adding_twice_does_not_insert_again():
@@ -118,7 +136,25 @@ def test_adding_twice_does_not_insert_again():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
         assert asyncio.run(svc.add(STRANGER, added_by=CONFIGURED)) is False
-    repo.add.assert_not_awaited()
+    repo.ensure_role.assert_not_awaited()
+
+
+def test_adding_an_admin_does_not_downgrade_him():
+    """对已是管理员的用户调 /add 不降级、不重复 —— 幂等返回 False"""
+    repo = _repo(existing=FROM_DB, role=ROLE_ADMIN)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.add(FROM_DB, added_by=CONFIGURED)) is False
+    repo.ensure_role.assert_not_awaited()
+
+
+def test_adding_a_row_without_role_sets_it():
+    """用户表里已有行但没角色（普通路人）→ 设 role=user"""
+    repo = _repo(existing=STRANGER, role=None)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.add(STRANGER, added_by=CONFIGURED)) is True
+    repo.ensure_role.assert_awaited_once_with(STRANGER, ROLE_USER)
 
 
 def test_a_configured_user_is_not_copied_into_the_db():
@@ -127,7 +163,7 @@ def test_a_configured_user_is_not_copied_into_the_db():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
         assert asyncio.run(svc.add(CONFIGURED, added_by=CONFIGURED)) is False
-    repo.add.assert_not_awaited()
+    repo.ensure_role.assert_not_awaited()
 
 
 # ---------------------------------------------------------------- /promote /demote
@@ -139,8 +175,8 @@ def test_promoting_an_existing_plain_user_upgrades_the_role():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
         assert asyncio.run(svc.promote(FROM_DB, promoted_by=CONFIGURED)) is True
-    repo.set_role.assert_awaited_once_with(FROM_DB, ROLE_ADMIN)
-    repo.add.assert_not_awaited()
+    repo.ensure_role.assert_awaited_once_with(FROM_DB, ROLE_ADMIN)
+    repo.set_role.assert_not_awaited()
 
 
 def test_promoting_someone_not_listed_creates_an_admin_row():
@@ -149,8 +185,7 @@ def test_promoting_someone_not_listed_creates_an_admin_row():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
         assert asyncio.run(svc.promote(STRANGER, promoted_by=CONFIGURED)) is True
-    repo.add.assert_awaited_once()
-    assert repo.add.await_args.kwargs.get("role") == ROLE_ADMIN
+    repo.ensure_role.assert_awaited_once_with(STRANGER, ROLE_ADMIN)
 
 
 def test_promoting_an_admin_is_idempotent():
@@ -158,7 +193,7 @@ def test_promoting_an_admin_is_idempotent():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
         assert asyncio.run(svc.promote(FROM_DB)) is False
-    repo.set_role.assert_not_awaited()
+    repo.ensure_role.assert_not_awaited()
 
 
 def test_a_configured_superadmin_is_never_written_to_the_db():
@@ -166,7 +201,7 @@ def test_a_configured_superadmin_is_never_written_to_the_db():
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
         assert asyncio.run(svc.promote(CONFIGURED)) is False
-    repo.add.assert_not_awaited()
+    repo.ensure_role.assert_not_awaited()
 
 
 def test_demoting_an_admin_downgrades_the_role():
@@ -192,6 +227,31 @@ def test_list_roles_marks_configured_as_super_and_merges_sorted():
         assert asyncio.run(svc.list_roles()) == sorted(
             [(CONFIGURED, "super"), (FROM_DB, ROLE_ADMIN), (999888777, ROLE_USER)]
         )
+
+
+# ---------------------------------------------------------------- /del（清角色, 不删行）
+
+
+def test_removing_clears_the_role_but_keeps_the_row():
+    """移除 = 清 role（**不删 users 行** —— 行里还有语言设置等用户数据）"""
+    repo = _repo(existing=FROM_DB, role=ROLE_USER)
+    svc = _service(repo)
+    assert asyncio.run(svc.remove(FROM_DB)) is True
+    repo.set_role.assert_awaited_once_with(FROM_DB, None)
+
+
+def test_removing_someone_without_a_role_is_idempotent():
+    repo = _repo(existing=FROM_DB, role=None)
+    svc = _service(repo)
+    assert asyncio.run(svc.remove(FROM_DB)) is False
+    repo.set_role.assert_not_awaited()
+
+
+def test_removing_a_stranger_is_idempotent():
+    repo = _repo(existing=None)
+    svc = _service(repo)
+    assert asyncio.run(svc.remove(STRANGER)) is False
+    repo.set_role.assert_not_awaited()
 
 
 

@@ -108,7 +108,6 @@
 9b3dbf3e3f85: Masquer le « Source » en bas
 a3e3b88377c8: Démarrer
 a4acafd79982: Déjà dans la liste blanche
-a5eac262447d: Réservé aux membres du groupe désigné
 ab480060abb1: Ne pas afficher les journaux d'erreurs
 ad4fff48f141: Aucune autorisation
 ad66098d7867: Conserver les journaux d'erreurs
@@ -127,6 +126,7 @@ c4638f9eedae: Retiré de la liste blanche
 c909e6eb65aa: Part
 d2282636abc7: Panneau de configuration
 d34addb9b2f0: Cache effacé
+d4b153707c28: Réservé aux utilisateurs sur la liste blanche
 d5631690265c: Impossible de reconnaître la cible de configuration
 d5a73b0c7f2f: Téléverser
 7a425880c8d8: 'Tous les caches vidés (Redis) : {persistent} persistants · {result} de résultat'

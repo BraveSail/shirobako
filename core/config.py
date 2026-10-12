@@ -40,21 +40,14 @@ class BotSettings(BaseSettings):
 
     database_url: str = Field(default="sqlite+aiosqlite:///data/db/database.db")
 
-    guest_whitelist_group_id: int = Field(
-        default=0,
-        description=(
-            "白名单群 ID: 只有与 bot 同在**这一个**群的用户才能使用 inline 与 guest 查询; "
-            "0 表示不限制。只查这一个群 (不遍历 bot 所在的全部群), 所以不会因群多而 flood。"
-        ),
-    )
-
-    #: 初始白名单: 可用管理命令 (/add /list /purge) 的用户 ID, **逗号分隔**。
+    #: 初始超管（最高级）: ``.env`` 的 ``ADMIN_USERS``, **逗号分隔**。
     #:
-    #: 这是"永远允许"的一层 —— 写在 .env 里, 不用改代码; 运行时加的人存 DB 表
-    #: ``admin_users``, 两处取并集。**第一人必须从这里来**, 否则 /add 谁也调不了。
+    #: 这是"永远允许"的一层 —— 写在 .env 里, 不用改代码; 其余白名单成员
+    #: （普通用户 / 管理员）存 ``users`` 表的 ``role`` 列。**第一人必须从这里来**,
+    #: 否则 /promote 谁也调不了。它在非同群调用鉴权里也永远通过。
     admin_users: str = Field(
         default="",
-        description="初始白名单用户 ID (逗号分隔), 之后用 /add 追加",
+        description="初始超管用户 ID (逗号分隔), 之后用 /add 加普通用户、/promote 提升管理员",
     )
 
     #: 缓存用的 Redis 地址。**共用实例** (161 上宝塔那个 redis), 所以 key 一律带前缀。

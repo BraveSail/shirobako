@@ -6,6 +6,7 @@ from typing import Any
 from parsehub.types import AniRef, RichTextParseResult
 from parsehub.utils.helpers import strip_spoiler_flag
 from pyrogram import Client, filters
+from pyrogram.enums import ChatType
 from pyrogram.types import Message
 
 from core import bs
@@ -32,7 +33,7 @@ from plugins.parse.sender import (
     send_zip,
 )
 from repo.settings import ParseMode
-from services import ParsePipeline, ParseService, SettingsService, UserService
+from services import AdminUserService, ParsePipeline, ParseService, SettingsService, UserService
 from services.cache import parse_cache, persistent_cache
 from utils.helpers import to_list, with_request_id
 from utils.rate_limit import ParseRateLimitExceeded, parse_rate_limit
@@ -61,6 +62,17 @@ async def parse(cli: Client, msg: Message) -> None:
             lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
         config = await SettingsService(session).get_config(get_config_target(msg))
         mode = config.default_mode
+
+        # **非同群调用要鉴权**（2026-10-12 权限模型）: 群内发链接是 bot 的群内自动匹配
+        # 触发机制, 不鉴权; 私聊（含 /jx /jxjx /raw /zip 命令）属于非同群调用,
+        # 只认**本地库白名单**（``users.role`` 非空 ∪ 配置超管）—— 不再检查同群。
+        if msg.chat and msg.chat.type == ChatType.PRIVATE:
+            allowed = await AdminUserService(session).is_whitelisted(msg.from_user.id if msg.from_user else None)
+            if not allowed:
+                user_id = msg.from_user.id if msg.from_user else None
+                logger.info(f"私聊解析被拦截(不在白名单): user_id={user_id}, msg_id={msg.id}")
+                await MessageSender(cli, msg, config).text(t_[lang]("仅限白名单用户使用"))
+                return
 
     _t = t_[lang]
 

@@ -107,7 +107,6 @@
 9b3dbf3e3f85: Ẩn "Nguồn" ở dưới cùng
 a3e3b88377c8: Bắt đầu
 a4acafd79982: Đã có trong danh sách trắng
-a5eac262447d: Chỉ dành cho thành viên của nhóm được chỉ định
 ab480060abb1: Không hiển thị nhật ký lỗi
 ad4fff48f141: Không có quyền
 ad66098d7867: Giữ lại nhật ký lỗi
@@ -127,6 +126,7 @@ c4638f9eedae: Đã xóa khỏi danh sách trắng
 c909e6eb65aa: Tỷ lệ
 d2282636abc7: Bảng cấu hình
 d34addb9b2f0: Đã xóa bộ nhớ đệm
+d4b153707c28: Chỉ dành cho người dùng trong danh sách trắng
 d5631690265c: Không thể nhận diện mục tiêu cấu hình
 d5a73b0c7f2f: Tải lên
 7a425880c8d8: 'Đã xóa toàn bộ bộ nhớ đệm (Redis): {persistent} lâu dài · {result} kết quả'

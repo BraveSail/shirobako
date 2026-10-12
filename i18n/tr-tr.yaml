@@ -106,7 +106,6 @@
 9b3dbf3e3f85: Alt "Kaynak"u gizle
 a3e3b88377c8: Başlat
 a4acafd79982: Zaten izin listesinde
-a5eac262447d: Yalnızca belirlenen grubun üyeleri için
 ab480060abb1: Hata günlüklerini gösterme
 ad4fff48f141: Yetki yok
 ad66098d7867: Hata günlüklerini sakla
@@ -126,6 +125,7 @@ c4638f9eedae: İzin listesinden çıkarıldı
 c909e6eb65aa: Oran
 d2282636abc7: Yapılandırma paneli
 d34addb9b2f0: Önbellek temizlendi
+d4b153707c28: Yalnızca beyaz listedeki kullanıcılar için
 d5631690265c: Yapılandırma hedefi tanınamadı
 d5a73b0c7f2f: Yükle
 7a425880c8d8: 'Tüm önbellekler temizlendi (Redis): {persistent} kalıcı · {result} sonuç'
