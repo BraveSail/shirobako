@@ -26,6 +26,7 @@
 35277da314ea: Anda tidak diizinkan menggunakan perintah ini
 373e2207fa07: Tidak ada cache
 3795485677d6: Konfigurasi grup
+38a42cd2eec9: ({details})
 39b75e75d433: Sampul video
 39d2213b4a9a: Daftar putih kosong
 3a6fc1464f5f: Tidak ada di daftar putih
@@ -83,11 +84,13 @@
 75f0fa966d82: suka
 769d88e425e0: Selesai
 77274b54a324: 'Kesalahan {stage}:'
+7b000c997e5e: 📊 Polling
 7eafd0a497bd: '
 
 
   <b>Umpan Balik Masalah: @MisakaSisters</b>'
 816de50b9e0e: Silakan masukkan tautan di kotak obrolan
+8472b9d2a8a9: Suara
 868afb493654: Pilih target konfigurasi
 8a8672da4ab7: Opsi konfigurasi tidak didukung
 91f015aa09bc: Balas pesan seseorang, atau berikan ID pengguna
@@ -99,6 +102,7 @@ a5eac262447d: Hanya untuk anggota grup yang ditentukan
 ab480060abb1: Jangan tampilkan log kesalahan
 ad4fff48f141: Tidak ada izin
 ad66098d7867: Simpan log kesalahan
+aef1e20b40db: '"{title}"'
 b3bbb48dcb10: Analisis terlalu sering, silakan coba lagi setelah {e.retry_after:.1f}
   detik
 b6aaf8f2a2be: Konfigurasi pribadi dalam grup
@@ -110,11 +114,14 @@ c11154582f8a: Sembunyikan deskripsi
 c2236f70c559: Melewati parsing cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Dihapus dari daftar putih
+c909e6eb65aa: Persentase
 d2282636abc7: Panel konfigurasi
 d34addb9b2f0: Cache dihapus
 d5631690265c: Target konfigurasi tidak dikenali
 d5a73b0c7f2f: Unggah
 7a425880c8d8: 'Semua cache dibersihkan (Redis): {persistent} persisten · {result} hasil'
+d9d060bed1f0: Total {total:,} suara
+da86ae7e75fe: Diskusi
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -131,8 +138,11 @@ e3889d130a2f: '
   **Alamat sumber terbuka: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Parsing dan pratinjau konten
 e4f6307e1c4f: 'Berhasil beralih ke: {LANG_MAP[selected]}'
+e7f40ca894a3: Polling
+ea15ae2b7fba: Opsi
 eaa3cd851501: Teks kustom
 f047ff589a7a: Kirim paket, sertakan informasi parsing
 f1d192b54c3b: Tampilkan seluruh teks
 f6f18e097963: Daftar putih
+fe76fe2b4eef: '{voters} peserta'
 ff7e330bebf8: Konfigurasi pribadi dalam topik

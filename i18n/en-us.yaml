@@ -27,6 +27,7 @@
 35277da314ea: You are not allowed to use this command
 373e2207fa07: No cache
 3795485677d6: Group Configuration
+38a42cd2eec9: ({details})
 39b75e75d433: Video cover
 39d2213b4a9a: The whitelist is empty
 3a6fc1464f5f: Not in the whitelist
@@ -84,11 +85,13 @@
 75f0fa966d82: likes
 769d88e425e0: Done
 77274b54a324: '{stage} error:'
+7b000c997e5e: 📊 Poll
 7eafd0a497bd: '
 
 
   <b>Feedback: @MisakaSisters</b>'
 816de50b9e0e: Please enter the link in the chat box
+8472b9d2a8a9: Votes
 868afb493654: Select configuration target
 8a8672da4ab7: Unsupported configuration item
 91f015aa09bc: Reply to someone's message, or give a user ID
@@ -100,6 +103,7 @@ a5eac262447d: Available to members of the designated group only
 ab480060abb1: Do not display error logs
 ad4fff48f141: No permission
 ad66098d7867: Retain error logs
+aef1e20b40db: '"{title}"'
 b3bbb48dcb10: Parsing too frequently, please try again after {e.retry_after:.1f}s
 b6aaf8f2a2be: Individual configuration within group
 b765e4eb1844: Original link
@@ -110,11 +114,14 @@ c11154582f8a: Hide Introduction
 c2236f70c559: Bypass cache parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Removed from the whitelist
+c909e6eb65aa: Share
 d2282636abc7: Configuration panel
 d34addb9b2f0: Cache cleared
 d5631690265c: Unrecognized configuration target
 d5a73b0c7f2f: Upload
 7a425880c8d8: 'Cleared all caches (Redis): {persistent} persistent · {result} result'
+d9d060bed1f0: '{total:,} votes total'
+da86ae7e75fe: Discussion
 e14de27e8559: '{target_label}'
 e3889d130a2f: '>**To ensure a good experience for all users, rate limiting is currently
   enabled**
@@ -128,8 +135,11 @@ e3889d130a2f: '>**To ensure a good experience for all users, rate limiting is cu
   **Open source repository: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Parse and preview content
 e4f6307e1c4f: 'Switched to: {LANG_MAP[selected]}'
+e7f40ca894a3: Poll
+ea15ae2b7fba: Option
 eaa3cd851501: Custom Copy
 f047ff589a7a: Pack and send with parsing information
 f1d192b54c3b: Show full text
 f6f18e097963: Whitelist
+fe76fe2b4eef: '{voters} voters'
 ff7e330bebf8: Individual configuration within topic

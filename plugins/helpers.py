@@ -79,6 +79,9 @@ def build_caption(
         rich=rich,
         allow_blockquote=allow_blockquote,
         allow_expandable=allow_expandable,
+        # 投票占位符 (`{{poll:N}}`) 同样要在这里替换 —— 老 caption 路径 (raw/zip)
+        # 也是用户能看到的产物, 占位符字面量绝不能泄漏出去。
+        polls=getattr(parse_result, "polls", None) or (),
         metadata_line=build_metadata_line(
             published_at=getattr(parse_result, "published_at", None),
             view_count=getattr(parse_result, "view_count", None),
@@ -267,9 +270,13 @@ def build_caption_by_str(
     max_length: int | None = None,
     fold_summary: str = "",
     lang: str = "",
+    polls: Sequence | None = None,
 ) -> str:
     """构建消息正文：标题 + 内容 + 统计行 + 来源链接"""
     title, content = title or "", content or ""
+    # 投票占位符 (`{{poll:N}}`) 先替换 —— 这条 (老 caption) 路径同样是用户可见产物,
+    # 字面量绝不能泄漏。polls 为空时原样返回 (零变化)。两个分支都要, 所以放这里。
+    content = replace_poll_placeholders(content, polls, lang)
     if rich:
         body = f"### {title}\n\n <details><summary>📃</summary>\n\n{content}\n\n</details>"
     else:
@@ -326,6 +333,173 @@ def _meta_divider(meta_parts: Sequence[str], parts: Sequence[str]) -> list[str]:
     return ["---"] if (has_author and has_content) else []
 
 
+#: lib 放进正文的**投票占位符**行: ``{{poll:N}}`` (引用块内形如 ``> {{poll:0}}``)。
+#: N = ``result.polls`` 里的索引 —— 渲染成表格由本模块负责 (**按用户语言**),
+#: lib 只出数据 (见计划「方案 C」)。
+_POLL_PLACEHOLDER_RE = re.compile(r"^(> )?\{\{poll:(\d+)\}\}$")
+
+
+def _poll_field(source: object, name: str, default=None):
+    """读一个投票字段 —— lib 给的是对象 (属性访问), 缓存里是 dict (键访问)。"""
+    if isinstance(source, dict):
+        return source.get(name, default)
+    return getattr(source, name, default)
+
+
+def _poll_int(value: object) -> int | None:
+    """投票里的计数字段 → int; 缺失/非法一律 None (渲染时跳过该段)。"""
+    if value is None:
+        return None
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _poll_cell(text: str) -> str:
+    """表格单元格转义 —— 选项文案里的 ``|`` 会把列切断 (与 lib 侧同一手法)。"""
+    return text.replace("|", "\\|")
+
+
+def _render_poll(poll, lang: str = "") -> str:
+    """把一个投票 (``{{poll:N}}`` 对应的数据) 渲染成本地化的 markdown。
+
+    形态与改造前 lib 直接拼出的表格一致, 只有文案换成用户语言:
+
+    - **头部**: ``voters`` 非 None (linux.do) → ``📊 投票（「标题」 · N 人参与）``;
+      ``voters`` 为 None 且只有总票数 (youtube) → ``投票 · 共 N 票``;
+      其余 (twitter / threads) **无头部**, 直接表格。
+    - **表格**: 任一选项带票数 → 三列 (选项 / 票数 / 占比); 全都没有 (youtube 匿名) → 单列。
+    - 占比的分母: **参与人数**优先 (linux.do 旧形态按它算), 再退总票数, 最后按选项票数求和。
+
+    ⚠️ ``total`` / ``voters`` / ``details`` 这些**变量名不能改** —— i18n 的键取自
+    f-string 里的表达式源码, 改名即换键, 译文会静默 fallback 回中文。
+    """
+    options = list(_poll_field(poll, "options") or [])
+    if not options:
+        return ""
+    # 「有语言就用它, 否则退回默认语言」—— 与 build_rich_markdown 里其它文案同一兜底。
+    # ⚠️ **别名必须叫 `_t`**: easy_ai18n 只认调用点源码里的 ``t_`` / ``_t`` 两个字面量名,
+    # 换成别的名字 (如 ``translate``) 会静默退回原文 (模板解析不到 → 键对不上)。
+    _t = t_[lang] if lang else t_
+    counts = [_poll_int(_poll_field(option, "count")) for option in options]
+    voters = _poll_int(_poll_field(poll, "voters"))
+    total_votes = _poll_int(_poll_field(poll, "total_votes"))
+    title = str(_poll_field(poll, "title") or "").strip()
+    # 三列判据: 有任一选项带票数
+    has_counts = any(count is not None for count in counts)
+    # 占比分母 (只在三列时用到): 参与人数 → 总票数 → 选项票数求和
+    percent_base = voters or total_votes or sum(count or 0 for count in counts)
+
+    lines: list[str] = []
+    if voters is not None:
+        # linux.do: 「📊 投票（「标题」 · N 人参与）」—— 两段都可能缺
+        details_parts: list[str] = []
+        if title:
+            details_parts.append(_t(f"「{title}」"))
+        if voters > 0:
+            # 与改造前 lib 的拼法逐字一致: `{voters} 人参与` 不加千分位 (键里也没有 `:,`)
+            details_parts.append(_t(f"{voters} 人参与"))
+        head = _t("📊 投票")
+        if details_parts:
+            details = " · ".join(details_parts)
+            head += _t(f"（{details}）")
+        lines.append(head)
+    elif total_votes is not None and not has_counts:
+        # youtube: 匿名只给选项与总票数 → 「投票 · 共 N 票」(空行分隔表格, 与旧形态一致)
+        head_parts = [_t("投票")]
+        if total_votes:
+            # 变量名 total 是 i18n 键的一部分 (`共 {total:,} 票`), 不能改名
+            total = total_votes
+            head_parts.append(_t(f"共 {total:,} 票"))
+        lines.append(" · ".join(head_parts))
+    if lines:
+        lines.append("")
+
+    if has_counts:
+        option_label = _t("选项")
+        votes_label = _t("票数")
+        share_label = _t("占比")
+        lines.append(f"| {option_label} | {votes_label} | {share_label} |")
+        lines.append("| --- | --- | --- |")
+        for option, count in zip(options, counts, strict=True):
+            cell = _poll_cell(str(_poll_field(option, "text") or ""))
+            # 与改造前 lib 一致: 票数不加千分位 (只有总票数 `共 {total:,} 票` 有)
+            count_text = "" if count is None else str(count)
+            percent = f"{round(count * 100 / percent_base) if percent_base else 0}%" if count is not None else ""
+            lines.append(f"| {cell} | {count_text} | {percent} |")
+    else:
+        # 全都没有单项票数 (youtube 匿名 / linux.do 老站点退化): 单列表格
+        option_label = _t("选项")
+        lines.append(f"| {option_label} |")
+        lines.append("| --- |")
+        for option in options:
+            cell = _poll_cell(str(_poll_field(option, "text") or ""))
+            lines.append(f"| {cell} |")
+    return "\n".join(lines)
+
+
+def replace_poll_placeholders(content: str, polls: Sequence | None, lang: str = "") -> str:
+    """把正文里的 ``{{poll:N}}`` 占位符行替换成按用户语言渲染的投票表格。
+
+    - ``polls`` 为空 (老缓存 / 没有投票的帖子) → **原样返回**, 零变化。
+    - 索引越界 → **整行删除** + warning —— 占位符字面量绝不泄漏给用户。
+    - 引用块内的占位符 (``> {{poll:0}}``) → 渲染产物每行都带 ``> `` 前缀
+      (空行写成 ``>``, 与 lib 的 ``_quote_line`` 同一形态; 表格行不包 ``<i>``)。
+    """
+    if not content or not polls:
+        return content
+    out: list[str] = []
+    for line in content.split("\n"):
+        match = _POLL_PLACEHOLDER_RE.match(line)
+        if match is None:
+            out.append(line)
+            continue
+        index = int(match.group(2))
+        if index >= len(polls):
+            logger.warning(f"投票占位符索引越界, 已删除该行: index={index}, polls={len(polls)}")
+            continue
+        rendered = _render_poll(polls[index], lang)
+        if not rendered:
+            logger.warning(f"投票数据为空, 已删除占位符行: index={index}")
+            continue
+        if match.group(1):
+            out.extend(f"> {one}" if one.strip() else ">" for one in rendered.split("\n"))
+        else:
+            out.extend(rendered.split("\n"))
+    return "\n".join(out)
+
+
+#: 可翻译片段占位符 —— lib 输出的**内联短文案**（它不认识用户语言），
+#: 渲染层按用户语言替换。语法 ``{{t:源文本}}``（无嵌套花括号）。
+#: 例：bgm 归属行的 ``**<a …>小组名</a>** » {{t:讨论}}``。
+_TRANSLATABLE_FRAGMENT_RE = re.compile(r"\{\{t:([^{}]+)\}\}")
+
+
+def _translate_fragment(fragment: str, lang: str) -> str:
+    """把占位符片段名翻译成当前语言；不认识的原样返回。
+
+    ⚠️ 每个片段必须写成**字面量调用点**（``t_[lang]("讨论")``）—— easy_ai18n 从调用点
+    的源码解析源文本。写成变量传参（``translate(fragment)``）虽然运行时也命中译文，
+    但会在日志里留一条 ``I18N parse error`` ERROR（库对"看不见调用点"的已知行为，
+    生产累积日志里已有同类条目）。新增片段时照抄这个 shape。
+    """
+    if fragment == "讨论":
+        return t_[lang]("讨论") if lang else t_("讨论")
+    return fragment
+
+
+def replace_translatable_fragments(text: str, lang: str = "") -> str:
+    """把 ``{{t:源文本}}`` 片段替换成当前语言的译文。
+
+    词条走**字面量调用点**（见 ``_translate_fragment``）；手工维护 i18n 词条，
+    **别跑全量 i18n.build**（静态扫描会把这些调用当孤儿清掉）。
+    """
+    if not text or "{{t:" not in text:
+        return text
+    return _TRANSLATABLE_FRAGMENT_RE.sub(lambda m: _translate_fragment(m.group(1), lang), text)
+
+
 def build_rich_markdown(
     parse_result: AnyParseResult,
     *,
@@ -356,10 +530,21 @@ def build_rich_markdown(
     统计数据与来源放在页尾的 <footer> 里。
     """
     title = (parse_result.title or "").strip()
+    # 投票占位符 (`{{poll:N}}`) 的替换必须排在**一切结构处理之前**:
+    # lib 只出数据 (结果里的 ``polls``), 表格 (含语言) 由渲染层拼。放在
+    # link_hashtags / escape_setext_underlines / preserve_linebreaks 之前,
+    # 生成出来的表格行才能和 lib 旧形态一样走完整套处理 (表格行跳过硬换行等)。
+    # polls 为空 (老缓存 / 没有投票) 时原样返回, 零变化。
+    poll_content = replace_poll_placeholders(
+        rich_content(parse_result).strip(),
+        getattr(parse_result, "polls", None) or [],
+        lang,
+    )
+    # lib 输出的可翻译片段（``{{t:讨论}}`` 这类内联短文案）同样在这里展开。
     content = preserve_linebreaks(
         escape_setext_underlines(
             link_hashtags(
-                rich_content(parse_result).strip(),
+                replace_translatable_fragments(poll_content, lang),
                 parse_result.platform,
                 # 平台实体给的标签名（拿不到时为空列表 → 退回正则）
                 getattr(parse_result, "hashtags", None),
@@ -376,7 +561,10 @@ def build_rich_markdown(
         meta_parts.append(f"# {title}")
     # 归属行（"这条内容属于哪里"）夹在**标题与作者行之间** —— 它是元信息，
     # 放在正文里会挤到引用块前面，把引用块的归位搅乱（bgm 的教训）。
-    if origin := (getattr(parse_result, "origin_line", "") or "").strip():
+    # lib 侧可能带可翻译片段（``» {{t:讨论}}``）—— 与正文同一套替换。
+    if origin := replace_translatable_fragments(
+        (getattr(parse_result, "origin_line", "") or "").strip(), lang
+    ):
         meta_parts.append(origin)
     if author := format_author_line(parse_result):
         meta_parts.append(author)
@@ -624,6 +812,7 @@ def build_rich_markdown_by_str(
     quote_roles: Sequence[str] = (),
     origin_line: str = "",
     reply_count: int | None = None,
+    polls: Sequence | None = None,
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
@@ -655,6 +844,7 @@ def build_rich_markdown_by_str(
             quote_roles,
             origin_line,
             reply_count,
+            polls,
         ),
         config=config,
         lang=lang,
@@ -689,6 +879,7 @@ class _RichFields:
         quote_roles=(),
         origin_line="",
         reply_count=None,
+        polls=None,
     ):
         self.title = title or ""
         self.content = content or ""
@@ -718,6 +909,10 @@ class _RichFields:
         self.origin_line = origin_line or ""
         # 回复数（页脚那一段）
         self.reply_count = reply_count
+        # 投票数据（``{{poll:N}}`` 占位符渲染用）—— 元素可以是 lib 的 ``Poll`` 对象
+        # 或缓存里的 dict（``_render_poll`` 两种都吃）。老缓存没有这个字段 ⇒ 空 ⇒
+        # 不替换占位符（新链接重解析才会带 polls）。
+        self.polls = list(polls or [])
 
 
 def rich_content(parse_result: AnyParseResult) -> str:

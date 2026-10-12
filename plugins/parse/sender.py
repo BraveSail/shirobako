@@ -610,6 +610,8 @@ async def send_rich_media(
                     cached_media,
                     quoted_media_count=quoted_items,
                     reply_media_count=reply_items,
+                    # 投票要进缓存 —— 否则"第二次发同一条链接"占位符渲染不出来
+                    polls=getattr(parse_result, "polls", None),
                 ),
             )
             logger.debug(

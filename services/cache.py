@@ -241,6 +241,13 @@ class CacheParseResult(BaseModel):
     #: 正文标签名的**平台实体**（twitter ``entities.hashtags[].text`` 等）。
     #: 渲染层用它做精确链接化；缺了会退回正则，日文标点/全角符号处会切错边界。
     hashtags: list[str] = []
+    #: **投票数据**（正文里 ``{{poll:N}}`` 占位符的渲染源）—— lib 只出数据，
+    #: 表格由渲染层按用户语言拼。每项字段名与 lib ``asdict(Poll)`` 一致：
+    #: ``options[{text, count}]`` / ``total_votes`` / ``voters`` / ``title`` / ``is_finished``。
+    #:
+    #: 老缓存没有这个字段**不需要重新解析**：默认空 ⇒ 占位符不替换（老缓存里本来
+    #: 也没有占位符——那是 lib 新版才出的形态），行为与改动前一致。
+    polls: list[dict] = []
 
 
 class CacheMedia(BaseModel):

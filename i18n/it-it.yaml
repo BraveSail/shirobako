@@ -26,6 +26,7 @@
 35277da314ea: Non sei autorizzato a usare questo comando
 373e2207fa07: Nessuna cache
 3795485677d6: Configurazione gruppo
+38a42cd2eec9: ({details})
 39b75e75d433: Copertina video
 39d2213b4a9a: La whitelist è vuota
 3a6fc1464f5f: Non è nella whitelist
@@ -84,11 +85,13 @@
 75f0fa966d82: Mi piace
 769d88e425e0: Completato
 77274b54a324: 'Errore {stage}:'
+7b000c997e5e: 📊 Sondaggio
 7eafd0a497bd: '
 
 
   <b>Feedback: @MisakaSisters</b>'
 816de50b9e0e: Inserisci il link nella chat
+8472b9d2a8a9: Voti
 868afb493654: Seleziona obiettivo configurazione
 8a8672da4ab7: Opzione di configurazione non supportata
 91f015aa09bc: Rispondi al messaggio di qualcuno, oppure indica un ID utente
@@ -100,6 +103,7 @@ a5eac262447d: Solo per i membri del gruppo designato
 ab480060abb1: Non mostrare i log degli errori
 ad4fff48f141: Nessuna autorizzazione
 ad66098d7867: Conserva i log degli errori
+aef1e20b40db: «{title}»
 b3bbb48dcb10: Analisi troppo frequente, riprova tra {e.retry_after:.1f} secondi
 b6aaf8f2a2be: Configurazione personale nel gruppo
 b765e4eb1844: Link originale
@@ -110,11 +114,14 @@ c11154582f8a: Nascondi introduzione
 c2236f70c559: Bypass cache parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Rimosso dalla whitelist
+c909e6eb65aa: Quota
 d2282636abc7: Pannello di configurazione
 d34addb9b2f0: Cache cancellata
 d5631690265c: Obiettivo di configurazione non riconosciuto
 d5a73b0c7f2f: Carica
 7a425880c8d8: 'Tutte le cache svuotate (Redis): {persistent} persistenti · {result} di risultato'
+d9d060bed1f0: '{total:,} voti totali'
+da86ae7e75fe: Discussione
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -131,8 +138,11 @@ e3889d130a2f: '
   **Codice sorgente: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analizza e visualizza in anteprima il contenuto
 e4f6307e1c4f: 'Passato a: {LANG_MAP[selected]}'
+e7f40ca894a3: Sondaggio
+ea15ae2b7fba: Opzione
 eaa3cd851501: Testo personalizzato
 f047ff589a7a: Invia pacchettizzato con informazioni di analisi
 f1d192b54c3b: Mostra tutto il testo
 f6f18e097963: Whitelist
+fe76fe2b4eef: '{voters} partecipanti'
 ff7e330bebf8: Configurazione personale nell'argomento

@@ -26,6 +26,7 @@
 35277da314ea: Você não tem permissão para usar este comando
 373e2207fa07: Sem cache
 3795485677d6: Configuração do grupo
+38a42cd2eec9: ({details})
 39b75e75d433: Capa do vídeo
 39d2213b4a9a: A lista de permissões está vazia
 3a6fc1464f5f: Não está na lista de permissões
@@ -84,11 +85,13 @@
 75f0fa966d82: curtidas
 769d88e425e0: Concluído
 77274b54a324: 'Erro em {stage}:'
+7b000c997e5e: 📊 Enquete
 7eafd0a497bd: '
 
 
   <b>Feedback de problemas: @MisakaSisters</b>'
 816de50b9e0e: Por favor, insira o link na caixa de chat
+8472b9d2a8a9: Votos
 868afb493654: Selecione o alvo da configuração
 8a8672da4ab7: Opção de configuração não suportada
 91f015aa09bc: Responda à mensagem de alguém ou informe um ID de usuário
@@ -100,6 +103,7 @@ a5eac262447d: Apenas para membros do grupo designado
 ab480060abb1: Não mostrar logs de erro
 ad4fff48f141: Sem permissão
 ad66098d7867: Manter registro de erros
+aef1e20b40db: '"{title}"'
 b3bbb48dcb10: Análise muito frequente, por favor tente novamente em {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuração pessoal no grupo
 b765e4eb1844: Link original
@@ -110,11 +114,14 @@ c11154582f8a: Ocultar resumo
 c2236f70c559: Ignorar análise de cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Removido da lista de permissões
+c909e6eb65aa: Proporção
 d2282636abc7: Painel de configuração
 d34addb9b2f0: Cache limpo
 d5631690265c: Alvo da configuração não reconhecido
 d5a73b0c7f2f: Enviar
 7a425880c8d8: 'Todos os caches limpos (Redis): {persistent} persistentes · {result} de resultado'
+d9d060bed1f0: '{total:,} votos no total'
+da86ae7e75fe: Discussão
 e14de27e8559: '{target_label}'
 e3889d130a2f: '\n\n>**Para garantir a experiência de uso de todos os usuários, o limite
   de taxa está atualmente ativado**\n\n>Este projeto é de código aberto. Se houver
@@ -123,8 +130,11 @@ e3889d130a2f: '\n\n>**Para garantir a experiência de uso de todos os usuários,
   aberto disponível em: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analisar e pré-visualizar conteúdo
 e4f6307e1c4f: 'Alterado para: {LANG_MAP[selected]}'
+e7f40ca894a3: Enquete
+ea15ae2b7fba: Opção
 eaa3cd851501: Texto personalizado
 f047ff589a7a: Enviar em pacote, com informações de análise
 f1d192b54c3b: Mostrar o texto completo
 f6f18e097963: Lista de permissões
+fe76fe2b4eef: '{voters} participantes'
 ff7e330bebf8: Configuração pessoal no tópico

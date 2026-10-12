@@ -27,6 +27,7 @@
 35277da314ea: Vous n'êtes pas autorisé à utiliser cette commande
 373e2207fa07: Aucun cache
 3795485677d6: Configuration du groupe
+38a42cd2eec9: ({details})
 39b75e75d433: Vignette vidéo
 39d2213b4a9a: La liste blanche est vide
 3a6fc1464f5f: Pas dans la liste blanche
@@ -85,11 +86,13 @@
 75f0fa966d82: J'aime
 769d88e425e0: Terminé
 77274b54a324: 'Erreur {stage} :'
+7b000c997e5e: 📊 Sondage
 7eafd0a497bd: '
 
 
   <b>Retour d''information : @MisakaSisters</b>'
 816de50b9e0e: Veuillez entrer un lien dans la zone de chat
+8472b9d2a8a9: Votes
 868afb493654: Choisir la cible de configuration
 8a8672da4ab7: Option de configuration non prise en charge
 91f015aa09bc: Répondez au message de quelqu'un, ou indiquez un ID utilisateur
@@ -101,6 +104,7 @@ a5eac262447d: Réservé aux membres du groupe désigné
 ab480060abb1: Ne pas afficher les journaux d'erreurs
 ad4fff48f141: Aucune autorisation
 ad66098d7867: Conserver les journaux d'erreurs
+aef1e20b40db: « {title} »
 b3bbb48dcb10: Analyse trop fréquente, veuillez réessayer dans {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuration personnelle dans le groupe
 b765e4eb1844: Lien brut
@@ -111,11 +115,14 @@ c11154582f8a: Masquer la description
 c2236f70c559: Contourner l'analyse du cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Retiré de la liste blanche
+c909e6eb65aa: Part
 d2282636abc7: Panneau de configuration
 d34addb9b2f0: Cache effacé
 d5631690265c: Impossible de reconnaître la cible de configuration
 d5a73b0c7f2f: Téléverser
 7a425880c8d8: 'Tous les caches vidés (Redis) : {persistent} persistants · {result} de résultat'
+d9d060bed1f0: '{total:,} votes au total'
+da86ae7e75fe: Discussion
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -132,8 +139,11 @@ e3889d130a2f: '
   **Code source : [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analyser et prévisualiser le contenu
 e4f6307e1c4f: 'Passé à : {LANG_MAP[selected]}'
+e7f40ca894a3: Sondage
+ea15ae2b7fba: Option
 eaa3cd851501: Texte personnalisé
 f047ff589a7a: Envoyer en paquet, avec informations d'analyse
 f1d192b54c3b: Afficher tout le texte
 f6f18e097963: Liste blanche
+fe76fe2b4eef: '{voters} votants'
 ff7e330bebf8: Configuration personnelle dans le sujet

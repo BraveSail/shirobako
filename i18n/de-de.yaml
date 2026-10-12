@@ -27,6 +27,7 @@
 35277da314ea: Sie sind nicht berechtigt, diesen Befehl zu verwenden
 373e2207fa07: Kein Cache
 3795485677d6: Gruppenkonfiguration
+38a42cd2eec9: ({details})
 39b75e75d433: Video-Cover
 39d2213b4a9a: Die Whitelist ist leer
 3a6fc1464f5f: Nicht in der Whitelist
@@ -85,11 +86,13 @@
 75f0fa966d82: Likes
 769d88e425e0: Fertig
 77274b54a324: '{stage} Fehler:'
+7b000c997e5e: 📊 Umfrage
 7eafd0a497bd: '
 
 
   <b>Problemmeldung: @MisakaSisters</b>'
 816de50b9e0e: Bitte geben Sie den Link im Chatfenster ein
+8472b9d2a8a9: Stimmen
 868afb493654: Konfigurationsziel wählen
 8a8672da4ab7: Nicht unterstützte Konfigurationsoption
 91f015aa09bc: Antworte auf die Nachricht von jemandem oder gib eine Benutzer-ID an
@@ -101,6 +104,7 @@ a5eac262447d: Nur für Mitglieder der festgelegten Gruppe
 ab480060abb1: Fehlerprotokolle nicht anzeigen
 ad4fff48f141: Keine Berechtigung
 ad66098d7867: Fehlerprotokolle behalten
+aef1e20b40db: „{title}“
 b3bbb48dcb10: Zu häufige Analyse, bitte versuche es nach {e.retry_after:.1f} Sekunden
   erneut
 b6aaf8f2a2be: Persönliche Konfiguration in der Gruppe
@@ -112,11 +116,14 @@ c11154582f8a: Einführung ausblenden
 c2236f70c559: Cache-Parsing umgehen
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Von der Whitelist entfernt
+c909e6eb65aa: Anteil
 d2282636abc7: Konfigurationspanel
 d34addb9b2f0: Cache gelöscht
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d5a73b0c7f2f: Hochladen
 7a425880c8d8: 'Alle Caches geleert (Redis): {persistent} persistent · {result} Ergebnis'
+d9d060bed1f0: Insgesamt {total:,} Stimmen
+da86ae7e75fe: Diskussion
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -133,8 +140,11 @@ e3889d130a2f: '
   **Open-Source-Adresse: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Inhalt analysieren und Vorschau anzeigen
 e4f6307e1c4f: 'Wechsel zu: {LANG_MAP[selected]}'
+e7f40ca894a3: Umfrage
+ea15ae2b7fba: Option
 eaa3cd851501: Benutzerdefinierter Text
 f047ff589a7a: Paket senden, inklusive Analyseinformationen
 f1d192b54c3b: Vollständigen Text anzeigen
 f6f18e097963: Whitelist
+fe76fe2b4eef: '{voters} Teilnehmer'
 ff7e330bebf8: Persönliche Konfiguration im Thema

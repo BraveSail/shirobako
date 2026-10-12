@@ -25,6 +25,7 @@
 35277da314ea: Bu komutu kullanma yetkiniz yok
 373e2207fa07: Önbellek yok
 3795485677d6: Grup yapılandırması
+38a42cd2eec9: ({details})
 39b75e75d433: Video kapağı
 39d2213b4a9a: İzin listesi boş
 3a6fc1464f5f: İzin listesinde değil
@@ -83,11 +84,13 @@
 75f0fa966d82: beğeni
 769d88e425e0: Tamamlandı
 77274b54a324: '{stage} hata:'
+7b000c997e5e: 📊 Anket
 7eafd0a497bd: '
 
 
   <b>Sorun Bildirimi: @MisakaSisters</b>'
 816de50b9e0e: Lütfen sohbet kutusuna bağlantı girin
+8472b9d2a8a9: Oy
 868afb493654: Yapılandırma hedefi seçin
 8a8672da4ab7: Desteklenmeyen yapılandırma öğesi
 91f015aa09bc: Birinin mesajını yanıtlayın veya bir kullanıcı ID'si verin
@@ -99,6 +102,7 @@ a5eac262447d: Yalnızca belirlenen grubun üyeleri için
 ab480060abb1: Hata günlüklerini gösterme
 ad4fff48f141: Yetki yok
 ad66098d7867: Hata günlüklerini sakla
+aef1e20b40db: '"{title}"'
 b3bbb48dcb10: Çözümleme çok sık yapılıyor, lütfen {e.retry_after:.1f} saniye sonra
   tekrar deneyin
 b6aaf8f2a2be: Grup içi kişisel yapılandırma
@@ -110,11 +114,14 @@ c11154582f8a: Özeti Gizle
 c2236f70c559: Önbellek çözümlemesini atla
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: İzin listesinden çıkarıldı
+c909e6eb65aa: Oran
 d2282636abc7: Yapılandırma paneli
 d34addb9b2f0: Önbellek temizlendi
 d5631690265c: Yapılandırma hedefi tanınamadı
 d5a73b0c7f2f: Yükle
 7a425880c8d8: 'Tüm önbellekler temizlendi (Redis): {persistent} kalıcı · {result} sonuç'
+d9d060bed1f0: Toplam {total:,} oy
+da86ae7e75fe: Tartışma
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -130,8 +137,11 @@ e3889d130a2f: '
   **Açık kaynak adresi: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: İçeriği çözümle ve önizle
 e4f6307e1c4f: '{LANG_MAP[selected]} olarak değiştirildi'
+e7f40ca894a3: Anket
+ea15ae2b7fba: Seçenek
 eaa3cd851501: Özel metin
 f047ff589a7a: Paket halinde gönder, çözümleme bilgisi ile birlikte
 f1d192b54c3b: Tüm metni göster
 f6f18e097963: İzin listesi
+fe76fe2b4eef: '{voters} katılımcı'
 ff7e330bebf8: Konu içi kişisel yapılandırma

@@ -316,6 +316,8 @@ async def _upload_and_cache_inline_media(
         uploaded,
         quoted_media_count=quoted_items,
         reply_media_count=reply_items,
+        # 投票同进缓存 (inline 命中缓存时同样要渲染表格)
+        polls=getattr(parse_result, "polls", None),
     )
     await persistent_cache.set(raw_url, entry)
     logger.info(

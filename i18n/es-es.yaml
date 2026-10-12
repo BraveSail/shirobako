@@ -26,6 +26,7 @@
 35277da314ea: No tienes permiso para usar este comando
 373e2207fa07: Sin caché
 3795485677d6: Configuración del grupo
+38a42cd2eec9: ({details})
 39b75e75d433: Portada del vídeo
 39d2213b4a9a: La lista blanca está vacía
 3a6fc1464f5f: No está en la lista blanca
@@ -84,11 +85,13 @@
 75f0fa966d82: Me gusta
 769d88e425e0: Completado
 77274b54a324: 'Error en {stage}:'
+7b000c997e5e: 📊 Encuesta
 7eafd0a497bd: '
 
 
   <b>Comentarios y sugerencias: @MisakaSisters</b>'
 816de50b9e0e: Por favor, introduce un enlace en el chat
+8472b9d2a8a9: Votos
 868afb493654: Seleccionar objetivo de configuración
 8a8672da4ab7: Opción de configuración no soportada
 91f015aa09bc: Responde al mensaje de alguien, o indica un ID de usuario
@@ -100,6 +103,7 @@ a5eac262447d: Solo para miembros del grupo designado
 ab480060abb1: No mostrar registros de errores
 ad4fff48f141: Sin permiso
 ad66098d7867: Conservar registros de errores
+aef1e20b40db: «{title}»
 b3bbb48dcb10: Análisis demasiado frecuente, por favor intenta de nuevo en {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuración personal en el grupo
 b765e4eb1844: Enlace original
@@ -110,11 +114,14 @@ c11154582f8a: Ocultar introducción
 c2236f70c559: Analizar sin usar caché
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Eliminado de la lista blanca
+c909e6eb65aa: Porcentaje
 d2282636abc7: Panel de configuración
 d34addb9b2f0: Caché borrada
 d5631690265c: No se puede reconocer el objetivo de configuración
 d5a73b0c7f2f: Subir
 7a425880c8d8: 'Todas las cachés vaciadas (Redis): {persistent} persistentes · {result} de resultado'
+d9d060bed1f0: '{total:,} votos en total'
+da86ae7e75fe: Discusión
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -131,8 +138,11 @@ e3889d130a2f: '
   **Repositorio abierto: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analizar y previsualizar contenido
 e4f6307e1c4f: 'Cambiado a: {LANG_MAP[selected]}'
+e7f40ca894a3: Encuesta
+ea15ae2b7fba: Opción
 eaa3cd851501: Texto personalizado
 f047ff589a7a: Enviar empaquetado con información de análisis
 f1d192b54c3b: Mostrar todo el texto
 f6f18e097963: Lista blanca
+fe76fe2b4eef: '{voters} participantes'
 ff7e330bebf8: Configuración personal en el tema

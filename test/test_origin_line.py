@@ -3,13 +3,20 @@
 用户报「标题讨论那一行放标题和作者中间，现在插在正文和回复中间了」——
 它原本由平台拼进正文，于是挤在引用块旁边（bgm 的图因此被插到引用块前面贴住）。
 现在它是元信息的一部分：标题 → 归属行 → 作者行 → 内容。
+
+**可翻译片段（2026-10-12）**：lib 不认识用户语言，归属行里的「讨论」以
+``{{t:讨论}}`` 占位符输出，渲染层按 ``lang`` 替换（zh-hans 下即源文本）。
+老缓存里的字面 ``» 讨论``（无占位符）逐字不变。
 """
 
 import types
 
 from plugins.helpers import build_rich_markdown, build_rich_markdown_by_str
 
-ORIGIN = '**<a href="https://bgm.tv/group/fillgrids">补旧番</a>** » 讨论'
+#: lib 现行产出（可翻译片段形态）
+ORIGIN = '**<a href="https://bgm.tv/group/fillgrids">补旧番</a>** » {{t:讨论}}'
+#: 老缓存条目（字面文案，无占位符）
+ORIGIN_LEGACY = '**<a href="https://bgm.tv/group/fillgrids">补旧番</a>** » 讨论'
 
 
 class _Cfg(types.SimpleNamespace):
@@ -55,7 +62,21 @@ def test_the_origin_line_sits_between_the_title_and_the_author():
     author_idx = next(i for i, ln in enumerate(lines) if "大夜宵" in ln)
     assert title_idx < origin_idx < author_idx, lines[:6]
     assert lines[title_idx] == "# 真的有人能看过3000+部番吗"
-    assert lines[origin_idx] == ORIGIN
+    assert lines[origin_idx] == ORIGIN_LEGACY, lines[origin_idx]
+
+
+def test_the_translatable_fragment_is_expanded_for_the_user_language():
+    """**核心（本地化）**: ``{{t:讨论}}`` 按 lang 替换 —— 英语用户看到 Discussion"""
+    md = build_rich_markdown(_result(), config=_Cfg(), lang="en-us")
+    assert "{{t:" not in md, md
+    assert "» Discussion" in md, md
+
+
+def test_a_legacy_origin_line_renders_verbatim():
+    """老缓存里是字面文案（无占位符）—— 逐字不变，不报错"""
+    md = build_rich_markdown(_result(origin_line=ORIGIN_LEGACY), config=_Cfg())
+    assert "» 讨论" in md
+    assert "{{t:" not in md
 
 
 def test_the_origin_line_is_not_in_the_content_area():
@@ -89,6 +110,7 @@ def test_the_cache_path_renders_the_same():
     """缓存路径（``build_rich_markdown_by_str``）也要带上归属行 —— 漏了就是
 
     "第一次发（现场）有归属行、第二次（缓存命中）没有"。
+    片段替换同样要走这条路径（否则缓存命中时 ``{{t:讨论}}`` 字面泄漏）。
     """
     md = build_rich_markdown_by_str(
         "真的有人能看过3000+部番吗",
@@ -101,6 +123,7 @@ def test_the_cache_path_renders_the_same():
     )
     lines = _lines(md)
     assert "» 讨论" in lines[1], lines[:4]
+    assert "{{t:" not in md, md
 
 
 def test_the_cache_path_without_the_argument_matches_before():

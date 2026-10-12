@@ -26,6 +26,7 @@
 35277da314ea: Bạn không có quyền sử dụng lệnh này
 373e2207fa07: Không có bộ nhớ đệm
 3795485677d6: Cấu hình nhóm
+38a42cd2eec9: ({details})
 39b75e75d433: Ảnh bìa video
 39d2213b4a9a: Danh sách trắng trống
 3a6fc1464f5f: Không có trong danh sách trắng
@@ -84,11 +85,13 @@
 75f0fa966d82: lượt thích
 769d88e425e0: Hoàn thành
 77274b54a324: 'Lỗi {stage}:'
+7b000c997e5e: 📊 Bình chọn
 7eafd0a497bd: '
 
 
   <b>Phản hồi vấn đề: @MisakaSisters</b>'
 816de50b9e0e: Vui lòng nhập liên kết trong hộp chat
+8472b9d2a8a9: Số phiếu
 868afb493654: Chọn mục tiêu cấu hình
 8a8672da4ab7: Mục cấu hình không được hỗ trợ
 91f015aa09bc: Hãy trả lời tin nhắn của ai đó, hoặc cho biết ID người dùng
@@ -100,6 +103,7 @@ a5eac262447d: Chỉ dành cho thành viên của nhóm được chỉ định
 ab480060abb1: Không hiển thị nhật ký lỗi
 ad4fff48f141: Không có quyền
 ad66098d7867: Giữ lại nhật ký lỗi
+aef1e20b40db: '"{title}"'
 b3bbb48dcb10: Phân tích quá thường xuyên, vui lòng thử lại sau {e.retry_after:.1f}
   giây
 b6aaf8f2a2be: Cấu hình cá nhân trong nhóm
@@ -111,11 +115,14 @@ c11154582f8a: Ẩn phần giới thiệu
 c2236f70c559: Bypass cache parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Đã xóa khỏi danh sách trắng
+c909e6eb65aa: Tỷ lệ
 d2282636abc7: Bảng cấu hình
 d34addb9b2f0: Đã xóa bộ nhớ đệm
 d5631690265c: Không thể nhận diện mục tiêu cấu hình
 d5a73b0c7f2f: Tải lên
 7a425880c8d8: 'Đã xóa toàn bộ bộ nhớ đệm (Redis): {persistent} lâu dài · {result} kết quả'
+d9d060bed1f0: Tổng cộng {total:,} phiếu
+da86ae7e75fe: Thảo luận
 e14de27e8559: '{target_label}'
 e3889d130a2f: '>**Để đảm bảo trải nghiệm sử dụng cho tất cả người dùng, hiện tại đã
   kích hoạt giới hạn tốc độ**
@@ -129,8 +136,11 @@ e3889d130a2f: '>**Để đảm bảo trải nghiệm sử dụng cho tất cả 
   **Địa chỉ mã nguồn mở: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Phân tích và xem trước nội dung
 e4f6307e1c4f: 'Đã chuyển sang: {LANG_MAP[selected]}'
+e7f40ca894a3: Bình chọn
+ea15ae2b7fba: Lựa chọn
 eaa3cd851501: Tùy chỉnh văn bản
 f047ff589a7a: Gửi gói kèm thông tin phân tích
 f1d192b54c3b: Hiện toàn bộ văn bản
 f6f18e097963: Danh sách trắng
+fe76fe2b4eef: '{voters} người tham gia'
 ff7e330bebf8: Cấu hình cá nhân trong chủ đề

@@ -26,6 +26,7 @@
 35277da314ea: Nie masz uprawnień do użycia tego polecenia
 373e2207fa07: Brak pamięci podręcznej
 3795485677d6: Konfiguracja grupy
+38a42cd2eec9: ({details})
 39b75e75d433: Miniatura wideo
 39d2213b4a9a: Lista dozwolonych jest pusta
 3a6fc1464f5f: Nie ma go na liście dozwolonych
@@ -84,11 +85,13 @@
 75f0fa966d82: polubień
 769d88e425e0: Zakończono
 77274b54a324: 'Błąd {stage}:'
+7b000c997e5e: 📊 Ankieta
 7eafd0a497bd: '
 
 
   <b>Opinie i sugestie: @MisakaSisters</b>'
 816de50b9e0e: Wpisz link w polu czatu
+8472b9d2a8a9: Głosy
 868afb493654: Wybierz cel konfiguracji
 8a8672da4ab7: Nieobsługiwany element konfiguracji
 91f015aa09bc: Odpowiedz na czyjąś wiadomość lub podaj ID użytkownika
@@ -100,6 +103,7 @@ a5eac262447d: Tylko dla członków wyznaczonej grupy
 ab480060abb1: Nie pokazuj dziennika błędów
 ad4fff48f141: Brak uprawnień
 ad66098d7867: Zachowaj dziennik błędów
+aef1e20b40db: „{title}“
 b3bbb48dcb10: Analiza zbyt częsta, spróbuj ponownie za {e.retry_after:.1f}s
 b6aaf8f2a2be: Konfiguracja osobista w grupie
 b765e4eb1844: Oryginalny link
@@ -110,11 +114,14 @@ c11154582f8a: Ukryj wprowadzenie
 c2236f70c559: Omijanie analizy pamięci podręcznej
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Usunięto z listy dozwolonych
+c909e6eb65aa: Udział
 d2282636abc7: Panel konfiguracji
 d34addb9b2f0: Pamięć podręczna wyczyszczona
 d5631690265c: Nie można rozpoznać celu konfiguracji
 d5a73b0c7f2f: Przesyłanie
 7a425880c8d8: 'Wyczyszczono wszystkie pamięci podręczne (Redis): {persistent} trwałych · {result} wyników'
+d9d060bed1f0: Łącznie {total:,} głosów
+da86ae7e75fe: Dyskusja
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -131,8 +138,11 @@ e3889d130a2f: '
   **Repozytorium otwartego źródła: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analizuj i podglądaj zawartość
 e4f6307e1c4f: 'Przełączono na: {LANG_MAP[selected]}'
+e7f40ca894a3: Ankieta
+ea15ae2b7fba: Opcja
 eaa3cd851501: Niestandardowy tekst
 f047ff589a7a: Wyślij jako paczkę, z informacjami o analizie
 f1d192b54c3b: Pokaż cały tekst
 f6f18e097963: Lista dozwolonych
+fe76fe2b4eef: '{voters} głosujących'
 ff7e330bebf8: Konfiguracja osobista w temacie

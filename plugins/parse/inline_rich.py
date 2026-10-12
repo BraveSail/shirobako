@@ -259,17 +259,54 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
     )
 
 
+def _poll_to_cache_dicts(polls) -> list[dict]:
+    """把 ``result.polls`` 序列化成缓存用的 dict 列表。
+
+    字段名与 lib 的 ``asdict(Poll)`` 对齐（协议已冻结, 见计划文件）：
+    ``options[{text, count}]`` / ``total_votes`` / ``voters`` / ``title`` / ``is_finished``。
+
+    **显式逐个取字段**（而不是 ``dataclasses.asdict``）：lib 的 ``Poll`` 可能是
+    dataclass、dict 或 duck-type, 结果里也允许直接塞 dict（渲染协议同构）。
+    拿不到就填默认值 —— 少一个字段不该让整条缓存写失败。
+    """
+    from plugins.helpers import _poll_field  # 与渲染层共用同一套字段读取
+
+    out: list[dict] = []
+    for poll in polls or []:
+        options = [
+            {
+                "text": str(_poll_field(option, "text") or ""),
+                "count": _poll_field(option, "count"),
+            }
+            for option in (_poll_field(poll, "options") or [])
+        ]
+        out.append(
+            {
+                "options": options,
+                "total_votes": _poll_field(poll, "total_votes"),
+                "voters": _poll_field(poll, "voters"),
+                "title": str(_poll_field(poll, "title") or ""),
+                "is_finished": bool(_poll_field(poll, "is_finished", False)),
+            }
+        )
+    return out
+
+
 def rich_cache_entry(
     parse_result,
     media: list,
     *,
     quoted_media_count: int = 0,
     reply_media_count: int = 0,
+    polls: list | None = None,
 ):
     """把一次富文本发送的字段与媒体 file_id 收成缓存条目。
 
     ``quoted_media_count`` 记的是**媒体项数** (缓存里平铺的条数), 不是 ref 数
     —— 一个 ref 可能展开成多个文件, 缓存只能按项切分。
+
+    ``polls`` 是**投票数据** (``result.polls`` 的序列化) —— 正文里的 ``{{poll:N}}``
+    占位符要靠它才能渲染; 不传 (老调用点/没有投票) 时按空处理, 渲染层不替换。
 
     放在这里而不是发送层: 私聊/群 (``sender``) 与 guest 都要写同一种条目。
     """
@@ -289,6 +326,9 @@ def rich_cache_entry(
             origin_line=getattr(parse_result, "origin_line", "") or "",
             reply_count=getattr(parse_result, "reply_count", None),
             hashtags=list(getattr(parse_result, "hashtags", None) or []),
+            # 投票: 不存的话"第二次发同一条链接"占位符就会被静默删掉 (缓存命中路径
+            # 没有数据可渲染)。默认参数只是兜底, 调用点应显式传 result.polls。
+            polls=_poll_to_cache_dicts(polls if polls is not None else getattr(parse_result, "polls", None)),
             author_name=get_parse_author_name(parse_result),
             author_handle=getattr(parse_result, "author_handle", ""),
             author_url=getattr(parse_result, "author_url", ""),
@@ -361,6 +401,9 @@ def build_cached_rich_content(
         origin_line=entry.parse_result.origin_line,
         reply_count=entry.parse_result.reply_count,
         hashtags=entry.parse_result.hashtags,
+        # 投票数据（``{{poll:N}}`` 的渲染源）—— 老缓存没有这个字段时为 [],
+        # 渲染层不替换占位符（老缓存里本来也没有占位符）
+        polls=entry.parse_result.polls,
         author_name=entry.parse_result.author_name,
         author_handle=entry.parse_result.author_handle,
         author_url=entry.parse_result.author_url,

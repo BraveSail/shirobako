@@ -27,6 +27,7 @@
 35277da314ea: Je mag dit commando niet gebruiken
 373e2207fa07: Geen cache
 3795485677d6: Groepsconfiguratie
+38a42cd2eec9: ({details})
 39b75e75d433: Videominiatuur
 39d2213b4a9a: De whitelist is leeg
 3a6fc1464f5f: Staat niet in de whitelist
@@ -85,11 +86,13 @@
 75f0fa966d82: vind-ik-leuks
 769d88e425e0: Voltooid
 77274b54a324: '{stage} fout:'
+7b000c997e5e: 📊 Peiling
 7eafd0a497bd: '
 
 
   <b>Probleemfeedback: @MisakaSisters</b>'
 816de50b9e0e: Voer een link in het chatvenster in
+8472b9d2a8a9: Stemmen
 868afb493654: Kies configuratiedoel
 8a8672da4ab7: Niet-ondersteunde configuratieoptie
 91f015aa09bc: Antwoord op iemands bericht, of geef een gebruikers-ID
@@ -101,6 +104,7 @@ a5eac262447d: Alleen voor leden van de aangewezen groep
 ab480060abb1: Foutlogboeken niet weergeven
 ad4fff48f141: Geen toestemming
 ad66098d7867: Foutlogboek bewaren
+aef1e20b40db: '"{title}"'
 b3bbb48dcb10: Te vaak geanalyseerd, probeer het opnieuw na {e.retry_after:.1f}s
 b6aaf8f2a2be: Persoonlijke configuratie binnen groep
 b765e4eb1844: Originele link
@@ -111,11 +115,14 @@ c11154582f8a: Introductie verbergen
 c2236f70c559: Cache-omzeiling parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Verwijderd van de whitelist
+c909e6eb65aa: Aandeel
 d2282636abc7: Configuratiepaneel
 d34addb9b2f0: Cache gewist
 d5631690265c: Kan configuratiedoel niet herkennen
 d5a73b0c7f2f: Uploaden
 7a425880c8d8: 'Alle caches geleegd (Redis): {persistent} persistent · {result} resultaat'
+d9d060bed1f0: '{total:,} stemmen totaal'
+da86ae7e75fe: Discussie
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -132,8 +139,11 @@ e3889d130a2f: '
   **Open source locatie: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Parseer en bekijk inhoud
 e4f6307e1c4f: 'Gewisseld naar: {LANG_MAP[selected]}'
+e7f40ca894a3: Peiling
+ea15ae2b7fba: Optie
 eaa3cd851501: Aangepaste tekst
 f047ff589a7a: Verpak en stuur, inclusief parseer informatie
 f1d192b54c3b: Volledige tekst weergeven
 f6f18e097963: Whitelist
+fe76fe2b4eef: '{voters} deelnemers'
 ff7e330bebf8: Persoonlijke configuratie binnen onderwerp

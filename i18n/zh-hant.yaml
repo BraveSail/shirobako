@@ -24,6 +24,7 @@
 35277da314ea: 無權使用此命令
 373e2207fa07: 沒有快取
 3795485677d6: 群組配置
+38a42cd2eec9: （{details}）
 39b75e75d433: 視頻封面
 39d2213b4a9a: 白名單為空
 3a6fc1464f5f: 不在白名單中
@@ -80,11 +81,13 @@
 75f0fa966d82: 讚
 769d88e425e0: 完成
 77274b54a324: '{stage}錯誤:'
+7b000c997e5e: 📊 投票
 7eafd0a497bd: '
 
 
   <b>問題反饋: @MisakaSisters</b>'
 816de50b9e0e: 請在聊天框輸入連結
+8472b9d2a8a9: 票數
 868afb493654: 選擇配置目標
 8a8672da4ab7: 不支援的配置項
 91f015aa09bc: 請回覆某人的訊息，或給出使用者 ID
@@ -96,6 +99,7 @@ a5eac262447d: 僅限指定群組的成員使用
 ab480060abb1: 不顯示錯誤日誌
 ad4fff48f141: 無權限
 ad66098d7867: 保留錯誤日誌
+aef1e20b40db: 「{title}」
 b3bbb48dcb10: 解析過於頻繁，請在 {e.retry_after:.1f}s 後重試
 b6aaf8f2a2be: 群內個人配置
 b765e4eb1844: 原始連結
@@ -106,11 +110,14 @@ c11154582f8a: 隱藏簡介
 c2236f70c559: 繞過快取解析
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: 已移出白名單
+c909e6eb65aa: 佔比
 d2282636abc7: 配置面板
 d34addb9b2f0: 已清除快取
 d5631690265c: 無法識別配置目標
 d5a73b0c7f2f: 上傳
 7a425880c8d8: 已清空全部快取（Redis）：持久層 {persistent} 條 · 結果層 {result} 條
+d9d060bed1f0: 共 {total:,} 票
+da86ae7e75fe: 討論
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
@@ -124,8 +131,11 @@ e3889d130a2f: '
   **開源地址: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: 解析並預覽內容
 e4f6307e1c4f: '已切換為: {LANG_MAP[selected]}'
+e7f40ca894a3: 投票
+ea15ae2b7fba: 選項
 eaa3cd851501: 自訂文案
 f047ff589a7a: 打包發送，附帶解析資訊
 f1d192b54c3b: 展開全文
 f6f18e097963: 白名單
+fe76fe2b4eef: '{voters} 人參與'
 ff7e330bebf8: 話題內個人配置
