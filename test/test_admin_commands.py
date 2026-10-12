@@ -1,8 +1,10 @@
-"""管理命令: 白名单判定 / ``/add`` 取人 / ``/purge`` 清缓存。
+"""管理命令: 权限判定 / ``/add`` 取人 / ``/promote`` ``/demote`` / ``/purge`` 清缓存。
 
 这些命令是**破坏性**的 (清掉别人解析用的 file_id 缓存) 且是**权限**相关, 所以
-把三件事都钉死:
-- 谁算白名单 (配置 ∪ DB)、重复加白不写库;
+把几件事都钉死:
+- 两级权限: 白名单普通用户 (role=user) **不是**管理员; 管理员 (role=admin) 是;
+  超管只认配置;
+- ``/add`` 加的是普通用户; ``/promote`` 提升管理员 (**仅超管可调**);
 - ``/add`` 回复转发消息时取的是**原转发者** (私聊里最容易加错人的地方);
 - ``/purge`` 用的是 ``get_raw_url`` 那把 key (拿原始输入去清会 hash 对不上、清不掉)。
 """
@@ -11,6 +13,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from db.models.admin_user import ROLE_ADMIN, ROLE_USER
 from services.admin_user import AdminUserService
 
 CONFIGURED = 1879026273
@@ -18,11 +21,16 @@ FROM_DB = 111222333
 STRANGER = 999888777
 
 
-def _repo(*, existing: int | None = None, rows: list | None = None) -> MagicMock:
+def _repo(*, existing: int | None = None, rows: list | None = None, role: str = ROLE_USER) -> MagicMock:
     repo = MagicMock()
-    repo.get_by_tg_user_id = AsyncMock(return_value=SimpleNamespace(telegram_user_id=existing) if existing else None)
-    repo.add = AsyncMock(return_value=SimpleNamespace(telegram_user_id=0))
-    repo.list_all = AsyncMock(return_value=[SimpleNamespace(telegram_user_id=i) for i in (rows or [])])
+    repo.get_by_tg_user_id = AsyncMock(
+        return_value=SimpleNamespace(telegram_user_id=existing, role=role) if existing else None
+    )
+    repo.add = AsyncMock(return_value=SimpleNamespace(telegram_user_id=0, role=role))
+    repo.set_role = AsyncMock(return_value=SimpleNamespace(telegram_user_id=existing, role=role))
+    repo.list_all = AsyncMock(
+        return_value=[SimpleNamespace(telegram_user_id=uid, role=r) for uid, r in (rows or [])]
+    )
     return repo
 
 
@@ -34,29 +42,45 @@ def _service(repo: MagicMock) -> AdminUserService:
     return svc
 
 
-# ---------------------------------------------------------------- 白名单判定
+# ---------------------------------------------------------------- 权限判定（两级）
 
 
-def test_a_configured_id_is_allowed():
+def test_a_configured_id_is_admin():
     repo = _repo()
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
-        assert asyncio.run(svc.is_allowed(CONFIGURED)) is True
+        assert asyncio.run(svc.is_admin(CONFIGURED)) is True
     repo.get_by_tg_user_id.assert_not_awaited()  # 配置命中就不必查库
 
 
-def test_an_id_added_at_runtime_is_allowed():
-    repo = _repo(existing=FROM_DB)
+def test_a_db_admin_is_admin():
+    repo = _repo(existing=FROM_DB, role=ROLE_ADMIN)
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
-        assert asyncio.run(svc.is_allowed(FROM_DB)) is True
+        assert asyncio.run(svc.is_admin(FROM_DB)) is True
+
+
+def test_a_db_plain_user_is_not_an_admin():
+    """**两级权限的核心边界**: 白名单普通用户 (role=user) 不是管理员"""
+    repo = _repo(existing=FROM_DB, role=ROLE_USER)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
+        assert asyncio.run(svc.is_admin(FROM_DB)) is False
+
+
+def test_a_db_plain_user_is_still_whitelisted():
+    """但他是白名单成员（名单语义）"""
+    repo = _repo(existing=FROM_DB, role=ROLE_USER)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
+        assert asyncio.run(svc.is_whitelisted(FROM_DB)) is True
 
 
 def test_a_stranger_is_rejected():
     repo = _repo()
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
-        assert asyncio.run(svc.is_allowed(STRANGER)) is False
+        assert asyncio.run(svc.is_admin(STRANGER)) is False
 
 
 def test_no_user_is_rejected():
@@ -64,7 +88,7 @@ def test_no_user_is_rejected():
     repo = _repo()
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
-        assert asyncio.run(svc.is_allowed(None)) is False
+        assert asyncio.run(svc.is_admin(None)) is False
 
 
 def test_the_configured_list_is_parsed_leniently():
@@ -76,7 +100,7 @@ def test_the_configured_list_is_parsed_leniently():
     assert BotSettings(admin_users="me,@name,").admin_user_ids == []
 
 
-# ---------------------------------------------------------------- 加白
+# ---------------------------------------------------------------- /add（普通用户）
 
 
 def test_adding_a_new_user_writes_to_the_db():
@@ -85,6 +109,8 @@ def test_adding_a_new_user_writes_to_the_db():
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
         assert asyncio.run(svc.add(STRANGER, added_by=CONFIGURED)) is True
     repo.add.assert_awaited_once()
+    # **/add 写的必须是 role=user**（普通用户），不是 admin
+    assert repo.add.await_args.kwargs.get("role") == ROLE_USER
 
 
 def test_adding_twice_does_not_insert_again():
@@ -104,11 +130,69 @@ def test_a_configured_user_is_not_copied_into_the_db():
     repo.add.assert_not_awaited()
 
 
-def test_list_merges_config_and_db_sorted_and_deduped():
-    repo = _repo(rows=[FROM_DB, CONFIGURED])  # DB 里也有一条与配置重复的
+# ---------------------------------------------------------------- /promote /demote
+
+
+def test_promoting_an_existing_plain_user_upgrades_the_role():
+    """把已加白的普通用户提升为管理员: 改 role, 不新增行"""
+    repo = _repo(existing=FROM_DB, role=ROLE_USER)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.promote(FROM_DB, promoted_by=CONFIGURED)) is True
+    repo.set_role.assert_awaited_once_with(FROM_DB, ROLE_ADMIN)
+    repo.add.assert_not_awaited()
+
+
+def test_promoting_someone_not_listed_creates_an_admin_row():
+    """``/promote`` 一个从没加白的人 = 加白并提升（无需先 /add）"""
+    repo = _repo(existing=None)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.promote(STRANGER, promoted_by=CONFIGURED)) is True
+    repo.add.assert_awaited_once()
+    assert repo.add.await_args.kwargs.get("role") == ROLE_ADMIN
+
+
+def test_promoting_an_admin_is_idempotent():
+    repo = _repo(existing=FROM_DB, role=ROLE_ADMIN)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.promote(FROM_DB)) is False
+    repo.set_role.assert_not_awaited()
+
+
+def test_a_configured_superadmin_is_never_written_to_the_db():
+    repo = _repo(existing=None)
     svc = _service(repo)
     with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
-        assert asyncio.run(svc.list_ids()) == sorted({CONFIGURED, FROM_DB})
+        assert asyncio.run(svc.promote(CONFIGURED)) is False
+    repo.add.assert_not_awaited()
+
+
+def test_demoting_an_admin_downgrades_the_role():
+    repo = _repo(existing=FROM_DB, role=ROLE_ADMIN)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.demote(FROM_DB)) is True
+    repo.set_role.assert_awaited_once_with(FROM_DB, ROLE_USER)
+
+
+def test_demoting_a_plain_user_is_idempotent():
+    repo = _repo(existing=FROM_DB, role=ROLE_USER)
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[])):
+        assert asyncio.run(svc.demote(FROM_DB)) is False
+    repo.set_role.assert_not_awaited()
+
+
+def test_list_roles_marks_configured_as_super_and_merges_sorted():
+    repo = _repo(rows=[(FROM_DB, ROLE_ADMIN), (999888777, ROLE_USER), (CONFIGURED, ROLE_USER)])
+    svc = _service(repo)
+    with patch("services.admin_user.bs", SimpleNamespace(admin_user_ids=[CONFIGURED])):
+        assert asyncio.run(svc.list_roles()) == sorted(
+            [(CONFIGURED, "super"), (FROM_DB, ROLE_ADMIN), (999888777, ROLE_USER)]
+        )
+
 
 
 # ---------------------------------------------------------------- /add 取谁
@@ -211,6 +295,142 @@ def test_a_non_whitelisted_user_gets_a_refusal_and_nothing_else():
     said = sender.return_value.text.await_args.args[0]
     assert said == "无权使用该命令"
     cache.pop.assert_not_called()  # 没执行任何清理
+
+
+# ---------------------------------------------------------------- /promote /demote（仅超管）
+
+
+def test_a_non_superadmin_cannot_promote():
+    """**核心**: ``/promote`` 只有超管能调 —— 普通管理员也被拒。
+
+    （这是需求原话「/promote 只能由我使用」的守门测试。）
+    """
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    msg = SimpleNamespace(
+        from_user=SimpleNamespace(id=FROM_DB), command=["promote", "123456789"], reply_to_message=None
+    )
+
+    service = MagicMock()
+    service.return_value.promote = AsyncMock(return_value=True)
+
+    with (
+        # 他是"管理员"（能调 /purge），但不是超管
+        patch.object(admin, "is_super_admin", AsyncMock(return_value=False)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "AdminUserService", service),
+        patch.object(admin, "get_session", _session_cm()),
+    ):
+        asyncio.run(admin.promote_user(cli, msg))
+
+    assert sender.return_value.text.await_args.args[0] == "该命令仅限超管使用"
+    service.return_value.promote.assert_not_awaited()  # 没有任何提升动作
+
+
+def test_a_non_superadmin_cannot_demote():
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    msg = SimpleNamespace(from_user=SimpleNamespace(id=FROM_DB), command=["demote", "123456789"], reply_to_message=None)
+
+    service = MagicMock()
+    service.return_value.demote = AsyncMock(return_value=True)
+
+    with (
+        patch.object(admin, "is_super_admin", AsyncMock(return_value=False)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "AdminUserService", service),
+        patch.object(admin, "get_session", _session_cm()),
+    ):
+        asyncio.run(admin.demote_user(cli, msg))
+
+    assert sender.return_value.text.await_args.args[0] == "该命令仅限超管使用"
+    service.return_value.demote.assert_not_awaited()
+
+
+def test_the_superadmin_can_promote():
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    msg = SimpleNamespace(
+        from_user=SimpleNamespace(id=CONFIGURED), command=["promote", "123456789"], reply_to_message=None
+    )
+
+    service = MagicMock()
+    service.is_configured = MagicMock(return_value=False)
+    service.return_value.promote = AsyncMock(return_value=True)
+
+    with (
+        patch.object(admin, "is_super_admin", AsyncMock(return_value=True)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "AdminUserService", service),
+        patch.object(admin, "get_session", _session_cm()),
+    ):
+        asyncio.run(admin.promote_user(cli, msg))
+
+    service.return_value.promote.assert_awaited_once()
+    assert "已提升为管理员" in sender.return_value.text.await_args.args[0]
+
+
+def test_demoting_a_configured_superadmin_says_to_edit_the_env():
+    """配置超管降不了 —— 必须说「需改 .env」, 不能谎称已降级"""
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    target = 1879026273
+    msg = SimpleNamespace(
+        from_user=SimpleNamespace(id=CONFIGURED), command=["demote", str(target)], reply_to_message=None
+    )
+
+    service = MagicMock()
+    service.is_configured = MagicMock(return_value=True)
+    service.return_value.demote = AsyncMock(return_value=True)
+
+    with (
+        patch.object(admin, "is_super_admin", AsyncMock(return_value=True)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "AdminUserService", service),
+        patch.object(admin, "get_session", _session_cm()),
+    ):
+        asyncio.run(admin.demote_user(cli, msg))
+
+    said = sender.return_value.text.await_args.args[0]
+    assert "ADMIN_USERS" in said and ".env" in said
+    service.return_value.demote.assert_not_awaited()
+
+
+def test_list_shows_the_three_tiers():
+    """``/list`` 分三段列出: 超管 / 管理员 / 普通用户"""
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    msg = SimpleNamespace(from_user=SimpleNamespace(id=CONFIGURED), command=["list"], reply_to_message=None)
+
+    service = MagicMock()
+    service.return_value.list_roles = AsyncMock(
+        return_value=[(CONFIGURED, "super"), (FROM_DB, "admin"), (STRANGER, "user")]
+    )
+
+    with (
+        patch.object(admin, "is_admin_user", AsyncMock(return_value=True)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "AdminUserService", service),
+        patch.object(admin, "get_session", _session_cm()),
+    ):
+        asyncio.run(admin.list_admin_users(cli, msg))
+
+    said = sender.return_value.text.await_args.args[0]
+    assert "超管" in said and "管理员" in said and "普通用户" in said
+    # 三段各含自己的 ID
+    for uid in (CONFIGURED, FROM_DB, STRANGER):
+        assert str(uid) in said
+
 
 
 # ---------------------------------------------------------------- /purge
@@ -369,7 +589,7 @@ def _del(target_arg: str | None = "123456789", *, in_config: bool = False, remov
     msg = SimpleNamespace(from_user=SimpleNamespace(id=CONFIGURED), command=command, reply_to_message=None)
 
     service = MagicMock()
-    service.in_configured = MagicMock(return_value=in_config)
+    service.is_configured = MagicMock(return_value=in_config)
     service.return_value.remove = AsyncMock(return_value=removed)
 
     with (

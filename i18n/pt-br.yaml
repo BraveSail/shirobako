@@ -2,12 +2,15 @@
 047ddf74eb5e: Esta não é a sua configuração
 04f706887b08: Bot não entrou no canal, por favor adicione o Bot ao canal antes de
   configurar
+059880e54bc6: Adicionado à lista de permissões (usuário comum)
 06778dbf05d5: Gerenciamento da plataforma
 091d3a0665fa: Configuração do canal
+09f6a39f78df: Rebaixado para usuário comum
 0a87f26596ed: Fonte ({display})
 0d3d68e32996: Já existe uma tarefa igual sendo processada, aguardando a conclusão...
 0f6c4353601e: Enviar arquivo original, evitar compressão de qualidade
 0f6cedccc5d3: Muitos GIFs, pulando upload, por favor baixe manualmente
+139669c83cc6: Já é administrador
 1a603ac4b55c: Por favor, envie `/cfg` em chat privado, grupo ou tópico, ou use `/cfg
   <nome de usuário/link/id do canal>` para configurar
 1d30c358e2a1: Modo de análise padrão
@@ -16,6 +19,7 @@
 224e2ccda861: Configuração
 23d39ae9e4f8: 🖼 Mostrar mais {count} imagens
 26ca20b161c3: Fonte
+2726326e3e92: Este comando é restrito ao superadministrador
 27350d00b70d: Enviando...
 295bb704f520: Idioma
 2bc28481a223: Excluir automaticamente mensagens de link
@@ -81,11 +85,15 @@
 68957ac274c5: Baixando... | {current * 100 / total:.0f}%
 '734176584215': Você não é o proprietário deste canal, não tem permissão para modificar
   a configuração do canal
+6c3cc1a489b2: Não é administrador
 6c6a39ac8cf3: Adicionado à lista de permissões
+7527da8954f3: Usuário comum
 75f0fa966d82: curtidas
 769d88e425e0: Concluído
 77274b54a324: 'Erro em {stage}:'
+777ab5422d34: Superadministrador
 7b000c997e5e: 📊 Enquete
+7d9d43d89239: Promovido a administrador
 7eafd0a497bd: '
 
 
@@ -104,6 +112,7 @@ ab480060abb1: Não mostrar logs de erro
 ad4fff48f141: Sem permissão
 ad66098d7867: Manter registro de erros
 aef1e20b40db: '"{title}"'
+b1dae9bc5cab: Administrador
 b3bbb48dcb10: Análise muito frequente, por favor tente novamente em {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuração pessoal no grupo
 b765e4eb1844: Link original

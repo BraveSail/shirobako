@@ -2,13 +2,16 @@
 047ddf74eb5e: This is not your configuration
 04f706887b08: Bot has not joined this channel, please add the Bot to the channel before
   configuring
+059880e54bc6: Added to the whitelist (regular user)
 06778dbf05d5: Platform Management
 091d3a0665fa: Channel Configuration
+09f6a39f78df: Demoted to regular user
 0a87f26596ed: Source ({display})
 0d3d68e32996: A task with the same content is already being parsed, waiting for parsing
   to complete...
 0f6c4353601e: Send original file to avoid quality compression
 0f6cedccc5d3: Too many GIFs, skipping upload, please download manually
+139669c83cc6: Already an administrator
 1a603ac4b55c: Please send `/cfg` in private chat, group, or topic, or use `/cfg <channel
   username/link/id>` to configure
 1d30c358e2a1: Default parsing mode
@@ -17,6 +20,7 @@
 224e2ccda861: Configuration
 23d39ae9e4f8: 🖼 Show {count} more images
 26ca20b161c3: Source
+2726326e3e92: This command is restricted to the super admin
 27350d00b70d: Uploading...
 295bb704f520: Language
 2bc28481a223: Automatically delete link messages
@@ -81,11 +85,15 @@
 68957ac274c5: Downloading... | {current * 100 / total:.0f}%
 '734176584215': You are not the owner of this channel, no permission to modify channel
   configuration
+6c3cc1a489b2: Not an administrator
 6c6a39ac8cf3: Added to the whitelist
+7527da8954f3: Regular user
 75f0fa966d82: likes
 769d88e425e0: Done
 77274b54a324: '{stage} error:'
+777ab5422d34: Super admin
 7b000c997e5e: 📊 Poll
+7d9d43d89239: Promoted to administrator
 7eafd0a497bd: '
 
 
@@ -104,6 +112,7 @@ ab480060abb1: Do not display error logs
 ad4fff48f141: No permission
 ad66098d7867: Retain error logs
 aef1e20b40db: '"{title}"'
+b1dae9bc5cab: Administrator
 b3bbb48dcb10: Parsing too frequently, please try again after {e.retry_after:.1f}s
 b6aaf8f2a2be: Individual configuration within group
 b765e4eb1844: Original link

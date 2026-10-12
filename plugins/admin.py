@@ -1,9 +1,15 @@
-"""管理命令: ``/add`` ``/list`` ``/purge`` —— **仅白名单用户可用**。
+"""管理命令: ``/add`` ``/list`` ``/purge`` ``/del`` ``/promote`` ``/demote``。
 
-白名单 = 配置 (``.env`` 的 ``ADMIN_USERS``, 逗号分隔) ∪ DB ``admin_users`` 表。
-配置那一层是**永远允许**的, 也解决"第一个人怎么进来" —— 否则 ``/add`` 谁也调不了。
+**两级权限**（2026-10-12）：
 
-**普通解析不受影响** —— 它有自己的规则 (与 bot 同群可用)。这里只管这三条命令。
+- ``/add`` —— 加**白名单普通用户**（写库 ``role=user``）。
+- ``/promote`` / ``/demote`` —— 提升/降级**管理员**（``role=admin``），
+  **仅超管（``.env`` 的 ``ADMIN_USERS``）可用**。
+- 管理命令（``/purge`` ``/list`` ``/del``）—— **管理员及以上**可用
+  （白名单普通用户不是管理员）。
+
+**普通解析不受影响** —— 私聊/群解析无身份 gate（任何用户可用）；inline/guest
+走运行时的「与 bot 同群」判定（见 ``plugins/parse/access.py``，不写库）。
 """
 
 from pyrogram import Client, filters
@@ -22,6 +28,7 @@ from services import (
     SettingsService,
     UserService,
     is_admin_user,
+    is_super_admin,
     parse_cache,
     persistent_cache,
 )
@@ -40,13 +47,24 @@ async def _context(msg: Message) -> tuple[str, SettingsConfig]:
 
 
 async def _require_admin(cli: Client, msg: Message) -> bool:
-    """白名单校验: 不是白名单就回一条提示 (不静默 —— 静默会让人以为 bot 坏了)。"""
+    """**管理员**校验（配置超管 ∪ DB role=admin）: 不是就回一条提示（不静默）。"""
     uid = msg.from_user.id if msg.from_user else None
     if await is_admin_user(uid):
         return True
     lang, config = await _context(msg)
     await MessageSender(cli, msg, config).text(t_[lang]("无权使用该命令"))
-    logger.warning(f"管理命令被非白名单用户调用: user_id={uid} cmd={msg.command}")
+    logger.warning(f"管理命令被非管理员调用: user_id={uid} cmd={msg.command}")
+    return False
+
+
+async def _require_super_admin(cli: Client, msg: Message) -> bool:
+    """**超管**校验（**只认配置层**）—— ``/promote`` ``/demote`` 专用。"""
+    uid = msg.from_user.id if msg.from_user else None
+    if await is_super_admin(uid):
+        return True
+    lang, config = await _context(msg)
+    await MessageSender(cli, msg, config).text(t_[lang]("该命令仅限超管使用"))
+    logger.warning(f"超管命令被非超管调用: user_id={uid} cmd={msg.command}")
     return False
 
 
@@ -65,7 +83,7 @@ def _target_user_id_from_reply(reply: Message) -> int | None:
 
 
 async def _resolve_target(cli: Client, msg: Message) -> int | None:
-    """``/add`` / ``/del`` 要操作的人: 命令参数优先, 否则看被回复的消息。"""
+    """``/add`` ``/del`` ``/promote`` ``/demote`` 取谁: 命令参数优先, 否则看被回复的消息。"""
     if msg.command and len(msg.command) > 1:
         arg = msg.command[1].strip()
         if arg.lstrip("-").isdigit():
@@ -74,7 +92,7 @@ async def _resolve_target(cli: Client, msg: Message) -> int | None:
         try:
             user = await cli.get_users(arg)
         except Exception as e:  # noqa: BLE001 - 解析不到就当没给, 由调用方提示
-            logger.warning(f"/add 无法解析目标: arg={arg} err={type(e).__name__}: {e}")
+            logger.warning(f"无法解析目标: arg={arg} err={type(e).__name__}: {e}")
             return None
         return user.id if user else None
     if reply := msg.reply_to_message:
@@ -84,7 +102,7 @@ async def _resolve_target(cli: Client, msg: Message) -> int | None:
 
 @Client.on_message(filters.command("add"))
 async def add_admin_user(cli: Client, msg: Message) -> None:
-    """``/add <uid>`` 或回复某人的消息 —— 把他加进白名单。"""
+    """``/add <uid>`` 或回复某人的消息 —— 把他加进白名单（**普通用户**）。"""
     if not await _require_admin(cli, msg):
         return
 
@@ -99,13 +117,64 @@ async def add_admin_user(cli: Client, msg: Message) -> None:
     async with get_session() as session:
         added = await AdminUserService(session).add(target, added_by=msg.from_user.id if msg.from_user else None)
 
-    label = _t("已加入白名单") if added else _t("已在白名单中")
+    label = _t("已加入白名单(普通用户)") if added else _t("已在白名单中")
+    await MessageSender(cli, msg, config).text(f"{label}: {target}")
+
+
+@Client.on_message(filters.command("promote"))
+async def promote_user(cli: Client, msg: Message) -> None:
+    """``/promote <uid>`` 或回复某人 —— 把他提升为**管理员**。**仅超管可用**。"""
+    if not await _require_super_admin(cli, msg):
+        return
+
+    lang, config = await _context(msg)
+    _t = t_[lang]
+
+    target = await _resolve_target(cli, msg)
+    if target is None:
+        await MessageSender(cli, msg, config).text(_t("请回复某人的消息，或给出用户 ID"))
+        return
+
+    async with get_session() as session:
+        changed = await AdminUserService(session).promote(
+            target, promoted_by=msg.from_user.id if msg.from_user else None
+        )
+
+    label = _t("已提升为管理员") if changed else _t("已是管理员")
+    await MessageSender(cli, msg, config).text(f"{label}: {target}")
+
+
+@Client.on_message(filters.command("demote"))
+async def demote_user(cli: Client, msg: Message) -> None:
+    """``/demote <uid>`` 或回复某人 —— 把他从管理员降回**普通用户**。**仅超管可用**。"""
+    if not await _require_super_admin(cli, msg):
+        return
+
+    lang, config = await _context(msg)
+    _t = t_[lang]
+
+    target = await _resolve_target(cli, msg)
+    if target is None:
+        await MessageSender(cli, msg, config).text(_t("请回复某人的消息，或给出用户 ID"))
+        return
+
+    # 配置超管降不了 (它在 .env 里) —— 必须说清, 不能谎称"已降级"
+    if AdminUserService.is_configured(target):
+        await MessageSender(cli, msg, config).text(
+            _t(f"{target} 是配置里的超管 (ADMIN_USERS)，需改 .env 才能移除")
+        )
+        return
+
+    async with get_session() as session:
+        changed = await AdminUserService(session).demote(target)
+
+    label = _t("已降为普通用户") if changed else _t("不是管理员")
     await MessageSender(cli, msg, config).text(f"{label}: {target}")
 
 
 @Client.on_message(filters.command("list"))
 async def list_admin_users(cli: Client, msg: Message) -> None:
-    """``/list`` —— 列出白名单。"""
+    """``/list`` —— 列出名单（超管 / 管理员 / 普通用户三段）。"""
     if not await _require_admin(cli, msg):
         return
 
@@ -113,13 +182,23 @@ async def list_admin_users(cli: Client, msg: Message) -> None:
     _t = t_[lang]
 
     async with get_session() as session:
-        ids = await AdminUserService(session).list_ids()
+        entries = await AdminUserService(session).list_roles()
 
-    if not ids:
+    if not entries:
         await MessageSender(cli, msg, config).text(_t("白名单为空"))
         return
-    body = "\n".join(f"• {uid}" for uid in ids)
-    await MessageSender(cli, msg, config).text(f"{_t('白名单')} ({len(ids)}):\n{body}")
+
+    groups: dict[str, list[int]] = {"super": [], "admin": [], "user": []}
+    for uid, role in entries:
+        groups.setdefault(role, []).append(uid)
+
+    # ⚠️ 段标题必须走**字面量调用点**（变量传参会让 easy_ai18n 记 parse error）
+    labels = {"super": _t("超管"), "admin": _t("管理员"), "user": _t("普通用户")}
+    lines: list[str] = []
+    for role in ("super", "admin", "user"):
+        if ids := groups.get(role):
+            lines.append(f"{labels[role]} ({len(ids)}):\n" + "\n".join(f"• {uid}" for uid in ids))
+    await MessageSender(cli, msg, config).text("\n\n".join(lines))
 
 
 @Client.on_message(filters.command("purge"))
@@ -189,7 +268,7 @@ async def purge_cache(cli: Client, msg: Message) -> None:
 
 @Client.on_message(filters.command("del"))
 async def remove_admin_user(cli: Client, msg: Message) -> None:
-    """``/del <uid>`` 或回复某人的消息 —— 把他移出白名单。"""
+    """``/del <uid>`` 或回复某人的消息 —— 把他移出名单（不论角色）。"""
     if not await _require_admin(cli, msg):
         return
 
@@ -202,7 +281,7 @@ async def remove_admin_user(cli: Client, msg: Message) -> None:
         return
 
     # 配置那层删不掉 (它在 .env 里) —— 必须说清, 不能谎称"已移除"而其实还在白名单
-    if AdminUserService.in_configured(target):
+    if AdminUserService.is_configured(target):
         await MessageSender(cli, msg, config).text(
             _t(f"{target} 在配置 (ADMIN_USERS) 里，需改 .env 才能移除")
         )

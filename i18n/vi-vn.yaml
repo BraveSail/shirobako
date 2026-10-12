@@ -2,12 +2,15 @@
 047ddf74eb5e: Đây không phải là cấu hình của bạn
 04f706887b08: Bot chưa tham gia kênh này, vui lòng thêm Bot vào kênh trước khi cấu
   hình
+059880e54bc6: Đã thêm vào danh sách trắng (người dùng thường)
 06778dbf05d5: Quản lý nền tảng
 091d3a0665fa: Cấu hình kênh
+09f6a39f78df: Đã hạ cấp thành người dùng thường
 0a87f26596ed: Nguồn ({display})
 0d3d68e32996: Đã có tác vụ giống đang được phân tích, vui lòng chờ hoàn thành...
 0f6c4353601e: Gửi tệp gốc, tránh nén chất lượng hình ảnh
 0f6cedccc5d3: Quá nhiều GIF, bỏ qua tải lên, vui lòng tải xuống thủ công
+139669c83cc6: Đã là quản trị viên
 1a603ac4b55c: Vui lòng gửi `/cfg` hoặc sử dụng `/cfg <tên người dùng/kênh/liên kết/id>`
   trong tin nhắn riêng, nhóm hoặc chủ đề để cấu hình
 1d30c358e2a1: Chế độ phân tích mặc định
@@ -16,6 +19,7 @@
 224e2ccda861: Cấu hình
 23d39ae9e4f8: 🖼 Xem thêm {count} ảnh
 26ca20b161c3: Nguồn
+2726326e3e92: Lệnh này chỉ dành cho quản trị viên cấp cao
 27350d00b70d: Đang tải lên...
 295bb704f520: Ngôn ngữ
 2bc28481a223: Tự động xóa tin nhắn liên kết
@@ -81,11 +85,15 @@
 68957ac274c5: Đang tải xuống... | {current * 100 / total:.0f}%
 '734176584215': Bạn không phải là chủ sở hữu của kênh này, không có quyền thay đổi
   cấu hình kênh
+6c3cc1a489b2: Không phải quản trị viên
 6c6a39ac8cf3: Đã thêm vào danh sách trắng
+7527da8954f3: Người dùng thường
 75f0fa966d82: lượt thích
 769d88e425e0: Hoàn thành
 77274b54a324: 'Lỗi {stage}:'
+777ab5422d34: Quản trị viên cấp cao
 7b000c997e5e: 📊 Bình chọn
+7d9d43d89239: Đã thăng cấp thành quản trị viên
 7eafd0a497bd: '
 
 
@@ -104,6 +112,7 @@ ab480060abb1: Không hiển thị nhật ký lỗi
 ad4fff48f141: Không có quyền
 ad66098d7867: Giữ lại nhật ký lỗi
 aef1e20b40db: '"{title}"'
+b1dae9bc5cab: Quản trị viên
 b3bbb48dcb10: Phân tích quá thường xuyên, vui lòng thử lại sau {e.retry_after:.1f}
   giây
 b6aaf8f2a2be: Cấu hình cá nhân trong nhóm

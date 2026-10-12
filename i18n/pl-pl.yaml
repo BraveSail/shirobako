@@ -2,12 +2,15 @@
 047ddf74eb5e: To nie jest twoja konfiguracja
 04f706887b08: Bot nie dołączył do tego kanału, najpierw dodaj bota do kanału, a następnie
   skonfiguruj
+059880e54bc6: Dodano do białej listy (zwykły użytkownik)
 06778dbf05d5: Zarządzanie platformą
 091d3a0665fa: Konfiguracja kanału
+09f6a39f78df: Zdegradowano do zwykłego użytkownika
 0a87f26596ed: Źródło ({display})
 0d3d68e32996: Już trwa analiza tego samego zadania, czekaj na zakończenie analizy...
 0f6c4353601e: Wyślij oryginalny plik, aby uniknąć kompresji jakości obrazu
 0f6cedccc5d3: Zbyt wiele GIF-ów, pomijanie przesyłania, proszę pobrać samodzielnie
+139669c83cc6: Już jest administratorem
 1a603ac4b55c: Proszę wysłać `/cfg` lub użyć `/cfg <nazwa_użytkownika_kanalu/link/id>`
   w prywatnej rozmowie, grupie lub temacie, aby skonfigurować
 1d30c358e2a1: Domyślny tryb analizy
@@ -16,6 +19,7 @@
 224e2ccda861: Konfiguracja
 23d39ae9e4f8: 🖼 Pokaż {count} więcej zdjęć
 26ca20b161c3: Źródło
+2726326e3e92: Ta komenda jest zarezerwowana dla superadministratora
 27350d00b70d: Przesyłanie...
 295bb704f520: Język
 2bc28481a223: Automatyczne usuwanie wiadomości z linkami
@@ -81,11 +85,15 @@
 68957ac274c5: Pobieranie... | {current * 100 / total:.0f}%
 '734176584215': Nie jesteś właścicielem tego kanału, nie masz uprawnień do zmiany
   konfiguracji kanału
+6c3cc1a489b2: Nie jest administratorem
 6c6a39ac8cf3: Dodano do listy dozwolonych
+7527da8954f3: Zwykły użytkownik
 75f0fa966d82: polubień
 769d88e425e0: Zakończono
 77274b54a324: 'Błąd {stage}:'
+777ab5422d34: Superadministrator
 7b000c997e5e: 📊 Ankieta
+7d9d43d89239: Awansowano na administratora
 7eafd0a497bd: '
 
 
@@ -104,6 +112,7 @@ ab480060abb1: Nie pokazuj dziennika błędów
 ad4fff48f141: Brak uprawnień
 ad66098d7867: Zachowaj dziennik błędów
 aef1e20b40db: „{title}“
+b1dae9bc5cab: Administrator
 b3bbb48dcb10: Analiza zbyt częsta, spróbuj ponownie za {e.retry_after:.1f}s
 b6aaf8f2a2be: Konfiguracja osobista w grupie
 b765e4eb1844: Oryginalny link

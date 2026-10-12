@@ -3,7 +3,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models.admin_user import AdminUser
+from db.models.admin_user import ROLE_USER, AdminUser
 
 
 class AdminUserRepo:
@@ -15,7 +15,9 @@ class AdminUserRepo:
             select(AdminUser).where(AdminUser.telegram_user_id == telegram_user_id)
         )
 
-    async def add(self, telegram_user_id: int, *, added_by: int | None = None) -> AdminUser:
+    async def add(
+        self, telegram_user_id: int, *, added_by: int | None = None, role: str = ROLE_USER
+    ) -> AdminUser:
         """加入白名单。**已存在时直接返回既有行** (幂等) ——
 
         调用方靠返回值判断"新加了"还是"本来就有", 所以这里不能重复插入
@@ -23,8 +25,20 @@ class AdminUserRepo:
         """
         if existing := await self.get_by_tg_user_id(telegram_user_id):
             return existing
-        row = AdminUser(telegram_user_id=telegram_user_id, added_by=added_by)
+        row = AdminUser(telegram_user_id=telegram_user_id, added_by=added_by, role=role)
         self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def set_role(self, telegram_user_id: int, role: str) -> AdminUser | None:
+        """改角色（``/promote`` ``/demote``）；人不在表里时返回 ``None``。
+
+        由调用方决定"不在表里也要提升"的语义（service 层会先 ``add`` 再 ``set_role``）。
+        """
+        row = await self.get_by_tg_user_id(telegram_user_id)
+        if row is None:
+            return None
+        row.role = role
         await self._session.flush()
         return row
 

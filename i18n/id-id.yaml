@@ -2,12 +2,15 @@
 047ddf74eb5e: Ini bukan konfigurasi Anda
 04f706887b08: Bot belum bergabung dengan saluran ini, silakan tambahkan Bot ke saluran
   terlebih dahulu sebelum mengonfigurasi
+059880e54bc6: Ditambahkan ke daftar putih (pengguna biasa)
 06778dbf05d5: Manajemen Platform
 091d3a0665fa: Konfigurasi Saluran
+09f6a39f78df: Diturunkan menjadi pengguna biasa
 0a87f26596ed: Sumber ({display})
 0d3d68e32996: Tugas yang sama sedang diproses, tunggu hingga selesai...
 0f6c4353601e: Kirim file asli, hindari kompresi kualitas gambar
 0f6cedccc5d3: GIF terlalu banyak, lewati pengunggahan, silakan unduh sendiri
+139669c83cc6: Sudah menjadi admin
 1a603ac4b55c: Silakan kirim `/cfg` atau gunakan `/cfg <nama pengguna/link/id saluran>`
   dalam obrolan pribadi, grup, atau topik untuk konfigurasi
 1d30c358e2a1: Mode parsing default
@@ -16,6 +19,7 @@
 224e2ccda861: Konfigurasi
 23d39ae9e4f8: 🖼 Tampilkan {count} gambar lainnya
 26ca20b161c3: Sumber
+2726326e3e92: Perintah ini hanya untuk super admin
 27350d00b70d: Sedang mengunggah...
 295bb704f520: Bahasa
 2bc28481a223: Hapus otomatis pesan tautan
@@ -80,11 +84,15 @@
 68957ac274c5: Sedang mengunduh... | {current * 100 / total:.0f}%
 '734176584215': Anda bukan pemilik saluran ini, tidak berwenang mengubah konfigurasi
   saluran
+6c3cc1a489b2: Bukan admin
 6c6a39ac8cf3: Ditambahkan ke daftar putih
+7527da8954f3: Pengguna biasa
 75f0fa966d82: suka
 769d88e425e0: Selesai
 77274b54a324: 'Kesalahan {stage}:'
+777ab5422d34: Super admin
 7b000c997e5e: 📊 Polling
+7d9d43d89239: Dipromosikan menjadi admin
 7eafd0a497bd: '
 
 
@@ -103,6 +111,7 @@ ab480060abb1: Jangan tampilkan log kesalahan
 ad4fff48f141: Tidak ada izin
 ad66098d7867: Simpan log kesalahan
 aef1e20b40db: '"{title}"'
+b1dae9bc5cab: Admin
 b3bbb48dcb10: Analisis terlalu sering, silakan coba lagi setelah {e.retry_after:.1f}
   detik
 b6aaf8f2a2be: Konfigurasi pribadi dalam grup

@@ -2,13 +2,16 @@
 047ddf74eb5e: Dit is niet jouw configuratie
 04f706887b08: Bot is niet toegevoegd aan dit kanaal, voeg de Bot eerst toe aan het
   kanaal voordat je het configureert
+059880e54bc6: Toegevoegd aan de whitelist (gewone gebruiker)
 06778dbf05d5: Platformbeheer
 091d3a0665fa: Kanaalconfiguratie
+09f6a39f78df: Teruggezet naar gewone gebruiker
 0a87f26596ed: Bron ({display})
 0d3d68e32996: Er is al eenzelfde taak bezig met ontleden, wacht tot het ontleden is
   voltooid...
 0f6c4353601e: Stuur het originele bestand om kwaliteitscompressie te voorkomen
 0f6cedccc5d3: Te veel GIF's, upload wordt overgeslagen, download ze zelf
+139669c83cc6: Is al beheerder
 1a603ac4b55c: Stuur `/cfg` in een privébericht, groep of onderwerp, of gebruik `/cfg
   <kanaal gebruikersnaam/link/id>` om te configureren
 1d30c358e2a1: Standaard parseermodus
@@ -17,6 +20,7 @@
 224e2ccda861: Configuratie
 23d39ae9e4f8: 🖼 Nog {count} afbeeldingen tonen
 26ca20b161c3: Bron
+2726326e3e92: Dit commando is alleen voor de superbeheerder
 27350d00b70d: Bezig met uploaden...
 295bb704f520: Taal
 2bc28481a223: Automatisch verwijderde linkberichten
@@ -82,11 +86,15 @@
 68957ac274c5: Bezig met downloaden... | {current * 100 / total:.0f}%
 '734176584215': Je bent geen eigenaar van dit kanaal, je hebt geen toestemming om
   de kanaalconfiguratie te wijzigen
+6c3cc1a489b2: Is geen beheerder
 6c6a39ac8cf3: Toegevoegd aan de whitelist
+7527da8954f3: Gewone gebruiker
 75f0fa966d82: vind-ik-leuks
 769d88e425e0: Voltooid
 77274b54a324: '{stage} fout:'
+777ab5422d34: Superbeheerder
 7b000c997e5e: 📊 Peiling
+7d9d43d89239: Gepromoveerd tot beheerder
 7eafd0a497bd: '
 
 
@@ -105,6 +113,7 @@ ab480060abb1: Foutlogboeken niet weergeven
 ad4fff48f141: Geen toestemming
 ad66098d7867: Foutlogboek bewaren
 aef1e20b40db: '"{title}"'
+b1dae9bc5cab: Beheerder
 b3bbb48dcb10: Te vaak geanalyseerd, probeer het opnieuw na {e.retry_after:.1f}s
 b6aaf8f2a2be: Persoonlijke configuratie binnen groep
 b765e4eb1844: Originele link

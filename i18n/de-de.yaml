@@ -2,13 +2,16 @@
 047ddf74eb5e: Das ist nicht deine Konfiguration
 04f706887b08: Bot ist diesem Kanal nicht beigetreten, bitte fügen Sie den Bot zuerst
   dem Kanal hinzu und konfigurieren Sie ihn dann.
+059880e54bc6: Zur Whitelist hinzugefügt (normaler Benutzer)
 06778dbf05d5: Plattformverwaltung
 091d3a0665fa: Kanal-Konfiguration
+09f6a39f78df: Zum normalen Benutzer herabgestuft
 0a87f26596ed: Quelle ({display})
 0d3d68e32996: Eine identische Aufgabe wird bereits analysiert, bitte warten Sie, bis
   die Analyse abgeschlossen ist...
 0f6c4353601e: Originaldatei senden, um Qualitätsverlust zu vermeiden
 0f6cedccc5d3: Zu viele GIFs, Upload übersprungen, bitte selbst herunterladen
+139669c83cc6: Ist bereits Administrator
 1a603ac4b55c: Bitte senden Sie `/cfg` oder verwenden Sie `/cfg <Kanal-Benutzername/Link/ID>`
   im privaten Chat, in der Gruppe oder im Thema zur Konfiguration.
 1d30c358e2a1: Standard-Parsing-Modus
@@ -17,6 +20,7 @@
 224e2ccda861: Konfiguration
 23d39ae9e4f8: 🖼 {count} weitere Bilder anzeigen
 26ca20b161c3: Quelle
+2726326e3e92: Dieser Befehl ist dem Super-Administrator vorbehalten
 27350d00b70d: Hochladen...
 295bb704f520: Sprache
 2bc28481a223: Automatisches Löschen von Linknachrichten
@@ -82,11 +86,15 @@
 68957ac274c5: Herunterladen... | {current * 100 / total:.0f}%
 '734176584215': Sie sind nicht der Besitzer dieses Kanals und dürfen die Kanal-Konfiguration
   nicht ändern.
+6c3cc1a489b2: Ist kein Administrator
 6c6a39ac8cf3: Zur Whitelist hinzugefügt
+7527da8954f3: Normaler Benutzer
 75f0fa966d82: Likes
 769d88e425e0: Fertig
 77274b54a324: '{stage} Fehler:'
+777ab5422d34: Super-Admin
 7b000c997e5e: 📊 Umfrage
+7d9d43d89239: Zum Administrator befördert
 7eafd0a497bd: '
 
 
@@ -105,6 +113,7 @@ ab480060abb1: Fehlerprotokolle nicht anzeigen
 ad4fff48f141: Keine Berechtigung
 ad66098d7867: Fehlerprotokolle behalten
 aef1e20b40db: „{title}“
+b1dae9bc5cab: Administrator
 b3bbb48dcb10: Zu häufige Analyse, bitte versuche es nach {e.retry_after:.1f} Sekunden
   erneut
 b6aaf8f2a2be: Persönliche Konfiguration in der Gruppe

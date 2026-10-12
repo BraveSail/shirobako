@@ -2,12 +2,15 @@
 047ddf74eb5e: Questa non è la tua configurazione
 04f706887b08: Il Bot non è stato aggiunto a questo canale, aggiungi prima il Bot al
   canale e poi configura
+059880e54bc6: Aggiunto alla whitelist (utente normale)
 06778dbf05d5: Gestione piattaforma
 091d3a0665fa: Configurazione canale
+09f6a39f78df: Ridotto a utente normale
 0a87f26596ed: Fonte ({display})
 0d3d68e32996: Un'attività identica è già in fase di analisi, attendere il completamento...
 0f6c4353601e: Invia il file originale per evitare la compressione della qualità
 0f6cedccc5d3: Troppi GIF, caricamento saltato, si prega di scaricare manualmente
+139669c83cc6: Già amministratore
 1a603ac4b55c: Invia `/cfg` in chat privata, gruppo o argomento oppure usa `/cfg <nome
   utente/link/id del canale>` per configurare
 1d30c358e2a1: Modalità di analisi predefinita
@@ -16,6 +19,7 @@
 224e2ccda861: Configurazione
 23d39ae9e4f8: 🖼 Mostra altre {count} immagini
 26ca20b161c3: Fonte
+2726326e3e92: Questo comando è riservato al super amministratore
 27350d00b70d: Caricamento in corso...
 295bb704f520: Lingua
 2bc28481a223: Eliminazione automatica dei messaggi con link
@@ -81,11 +85,15 @@
 68957ac274c5: Download in corso... | {current * 100 / total:.0f}%
 '734176584215': Non sei il proprietario di questo canale, non hai il permesso di modificare
   la configurazione del canale
+6c3cc1a489b2: Non è amministratore
 6c6a39ac8cf3: Aggiunto alla whitelist
+7527da8954f3: Utente normale
 75f0fa966d82: Mi piace
 769d88e425e0: Completato
 77274b54a324: 'Errore {stage}:'
+777ab5422d34: Super amministratore
 7b000c997e5e: 📊 Sondaggio
+7d9d43d89239: Promosso ad amministratore
 7eafd0a497bd: '
 
 
@@ -104,6 +112,7 @@ ab480060abb1: Non mostrare i log degli errori
 ad4fff48f141: Nessuna autorizzazione
 ad66098d7867: Conserva i log degli errori
 aef1e20b40db: «{title}»
+b1dae9bc5cab: Amministratore
 b3bbb48dcb10: Analisi troppo frequente, riprova tra {e.retry_after:.1f} secondi
 b6aaf8f2a2be: Configurazione personale nel gruppo
 b765e4eb1844: Link originale

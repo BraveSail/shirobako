@@ -2,13 +2,16 @@
 047ddf74eb5e: Ce n'est pas votre configuration
 04f706887b08: Le bot n'a pas rejoint ce canal, veuillez d'abord ajouter le bot au
   canal avant de configurer
+059880e54bc6: Ajouté à la liste blanche (utilisateur normal)
 06778dbf05d5: Gestion de la plateforme
 091d3a0665fa: Configuration du canal
+09f6a39f78df: Rétrogradé au rang d'utilisateur normal
 0a87f26596ed: Source ({display})
 0d3d68e32996: Une tâche identique est déjà en cours d'analyse, veuillez attendre la
   fin de l'analyse...
 0f6c4353601e: Envoyer le fichier original, éviter la compression de la qualité
 0f6cedccc5d3: Trop de GIF, téléchargement ignoré, veuillez télécharger vous-même
+139669c83cc6: Déjà administrateur
 1a603ac4b55c: Veuillez envoyer `/cfg` en message privé, groupe ou sujet, ou utiliser
   `/cfg <nom d'utilisateur/lien/id du canal>` pour configurer
 1d30c358e2a1: Mode d'analyse par défaut
@@ -17,6 +20,7 @@
 224e2ccda861: Configuration
 23d39ae9e4f8: 🖼 Afficher {count} autres images
 26ca20b161c3: Source
+2726326e3e92: Cette commande est réservée au super-administrateur
 27350d00b70d: Téléchargement en cours...
 295bb704f520: Langue
 2bc28481a223: Suppression automatique des messages contenant des liens
@@ -82,11 +86,15 @@
 68957ac274c5: Téléchargement en cours... | {current * 100 / total:.0f}%
 '734176584215': Vous n'êtes pas le propriétaire de ce canal, vous n'avez pas le droit
   de modifier la configuration du canal
+6c3cc1a489b2: N'est pas administrateur
 6c6a39ac8cf3: Ajouté à la liste blanche
+7527da8954f3: Utilisateur normal
 75f0fa966d82: J'aime
 769d88e425e0: Terminé
 77274b54a324: 'Erreur {stage} :'
+777ab5422d34: Super-administrateur
 7b000c997e5e: 📊 Sondage
+7d9d43d89239: Promu administrateur
 7eafd0a497bd: '
 
 
@@ -105,6 +113,7 @@ ab480060abb1: Ne pas afficher les journaux d'erreurs
 ad4fff48f141: Aucune autorisation
 ad66098d7867: Conserver les journaux d'erreurs
 aef1e20b40db: « {title} »
+b1dae9bc5cab: Administrateur
 b3bbb48dcb10: Analyse trop fréquente, veuillez réessayer dans {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuration personnelle dans le groupe
 b765e4eb1844: Lien brut

@@ -1,12 +1,15 @@
 024738655610: Satır içi "Orijinal URL" seçeneği
 047ddf74eb5e: Bu senin konfigürasyonun değil
 04f706887b08: Bot bu kanala katılmadı, lütfen önce Botu kanala ekleyin ve sonra yapılandırın
+059880e54bc6: Beyaz listeye eklendi (normal kullanıcı)
 06778dbf05d5: Platform yönetimi
 091d3a0665fa: Kanal Yapılandırması
+09f6a39f78df: Normal kullanıcıya düşürüldü
 0a87f26596ed: Kaynak ({display})
 0d3d68e32996: Aynı görev zaten çözülüyor, çözüm tamamlanana kadar bekleyin...
 0f6c4353601e: Orijinal dosyayı gönder, kalite sıkıştırmasını önle
 0f6cedccc5d3: GIF çok fazla, yükleme atlandı, lütfen kendiniz indirin
+139669c83cc6: Zaten yönetici
 1a603ac4b55c: Lütfen özel mesajda, grupta veya konularda `/cfg` komutunu gönderin
   veya `/cfg <kanal kullanıcı adı/link/id>` ile yapılandırın
 1d30c358e2a1: Varsayılan çözümleme modu
@@ -15,6 +18,7 @@
 224e2ccda861: Yapılandırma
 23d39ae9e4f8: 🖼 {count} görsel daha göster
 26ca20b161c3: Kaynak
+2726326e3e92: Bu komut yalnızca süper yöneticiye özeldir
 27350d00b70d: Yükleniyor...
 295bb704f520: Dil
 2bc28481a223: Bağlantı mesajlarını otomatik sil
@@ -80,11 +84,15 @@
 68957ac274c5: İndiriliyor... | {current * 100 / total:.0f}%
 '734176584215': Bu kanalın sahibi değilsiniz, kanal yapılandırmasını değiştirme yetkiniz
   yok
+6c3cc1a489b2: Yönetici değil
 6c6a39ac8cf3: İzin listesine eklendi
+7527da8954f3: Normal kullanıcı
 75f0fa966d82: beğeni
 769d88e425e0: Tamamlandı
 77274b54a324: '{stage} hata:'
+777ab5422d34: Süper yönetici
 7b000c997e5e: 📊 Anket
+7d9d43d89239: Yöneticiliğe yükseltildi
 7eafd0a497bd: '
 
 
@@ -103,6 +111,7 @@ ab480060abb1: Hata günlüklerini gösterme
 ad4fff48f141: Yetki yok
 ad66098d7867: Hata günlüklerini sakla
 aef1e20b40db: '"{title}"'
+b1dae9bc5cab: Yönetici
 b3bbb48dcb10: Çözümleme çok sık yapılıyor, lütfen {e.retry_after:.1f} saniye sonra
   tekrar deneyin
 b6aaf8f2a2be: Grup içi kişisel yapılandırma
