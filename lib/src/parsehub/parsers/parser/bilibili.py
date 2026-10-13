@@ -244,18 +244,26 @@ class BiliParse(BaseParser):
             video_playurl = await bili.get_video_playurl(url, cid, b3, b4)
 
         durl = video_playurl["data"]["durl"][0]
-        # 用 B 站**自己给的首选地址**（``durl.url``）。
-        # 以前这里会换成 ``backup_url[0]`` 再改写域名，两个问题:
-        #   1. ``durl.url`` 才是官方首选（实测同一条视频 ``durl.url`` 与 ``backup_url``
-        #      指向不同 CDN，速度能差几十倍）；
-        #   2. 改写域名是**伪造签名** —— B 站的播放签名与 host 绑定，换域名靠兼容性侥幸能用，
-        #      一旦收紧就整条下载失败（实测把 path 换到别的域名会 403 / 超时）。
-        video_url = durl["url"]
-        # 备用地址**从这一次响应里读**（不额外发请求），原样保留给下载器兜底：
-        # 主地址那份 CDN 副本可能局部不可读（实测某条视频的 Akamai 镜像在固定偏移断流，
-        # curl 18 `end of response with N bytes missing`），此时换副本是唯一可行的规避。
-        # 只在主地址失败后才用，所以仍以 ``durl.url`` 为首选 —— 上面那两条理由不变。
-        backup_urls = tuple(u for u in (durl.get("backup_url") or []) if isinstance(u, str) and u.strip())
+        # 地址选择（2026-10-13 用户决定）: **优先 bilivideo 副本**。
+        #
+        # 背景: 此前用 B 站给的 ``durl.url`` 首选（历史上它通常就是 bilivideo）。但 161 上
+        # 18 条历史下载统计显示两者的真实差距很大:
+        #   - bilivideo.com: 平均 8.99 MB/s, 0 次传输中断
+        #   - akamaized.net: 平均 3.42 MB/s, 6 次传输中断（有过主地址连断 4 次才切备用）
+        # 而 B 站会**把 akamai 当首选发给某些视频**（同一响应里 bilivideo 只是备用）。
+        # 所以这里做的是**挑选**（从响应给的副本里选 bilivideo），不是改写域名 ——
+        # 改写域名 = 伪造签名（签名与 host 绑定，实测 403/超时），那条红线不变。
+        candidates = [durl["url"], *(durl.get("backup_url") or [])]
+        candidates = [u for u in dict.fromkeys(candidates) if isinstance(u, str) and u.strip()]
+        preferred = next((u for u in candidates if "bilivideo.com" in urlparse(u).netloc), None)
+        if preferred:
+            video_url = preferred
+            # 其余副本（含可能被降级的原首选) 全部作备用
+            backup_urls = tuple(u for u in candidates if u != preferred)
+        else:
+            # 响应里没有 bilivideo 副本时保持原样（不能凭空造地址）
+            video_url = durl["url"]
+            backup_urls = tuple(u for u in (durl.get("backup_url") or []) if isinstance(u, str) and u.strip())
         content = desc.strip()
         if content == "-":
             content = ""

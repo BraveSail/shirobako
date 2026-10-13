@@ -122,7 +122,7 @@ class SegmentDownloader:
         max_retries: int = 3,
         chunk_size: int = 64 * 1024,
         connections: int = 4,
-        min_split_size: int = 10 * 1024 * 1024,
+        min_split_size: int = 2 * 1024 * 1024,
         timeout: float | http.Timeout | None = None,
         backup_urls: tuple[str, ...] = (),
     ):
@@ -608,7 +608,7 @@ async def download(
     max_retries: int = 3,
     chunk_size: int = 64 * 1024,
     connections: int = 4,
-    min_split_size: int = 10 * 1024 * 1024,
+    min_split_size: int = 2 * 1024 * 1024,
     timeout: float | http.Timeout | None = None,
     backup_urls: tuple[str, ...] = (),
 ) -> str:
