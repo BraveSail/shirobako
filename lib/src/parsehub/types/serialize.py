@@ -45,6 +45,15 @@ class ResultRebuildUnavailable(RuntimeError):
     """
 
 
+#: 结果层缓存的**正文格式版本**（与 bot 侧 ``CacheParseResult.content_version`` 同一语义）。
+#: 1 = 正文可能含 lib 层标记（twitter 长文 richtext 粗体 ``**``, 2026-10-13 引入）。
+#:
+#: 读缓存时**缺版本**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
+#: **只对 twitter** 强制（其它平台正文格式没变, 强制会让它们的 5 分钟缓存白失效）。
+_CACHE_CONTENT_VERSION = 1
+_CONTENT_VERSION_PLATFORMS = frozenset({"twitter"})
+
+
 #: 媒体类型标签 —— **序列化必须显式带上**, 否则重建时区分不了 (见模块 docstring)
 _KIND_TO_CLASS: dict[str, type[MediaRef]] = {
     "video": VideoRef,
@@ -255,11 +264,25 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         # 会找不到数据 (渲染层只能整行删掉, 投票静默消失)
         "polls": _polls_to_payload(result.polls),
         "impl": type(result).__name__,
+        # 正文格式版本 —— 缺它的老条目在读回时被判为旧格式重新解析 (见常量定义处)
+        "content_version": _CACHE_CONTENT_VERSION,
     }
 
 
 def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     """字典 → 结果对象。``result_to_cache_dict`` 的逆运算。"""
+    # 正文格式演进 (twitter richtext 粗体): 老条目里存的是没有 ``**`` 的正文,
+    # 复用会让用户以为修复没生效 —— 抛给调用方重解析 (ResultCache.get 会删 key 按未命中处理)。
+    platform_id = data.get("platform")
+    if (
+        platform_id in _CONTENT_VERSION_PLATFORMS
+        and int(data.get("content_version") or 0) < _CACHE_CONTENT_VERSION
+    ):
+        raise ResultRebuildUnavailable(
+            f"缓存的正文是旧格式 (content_version={data.get('content_version')!r}), "
+            f"应为 {_CACHE_CONTENT_VERSION} —— 重新解析"
+        )
+
     # 优先按**具体类名**重建 (平台子类带着平台专属的下载/渲染行为);
     # 老缓存没有 impl, 才退回按 PostType 的通用类
     cls: type | None = None

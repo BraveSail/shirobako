@@ -249,6 +249,14 @@ class CacheParseResult(BaseModel):
     #: 也没有占位符——那是 lib 新版才出的形态），行为与改动前一致。
     polls: list[dict] = []
 
+    #: **正文格式版本**（cache 格式演进用）。当前值 1 = 正文可能含 lib 层标记
+    #: （twitter 长文的 richtext 粗体 ``**``，2026-10-13 引入）。
+    #:
+    #: 缺失（=0）的 **twitter** 条目会被判为旧格式重新解析 —— 否则用户重发链接
+    #: 命中的还是不含粗体的旧正文，症状与"没修"一模一样。
+    #: 其它平台不检查（它们的正文格式没变，让条目重解析只会白白重下媒体）。
+    content_version: int = 0
+
 
 class CacheMedia(BaseModel):
     type: CacheMediaType
@@ -323,6 +331,13 @@ class PersistentCache:
         if {"quoted_media_count", "reply_media_count"} - entry.parse_result.model_fields_set:
             # 旧缓存不知道引用块里有没有媒体: 复用会让被引用/被回复内容的图/视频丢掉
             self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
+            return None
+
+        if entry.parse_result.platform == "twitter" and entry.parse_result.content_version < 1:
+            # twitter 长文的正文格式变了 (richtext 粗体支持, 2026-10-13):
+            # 旧条目里存的是没有 ``**`` 标记的正文, 复用会让用户以为修复没生效。
+            # 只查 twitter —— 其它平台正文格式未变, 让它们重解析只会白白重下媒体。
+            self.logger.debug(f"twitter 旧格式正文 (无 richtext 标记), 重新解析: key={url}")
             return None
 
         self.logger.debug(f"缓存命中: key={url}")

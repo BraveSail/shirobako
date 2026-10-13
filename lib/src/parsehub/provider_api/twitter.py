@@ -14,6 +14,14 @@ from ..types import ParseError
 from ..utils import http
 from ..utils.helpers import UA, to_datetime, to_int
 
+#: 长推文 richtext 的行内样式 → Markdown 标记 (与 ``ArticleRenderer._INLINE_STYLES``
+#: 同一套映射; 那个是 Article 的块级渲染, 这里是 note_tweet 正文的区间标记)。
+_INLINE_STYLES: dict[str, str] = {
+    "Bold": "**",
+    "Italic": "*",
+    "Strikethrough": "~~",
+}
+
 
 class Twitter:
     def __init__(self, proxy: str | None = None, cookie: dict | None = None):
@@ -150,17 +158,24 @@ class Twitter:
                 poll=self._parse_poll(node),
             )
 
+        richtext: dict | None = None
         if note_tweet := node.get("note_tweet"):
             note_result = note_tweet.get("note_tweet_results", {}).get("result", {})
             full_text = note_result.get("text", None)
+            richtext = note_result.get("richtext")
             url_entities = (note_result.get("entity_set") or {}).get("urls") or []
             if not full_text:
                 full_text = legacy.get("full_text", "")
+                richtext = None
                 url_entities = legacy["entities"].get("urls", [])
         else:
             full_text = legacy.get("full_text", "")
+            richtext = legacy.get("richtext")
             url_entities = legacy["entities"].get("urls", [])
 
+        # 长推文的局部加粗在 richtext_tags 里 (索引指向**未展开**的原文,
+        # 必须在短链展开前应用 —— 展开改长度会让区间漂移)。
+        full_text = self._apply_richtext(full_text, richtext)
         full_text = self._restore_short_urls(full_text, url_entities)
 
         media_list: list[TwitterVideo | TwitterPhoto | TwitterAni] = [
@@ -412,6 +427,51 @@ class Twitter:
         except Exception as e:
             logger.debug(f"内嵌的被引用推文不可用, 稍后按 ID 补取: {e}")
             return None
+
+    @staticmethod
+    def _apply_richtext(text: str, richtext: dict | None) -> str:
+        """把 ``richtext_tags`` 的样式区间织成 markdown 标记 (目前只处理 ``Bold``)。
+
+        X 的长推文编辑器允许局部加粗 (网页上显示为粗体段落), 数据在
+        ``note_tweet...result.richtext.richtext_tags``::
+
+            [{"from_index": 87, "to_index": 156, "richtext_types": ["Bold"]}, ...]
+
+        **索引指向 ``text`` 原文** (未经短链展开), 所以本函数必须在
+        ``_restore_short_urls`` **之前**调用 —— 展开会改变长度、让区间漂移。
+
+        只有一个区间、且不嵌套时直接切片; 多个区间按顺序从后往前插入
+        (从后往前改文本不会让前面的区间偏移)。相同位置的标记按
+        ``_INLINE_STYLES`` 的映射裹上 ``**`` / ``*`` / ``~~``。
+
+        ``richtext_tags`` 缺失 / 为空 / 区间越界时原样返回 (旧响应没有这个字段)。
+        """
+        tags = (richtext or {}).get("richtext_tags") or []
+        if not tags:
+            return text
+
+        length = len(text)
+        spans: list[tuple[int, int, str]] = []
+        for tag in tags:
+            try:
+                start, end = int(tag.get("from_index")), int(tag.get("to_index"))
+            except (TypeError, ValueError):
+                continue
+            if start < 0 or end <= start or start >= length:
+                continue  # 越界/空区间 —— 宁可少裹一段, 不能让切片炸掉整条解析
+            end = min(end, length)
+            markers = [
+                _INLINE_STYLES[t]
+                for t in (tag.get("richtext_types") or [])
+                if t in _INLINE_STYLES
+            ]
+            if markers:
+                spans.append((start, end, "".join(markers)))
+
+        # 从后往前插入: 后面的插入不会移动前面区间的索引
+        for start, end, marker in sorted(spans, key=lambda s: s[0], reverse=True):
+            text = f"{text[:start]}{marker}{text[start:end]}{marker}{text[end:]}"
+        return text
 
     @staticmethod
     def _restore_short_urls(text: str, url_entities: list[dict]) -> str:

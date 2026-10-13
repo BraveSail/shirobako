@@ -341,6 +341,9 @@ def rich_cache_entry(
             platform=getattr(getattr(parse_result, "platform", None), "id", "") or "",
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            # 正文格式版本（twitter 的 richtext 粗体让正文形态变了, 见 CacheParseResult）：
+            # 写 1 让这次之后写入的条目不再被判为旧格式。
+            content_version=1,
         ),
         media=media or None,
         rich=True,
