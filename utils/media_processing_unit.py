@@ -17,8 +17,9 @@ from PIL.Image import Resampling
 
 from utils.helpers import run_cmd
 
-#: Pillow 的**格式名** → 文件后缀。降采样时输出后缀要跟真实格式一致
+#: Pillow 的**格式名** → 常规文件后缀。降采样时输出后缀要跟真实格式一致
 #: （``.jfif``/``.jpeg`` 这类别名统一成常规写法；Pillow 的 ``format`` 是这些大写名）。
+#: ⚠️ 这是「Pillow 怎么称呼这个格式」, 不是「Telegram 收不收」—— 后者见 ``_TG_PHOTO_SUFFIX``。
 _PIL_FORMAT_SUFFIX = {
     "JPEG": "jpg",
     "PNG": "png",
@@ -33,6 +34,28 @@ _PIL_FORMAT_SUFFIX = {
     "MPO": "mpo",
     "PPM": "ppm",
 }
+
+#: **内容格式 → 出口后缀**: 既能让 Telegram 直接解码、又在它的后缀白名单里的组合。
+#: 依据（2026-10-14 容器内 pyrogram 走生产同款 ``messages.UploadMedia`` 实测）：
+#:
+#: - 服务端**按扩展名判类型**，白名单只有 ``.jpg/.jpeg/.jfif/.png/.gif/.bmp``；
+#:   ``.webp/.tiff/.tif/.ico/.ppm/.jp2`` 一律 ``400 PHOTO_EXT_INVALID``。
+#: - 内容层宽松：JPEG / PNG / GIF / BMP / **WEBP** 的内容配白名单后缀都能发（服务端自己解码）；
+#:   TIFF 内容是 ``400 IMAGE_PROCESS_FAILED`` ⇒ 必须本地重编码（走 ``_img2jpg``）。
+#: - 同一份字节只改文件名即可从"被拒"变"通过"（生产两个真实文件实测如此）。
+#:
+#: ⇒ **WEBP 内容不需要重编码**，只要出口叫 ``.jpg`` 就能直接发（零画质损失、零 CPU）。
+_TG_PHOTO_SUFFIX = {
+    "JPEG": ".jpg",
+    "PNG": ".png",
+    "GIF": ".gif",
+    "BMP": ".bmp",
+    "WEBP": ".jpg",  # 内容仍是 webp, 只是名字落在服务端白名单里
+}
+
+#: Telegram 愿意**直接解码**的图片格式（= 上面那张表的 key，不必先本地重编码）。
+#: 表外的格式（TIFF / ICO / PPM / JPEG2000…）本地转成 JPEG 后再发。
+_TG_PHOTO_FORMATS = frozenset(_TG_PHOTO_SUFFIX)
 
 
 @dataclass
@@ -94,21 +117,22 @@ class MediaProcessingUnit:
     async def process_image(self, file_path: Path) -> MediaProcessResult:
         image_format, is_broken, image_mode = await self._detect_image_format(file_path)
         if image_format == "GIF":
+            # 动图/多帧图不重编码（转 JPEG 会丢帧），只把后缀对齐到服务端认的名字
             self.logger("图片为 GIF 格式，无需处理")
-            return MediaProcessResult(output_paths=[file_path])
-        needs_convert = image_format not in {"PNG", "JPEG"}
-        needs_rgb = image_mode == "RGBA"
+            return MediaProcessResult(output_paths=[self._align_tg_photo_ext(file_path)])
+        needs_convert = image_format not in _TG_PHOTO_FORMATS
         source = file_path
         intermediates: list[Path] = []  # 统一收集中间文件
 
         try:
-            if needs_convert or is_broken or needs_rgb:
+            if needs_convert or is_broken:
                 self.logger(f"图片需转换: format={image_format}, mode={image_mode}, broken={is_broken}")
                 source = await self._img2jpg(file_path)
                 intermediates.append(source)
 
             if result := await asyncio.to_thread(self._adapt_image, source):
-                return result
+                outputs = [await asyncio.to_thread(self._align_tg_photo_ext, p) for p in result.output_paths]
+                return MediaProcessResult(output_paths=outputs, temp_dir=result.temp_dir)
 
             # _adapt_image 无需处理，尝试 downscale
             if downscaled := await asyncio.to_thread(self._downscale_image, source):
@@ -116,12 +140,50 @@ class MediaProcessingUnit:
                 source = downscaled
 
             intermediates = [p for p in intermediates if p != source]
+            source = await asyncio.to_thread(self._align_tg_photo_ext, source)
             return MediaProcessResult(output_paths=[source])
         finally:
             for p in intermediates:
                 if p.exists():
                     self.logger(f"删除中间文件: {p}")
                     os.remove(p)
+
+    def _align_tg_photo_ext(self, file_path: Path) -> Path:
+        """把产物后缀对齐到 Telegram 能接受的**照片后缀**，返回（可能改名后的）路径。
+
+        实测规则（2026-10-14，容器内 pyrogram 走生产同款 ``messages.UploadMedia``）：
+
+        - **只看扩展名**：``.jpg/.jpeg/.jfif/.png/.gif/.bmp`` 接受；
+          ``.webp/.tiff/.tif/.ico/.ppm/.jp2`` 一律 ``400 PHOTO_EXT_INVALID``。
+        - **内容层宽松**：JPEG / PNG / GIF / BMP / WEBP 的内容配白名单后缀都能发
+          （服务端自己解码重编码）；TIFF 内容是 ``400 IMAGE_PROCESS_FAILED``，必须重编码。
+        - 同一份字节只改文件名即可从"被拒"变"通过"（生产那两个真实文件实测如此）。
+
+        所以这里**只改名、不重编码**：内容一字不动，画质与体积都不变。
+        下载文件名的后缀是按 URL 猜的（``ImageRef.ext`` ← ``image_ext_from_url``），
+        URL 与实际字节不一致时（如小黑盒 ``.../xxx.webp?…/format/jpg/…``：URL 说 webp、
+        CDN 给 JPEG）整条消息会被 Telegram 拒收，媒体一条都发不出去。
+
+        文件打不开（Pillow 不认）时原样返回 —— 那类留给 ``_img2jpg`` 的 ffmpeg 兜底，
+        不在这里猜。
+        """
+        try:
+            with Image.open(file_path) as img:
+                actual_format = (img.format or "").upper()
+        except OSError:
+            return file_path
+        target_suffix = _TG_PHOTO_SUFFIX.get(actual_format)
+        if not target_suffix:
+            return file_path
+        if file_path.suffix.lower() == target_suffix:
+            return file_path
+        new_path = file_path.with_suffix(target_suffix)
+        if new_path.exists():
+            self.logger(f"后缀对齐目标已存在, 保持原样: {file_path} -> {new_path}")
+            return file_path
+        file_path.rename(new_path)
+        self.logger(f"后缀与真实格式不符, 改名: {file_path.name} -> {new_path.name} (format={actual_format})")
+        return new_path
 
     @staticmethod
     async def _detect_image_format(file_path: Path) -> tuple[str, bool, str]:
