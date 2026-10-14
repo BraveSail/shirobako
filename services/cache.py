@@ -238,6 +238,13 @@ class CacheParseResult(BaseModel):
     origin_line: str = ""
     #: **回复数**（页脚那一段）。同上：老缓存缺它只是少显示，不必重新解析。
     reply_count: int | None = None
+    #: 页脚元数据的**写入标记**（见下 ``FOOTER_META_FIELDS_VERSION``）。
+    #:
+    #: 光有 ``reply_count`` 这类字段不够: 它们默认 None, 平台**真的没有**（小黑盒无浏览量）
+    #: 与**我们的代码没取**在缓存里长得一模一样, 而 ``model_fields_set`` 区分不出来
+    #: —— 老条目（代码还没接这些字段时写的）会被当成"平台就是没有", 用户重发同一条链接
+    #: 永远看不到新接的那几段。写入时带上这个键, 读取时缺它（或低于当前版本）就重新解析。
+    meta_fields: int = 0
     #: 正文标签名的**平台实体**（twitter ``entities.hashtags[].text`` 等）。
     #: 渲染层用它做精确链接化；缺了会退回正则，日文标点/全角符号处会切错边界。
     hashtags: list[str] = []
@@ -249,13 +256,21 @@ class CacheParseResult(BaseModel):
     #: 也没有占位符——那是 lib 新版才出的形态），行为与改动前一致。
     polls: list[dict] = []
 
-    #: **正文格式版本**（cache 格式演进用）。当前值 1 = 正文可能含 lib 层标记
+    #: 正文格式版本（cache 格式演进用）。当前值 1 = 正文可能含 lib 层标记
     #: （twitter 长文的 richtext 粗体 ``**``，2026-10-13 引入）。
     #:
     #: 缺失（=0）的 **twitter** 条目会被判为旧格式重新解析 —— 否则用户重发链接
     #: 命中的还是不含粗体的旧正文，症状与"没修"一模一样。
     #: 其它平台不检查（它们的正文格式没变，让条目重解析只会白白重下媒体）。
     content_version: int = 0
+
+
+#: 页脚元数据（发布时间 / 点赞 / 回复 / 作者标识）的**当前写入版本**。
+#:
+#: **每给一个新平台接上页脚字段就 +1** —— 老条目里那些字段是 None, 与"平台确实没有"
+#: 在缓存里没法区分（``model_fields_set`` 也不行: 字段名早就在 schema 里）。不升版本的话
+#: 用户重发同一条链接命中的还是老条目, 看不到新接的那几段（症状与"没修"一样）。
+FOOTER_META_FIELDS_VERSION = 1
 
 
 class CacheMedia(BaseModel):
@@ -315,6 +330,14 @@ class PersistentCache:
         if "like_count" not in entry.parse_result.model_fields_set:
             # 旧缓存没有点赞数: 复用会让页脚缺那一段
             self.logger.debug(f"旧缓存缺少点赞数, 重新解析: key={url}")
+            return None
+
+        if entry.parse_result.meta_fields < FOOTER_META_FIELDS_VERSION:
+            # 页脚元数据（发布时间/点赞/回复/作者标识）是**逐平台**陆续接的:
+            # 老条目里那些字段是 None, 与"平台确实没有"没法区分（``model_fields_set`` 也
+            # 不行 —— 字段名早就在 schema 里了）。版本不足说明条目写于某平台接入之前,
+            # 复用会让用户重发同一条链接永远看不到新接的那几段。
+            self.logger.debug(f"旧缓存页脚元数据版本不足, 重新解析: key={url}")
             return None
 
         if "tags" not in entry.parse_result.model_fields_set:

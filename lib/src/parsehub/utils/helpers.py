@@ -108,6 +108,8 @@ PROFILE_URL_TEMPLATES: dict[Platform, str] = {
     Platform.TIKTOK: "https://www.tiktok.com/@{handle}",
     Platform.TWITTER: "https://x.com/{handle}",
     Platform.WEIBO: "https://weibo.com/u/{id}",
+    # 小黑盒没有 @用户名（页面就是 ``/app/bbs/user/<userid>``）
+    Platform.XIAOHEIHE: "https://www.xiaoheihe.cn/app/bbs/user/{id}",
     Platform.YOUTUBE: "https://www.youtube.com/@{handle}",
     Platform.ZHIHU: "https://www.zhihu.com/people/{id}",
 }

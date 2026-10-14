@@ -30,6 +30,7 @@ def test_cache_refreshes_only_legacy_entries_missing_author(author, versioned, h
             "published_at": None,
             "view_count": None,
             "like_count": None,
+            "meta_fields": 1,
             "tags": [],
             "quoted_media_count": 0,
             "reply_media_count": 0,

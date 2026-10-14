@@ -312,7 +312,7 @@ def rich_cache_entry(
     """
     # 两个都是 bot 侧模块, 函数内延迟导入避免循环依赖 (与上面的 helper 同一手法)
     from plugins.helpers import get_parse_author_name
-    from services.cache import CacheEntry, CacheParseResult
+    from services.cache import FOOTER_META_FIELDS_VERSION, CacheEntry, CacheParseResult
 
     return CacheEntry(
         parse_result=CacheParseResult(
@@ -336,6 +336,8 @@ def rich_cache_entry(
             published_at=getattr(parse_result, "published_at", None),
             view_count=getattr(parse_result, "view_count", None),
             like_count=getattr(parse_result, "like_count", None),
+            # 页脚元数据写入版本（读取端低于当前版本即重新解析，见 CacheParseResult.meta_fields）
+            meta_fields=FOOTER_META_FIELDS_VERSION,
             tags=list(getattr(parse_result, "tags", None) or []),
             # 平台短名也要存: 缓存路径渲染时用它拼标签页链接（漏了就不只是少个字段）
             platform=getattr(getattr(parse_result, "platform", None), "id", "") or "",

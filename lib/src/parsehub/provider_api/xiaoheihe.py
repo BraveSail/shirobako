@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.ciphers.modes import CBC, ECB
 from markdownify import MarkdownConverter
 
 from ..utils import http
-from ..utils.helpers import get_author_name
+from ..utils.helpers import get_author_name, to_datetime, to_int
 
 
 class XiaoHeiHePostType(Enum):
@@ -53,6 +53,14 @@ class XiaoHeiHePost:
     content: str | None = None
     media: list[XiaoHeiHeMedia] | None = None
     author_name: str = ""
+    #: 作者数字 uid（``link.user.userid``）—— 小黑盒没有 handle 形态的用户名标识
+    author_id: str = ""
+    #: 发布时间 unix 秒（``link.create_at``）
+    published_at: Any = None
+    #: 点赞数（``link.link_award_num``，界面叫「赞」）
+    like_count: int | None = None
+    #: 评论数（``link.comment_num``）
+    reply_count: int | None = None
 
 
 class XiaoHeiHeAPI:
@@ -64,10 +72,19 @@ class XiaoHeiHeAPI:
         link_id = self.get_link_id(url)
         data = await self.link_tree(link_id)
         link = data["link"]
-        author_name = get_author_name(link.get("user")) or get_author_name(data.get("user"))
+        user = link.get("user") or {}
+        author_name = get_author_name(user) or get_author_name(data.get("user"))
 
         title = link["title"]
         text = link["text"]
+
+        # 页脚元数据（同一次 link/tree 响应里就有，不需要额外请求）
+        meta = {
+            "author_id": str(user.get("userid") or ""),
+            "published_at": to_datetime(link.get("create_at")),
+            "like_count": to_int(link.get("link_award_num")),
+            "reply_count": to_int(link.get("comment_num")),
+        }
 
         is_video = link["has_video"]
         if is_video:
@@ -80,6 +97,7 @@ class XiaoHeiHeAPI:
                 title=title,
                 content=text,
                 media=[XiaoHeiHeMedia(type=XiaoHeiHeMediaType.VIDEO, url=video_url, thumb_url=video_thumb)],
+                **meta,
             )
         else:
             use_concept_type = link.get("use_concept_type", False)
@@ -103,7 +121,9 @@ class XiaoHeiHeAPI:
                             width=int(float(image.get("width", 0))),
                         )
                     )
-            return XiaoHeiHePost(type=post_type, title=title, content=content, media=images, author_name=author_name)
+            return XiaoHeiHePost(
+                type=post_type, title=title, content=content, media=images, author_name=author_name, **meta
+            )
 
     @staticmethod
     def get_link_id(url: str) -> str:

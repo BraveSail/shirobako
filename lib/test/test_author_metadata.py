@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
@@ -189,6 +190,72 @@ def test_xiaoheihe_user(video):
     with patch.object(XiaoHeiHeAPI, "link_tree", new=AsyncMock(return_value={"link": link})):
         result = asyncio.run(XiaoHeiHeAPI().parse("https://xiaoheihe.cn/app/bbs/link/123"))
     assert result.author_name == AUTHOR
+
+
+# ── 小黑盒页脚元数据（同一次 link/tree 响应里就有, 不需要额外请求）──────────────
+#: 取自真实响应 lib/test/fixtures/xiaoheihe_link_tree.json（link 段的原值）
+_XHH_LINK = {
+    "title": "最新消息！GTA6或将于2027年第一季度登录PC",
+    "text": '[{"type":"text","text":"Body"}]',
+    "has_video": 0,
+    "use_concept_type": 1,
+    "create_at": 1791939655,
+    "link_award_num": 69,
+    "comment_num": 76,
+    "forward_num": 0,
+    "user": {"userid": 49946265, "username": "爱猪人士o"},
+}
+
+
+def test_xiaoheihe_footer_metadata_from_same_response():
+    """页脚四段全部来自**同一次** link/tree 响应（不做第二次请求）。
+
+    小黑盒**没有浏览量**字段（真实响应里 42 个字段全翻过, 无 view/click 计数）
+    ⇒ ``view_count`` 必须是 None（「有就填、没有就 None」硬规则）。
+    """
+    with patch.object(XiaoHeiHeAPI, "link_tree", new=AsyncMock(return_value={"link": _XHH_LINK})):
+        post = asyncio.run(XiaoHeiHeAPI().parse("https://xiaoheihe.cn/app/bbs/link/123"))
+
+    assert post.author_id == "49946265"
+    assert post.published_at == datetime.fromtimestamp(1791939655, tz=UTC)
+    assert post.like_count == 69
+    assert post.reply_count == 76
+
+
+def test_xiaoheihe_parser_forwards_footer_metadata():
+    """解析层把页脚字段**转发到 result**（作者标识走数字 uid, 同抖音/bgm 的约定）。
+
+    漏转发的话缓存里全是 None, 而 None 与"平台没有"长得一样 —— 页脚会静默少几段。
+    """
+    with patch.object(XiaoHeiHeAPI, "parse", new=AsyncMock(return_value=XiaoHeiHePost(
+        XiaoHeiHePostType.IMAGE,
+        "T",
+        content="Body",
+        author_name=AUTHOR,
+        author_id="49946265",
+        published_at=datetime.fromtimestamp(1791939655, tz=UTC),
+        like_count=69,
+        reply_count=76,
+    ))):
+        result = asyncio.run(XiaoHeiHeParser()._do_parse("https://xiaoheihe.cn/app/bbs/link/123"))
+
+    assert result.author_name == AUTHOR
+    assert result.author_handle == "49946265"
+    assert result.author_url == "https://www.xiaoheihe.cn/app/bbs/user/49946265"
+    assert getattr(result, "like_count", None) == 69
+    assert result.reply_count == 76
+    assert getattr(result, "view_count", None) is None
+
+
+def test_xiaoheihe_missing_fields_stay_none():
+    """老/简化响应缺这些字段时留 None, 不能抛（页脚那几段自动省略）。"""
+    link = {"title": "T", "text": '[{"type":"text","text":"Body"}]', "has_video": 0}
+    with patch.object(XiaoHeiHeAPI, "link_tree", new=AsyncMock(return_value={"link": link})):
+        post = asyncio.run(XiaoHeiHeAPI().parse("https://xiaoheihe.cn/app/bbs/link/123"))
+    assert post.published_at is None
+    assert post.like_count is None
+    assert post.reply_count is None
+    assert post.author_id == ""
 
 
 @pytest.mark.parametrize(

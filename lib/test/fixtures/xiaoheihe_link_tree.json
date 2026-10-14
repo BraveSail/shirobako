@@ -1,0 +1,339 @@
+{
+  "msg": "",
+  "result": {
+    "comments": [],
+    "cy_control": false,
+    "has_more_floors": 0,
+    "total_floor_num": 0,
+    "show_interact_list": false,
+    "link": {
+      "has_video": 0,
+      "up": 0,
+      "click": 0,
+      "forward_num": 0,
+      "can_edit": 0,
+      "is_hot_post": 0,
+      "multidimensional_score": [],
+      "is_award_link": 0,
+      "is_favour": 0,
+      "follow_status": 0,
+      "is_only_me_view": false,
+      "show_user_battery_botton": 0,
+      "linkid": 193633227,
+      "userid": 49946265,
+      "title": "最新消息！GTA6或将于2027年第一季度登录PC",
+      "description": "四名熟悉Rockstar Games计划的知情人士向GamesBeat透露，开放世界游戏《GTA6》的PC版预计将于2027年第一季度、即明年头三个月内推出。相关说法尚未得到官方证实，Rockstar未予置评。另一则消息来自IGN若消息属实，这将明显快于该",
+      "text": "[{\"text\":\"四名熟悉Rockstar Games计划的知情人士向GamesBeat透露，开放世界游戏《GTA6》的PC版预计将于2027年第一季度、即明年头三个月内推出。相关说法尚未得到官方证实，Rockstar未予置评。\\n\\n另一则消息来自IGN\\n\\n若消息属实，这将明显快于该公司以往的主机转PC节奏。《GTA6》主机版定于11月19日登陆XBOX Series X/S与PlayStation 5；以此计算，PC版与主机版间隔不足五个月。相比之下，《GTAV》PC版较XBOX 360与PS3版晚了19个月，《荒野大镖客：救赎2》登陆PC也比主机版晚了一年有余。\\n\\t\\nRockstar母公司Take-Two Interactive首席执行官Strauss Zelnick近期表示，公司会在“任何拥有可观受众的平台”发行游戏；“如果某一平台不再具备可行性，我们可能调整这一策略。需要指出的是，PC平台对我们公司正变得日益重要。”不过，此番表态并不必然意味着《GTA6》PC版将更快推出。\\n\",\"type\":\"text\"},{\"height\":\"1090.0\",\"type\":\"img\",\"url\":\"https://imgheybox1.max-c.com/bbs/2026/10/13/f151967b940b4dfbb15ca5f614da86bb/thumb.webp?imageMogr2/auto-orient/ignore-error/1/format/jpg/thumbnail/850x1450%3E\",\"width\":\"850.0\"},{\"height\":\"692.0\",\"type\":\"img\",\"url\":\"https://imgheybox1.max-c.com/bbs/2026/10/13/962202ec621b41d2b0e8fa8f219d729c.webp?imageMogr2/auto-orient/ignore-error/1/format/jpg/thumbnail/850x1450%3E\",\"width\":\"850.0\"}]",
+      "link_tag": 27,
+      "is_web": 1,
+      "use_concept_type": 1,
+      "create_at": 1791939655,
+      "modify_at": 1791946459,
+      "share_url": "https://api.xiaoheihe.cn/v3/bbs/app/api/web/share?h_camp=link&h_src=YXBwX3NoYXJl&link_id=970772a04ea8&new_post_share_style_v2=0",
+      "comment_num": 76,
+      "link_award_num": 69,
+      "favour_count": 16,
+      "battery": {
+        "charge_limits": [
+          1,
+          2,
+          5
+        ],
+        "count": 0,
+        "charged": false,
+        "enabled": 1
+      },
+      "is_article": 1,
+      "news_show": 1,
+      "ip_location": "浙江",
+      "user": {
+        "medal": [],
+        "userid": 49946265,
+        "username": "爱猪人士o",
+        "avatar": "https://imgheybox.max-c.com/avatar/2026/08/16/c622bded56525bec6894bb6cfda4a16d.jpeg?imageMogr2/thumbnail/100x100%3E",
+        "avartar": "https://imgheybox.max-c.com/avatar/2026/08/16/c622bded56525bec6894bb6cfda4a16d.jpeg?imageMogr2/thumbnail/100x100%3E",
+        "level_info": {
+          "status": 1,
+          "level": 10
+        },
+        "medals": [
+          {
+            "wear": 0,
+            "level": 0,
+            "name": "中级作者",
+            "medal_id": 55,
+            "description": "达到作者等级 3 级",
+            "img_url": "https://imgheybox.max-c.com/oa/2023/04/18/254d29440c5e601c85a5f1f9af124c3e.png",
+            "achieved": 1
+          },
+          {
+            "achieved": 0,
+            "wear": 0,
+            "level": 0,
+            "name": "个人认证",
+            "medal_id": 31,
+            "description": "说明：UP主、主播、职业选手等个人认证",
+            "img_url": "https://imgheybox.max-c.com/oa/2023/05/08/b171206ef2c0f9efb99ae94eafcba019.png"
+          },
+          {
+            "achieved": 0,
+            "wear": 0,
+            "level": 0,
+            "name": "小试牛刀",
+            "medal_id": 47,
+            "description": "累计消费 10 元",
+            "img_url": "https://imgheybox.max-c.com/oa/2023/04/18/c4a0aee5a87444d73e85d4aa9f15fd0d.png"
+          },
+          {
+            "achieved": 0,
+            "wear": 0,
+            "level": 0,
+            "name": "百科贡献者",
+            "medal_id": 44,
+            "description": "获得 50 点百科经验",
+            "img_url": "https://imgheybox.max-c.com/oa/2023/04/18/d375efa8709e69c7e373dc886edd3640.png"
+          }
+        ]
+      },
+      "topics": [
+        {
+          "topic_id": 581822,
+          "pic_url": "https://imgheybox1.max-c.com/heybox/2025/01/17/3f63b142d6685227a3d2ef05d402a49f.jpg",
+          "name": "Grand Theft Auto VI",
+          "app_id": 900138480,
+          "game_type": "console",
+          "hot_value_v2": 3296094.25
+        },
+        {
+          "topic_id": 425422,
+          "pic_url": "https://cdn.max-c.com/mobile/app/icon/ccb3c23e275bef48aa7863ac5609ce8b.png",
+          "name": "Steam",
+          "app_id": 99928013,
+          "game_type": "mobile",
+          "hot_value_v2": 76702317.6
+        }
+      ],
+      "hashtags": [
+        {
+          "name": "计划入手的游戏",
+          "hashtag_id": 1452187
+        },
+        {
+          "name": "新游推荐",
+          "hashtag_id": 154931
+        },
+        {
+          "name": "r星",
+          "hashtag_id": 20229
+        },
+        {
+          "name": "ps5游戏",
+          "hashtag_id": 22327
+        },
+        {
+          "name": "3a",
+          "hashtag_id": 20348
+        }
+      ],
+      "feedback": [
+        {
+          "cate": "favour",
+          "text": "不感兴趣（选择后将减少相似推荐）",
+          "col_count": 2,
+          "options": [
+            {
+              "reason": 3,
+              "text": "不喜欢该社区: Grand Theft Auto VI",
+              "topic_id": 581822,
+              "topic_name": "Grand Theft Auto VI",
+              "event_id": "581822"
+            },
+            {
+              "reason": 3,
+              "text": "不喜欢该社区: Steam",
+              "topic_id": 425422,
+              "topic_name": "Steam",
+              "event_id": "425422"
+            },
+            {
+              "reason": 8,
+              "text": "不喜欢该作者: 爱猪人士o",
+              "user_id": 49946265,
+              "user_name": "爱猪人士o",
+              "event_id": "49946265"
+            },
+            {
+              "reason": 18,
+              "text": "不喜欢该内容",
+              "event_id": "193633227"
+            }
+          ]
+        },
+        {
+          "cate": "report",
+          "text": "内容反馈",
+          "col_count": 2,
+          "options": [
+            {
+              "reason": 23,
+              "text": "软文广告",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 27,
+              "text": "标题党",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 28,
+              "text": "不实炒作",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 29,
+              "text": "AI生成",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 24,
+              "text": "内容低俗",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 30,
+              "text": "分区错误",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 10,
+              "text": "内容质量差",
+              "event_id": "193633227"
+            },
+            {
+              "reason": 22,
+              "text": "内容不适",
+              "event_id": "193633227"
+            }
+          ]
+        }
+      ],
+      "feedback_config": {
+        "extra": {},
+        "disable_report": 0,
+        "ad_report": 0,
+        "keyword_block_config": {
+          "manage_text": "管理已屏蔽词条",
+          "max_keyword_length": 20,
+          "input_hint": "添加后，含关键词的内容将减少推荐"
+        }
+      },
+      "plan_tags": [
+        {
+          "name": "热点计划",
+          "pic_url": "https://imgheybox.max-c.com/oa/2024/03/13/1c207cb36ecd1115339b5f7f47bce14b.png",
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"热点计划\"}}",
+          "key": "hotspot"
+        }
+      ],
+      "content_tags": [
+        {
+          "text": "Grand Theft Auto VI",
+          "icon": "https://imgheybox1.max-c.com/heybox/2025/01/17/3f63b142d6685227a3d2ef05d402a49f.jpg",
+          "style_type": 1,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/topic\",\"params\":{\"h_src\":\"\",\"page\":\"link\",\"topic_id\":\"581822\"}}",
+          "bg_color": "#F3F4F5#232526",
+          "text_color": "#14191E#CCCDCE",
+          "align": "top"
+        },
+        {
+          "text": "Steam",
+          "icon": "https://cdn.max-c.com/mobile/app/icon/ccb3c23e275bef48aa7863ac5609ce8b.png",
+          "style_type": 1,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/topic\",\"params\":{\"h_src\":\"\",\"page\":\"link\",\"topic_id\":\"425422\"}}",
+          "bg_color": "#F3F4F5#232526",
+          "text_color": "#14191E#CCCDCE",
+          "align": "top"
+        },
+        {
+          "text": "热点计划",
+          "icon": "https://imgheybox.max-c.com/oa/2024/07/30/912b6ed8dba7f938a45fe00bddc0d697.png",
+          "style_type": 2,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"热点计划\"}}",
+          "bg_color": "#1A004B96#1A66B3FF",
+          "text_color": "#004B96#66B3FF",
+          "align": "bottom"
+        },
+        {
+          "text": "计划入手的游戏",
+          "icon": "https://imgheybox.max-c.com/oa/2024/07/30/912b6ed8dba7f938a45fe00bddc0d697.png",
+          "style_type": 2,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"计划入手的游戏\"}}",
+          "bg_color": "#1A004B96#1A66B3FF",
+          "text_color": "#004B96#66B3FF",
+          "align": "bottom"
+        },
+        {
+          "text": "新游推荐",
+          "icon": "https://imgheybox.max-c.com/oa/2024/07/30/912b6ed8dba7f938a45fe00bddc0d697.png",
+          "style_type": 2,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"新游推荐\"}}",
+          "bg_color": "#1A004B96#1A66B3FF",
+          "text_color": "#004B96#66B3FF",
+          "align": "bottom"
+        },
+        {
+          "text": "r星",
+          "icon": "https://imgheybox.max-c.com/oa/2024/07/30/912b6ed8dba7f938a45fe00bddc0d697.png",
+          "style_type": 2,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"r星\"}}",
+          "bg_color": "#1A004B96#1A66B3FF",
+          "text_color": "#004B96#66B3FF",
+          "align": "bottom"
+        },
+        {
+          "text": "ps5游戏",
+          "icon": "https://imgheybox.max-c.com/oa/2024/07/30/912b6ed8dba7f938a45fe00bddc0d697.png",
+          "style_type": 2,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"ps5游戏\"}}",
+          "bg_color": "#1A004B96#1A66B3FF",
+          "text_color": "#004B96#66B3FF",
+          "align": "bottom"
+        },
+        {
+          "text": "3a",
+          "icon": "https://imgheybox.max-c.com/oa/2024/07/30/912b6ed8dba7f938a45fe00bddc0d697.png",
+          "style_type": 2,
+          "protocol": "heybox://{\"protocol_type\":\"openRouterPath\",\"path\":\"/bbs/hashtag\",\"params\":{\"tag\":\"3a\"}}",
+          "bg_color": "#1A004B96#1A66B3FF",
+          "text_color": "#004B96#66B3FF",
+          "align": "bottom"
+        }
+      ],
+      "original": 1,
+      "declaration": "2",
+      "source": "",
+      "view_limit": 1,
+      "post_declaration_v2": {
+        "content_source_desc": "原创",
+        "source_faq_desc": "转载请注明作者及出处"
+      }
+    },
+    "sort_filter": [
+      {
+        "key": "hot",
+        "text": "热门"
+      },
+      {
+        "key": "time_aes",
+        "text": "正序"
+      },
+      {
+        "key": "time_desc",
+        "text": "倒序"
+      }
+    ],
+    "total_page": 1,
+    "folded_comment_tips": "被折叠的评论包含疑似无意义、广告、不友好的内容"
+  },
+  "status": "ok"
+}

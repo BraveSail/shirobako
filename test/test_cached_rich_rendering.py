@@ -33,7 +33,7 @@ from parsehub.types.result import MultimediaParseResult, RichTextParseResult
 
 from plugins.helpers import build_rich_markdown
 from plugins.parse.inline_rich import build_cached_rich_content, rich_cache_entry
-from services.cache import CacheEntry, CacheParseResult, PersistentCache
+from services.cache import FOOTER_META_FIELDS_VERSION, CacheEntry, CacheParseResult, PersistentCache
 
 URL = "https://linux.do/t/topic/2977838/16"
 RAW_URL = "https://linux.do/t/topic/2977838/16"
@@ -217,6 +217,7 @@ def test_a_current_entry_is_a_hit():
             published_at="2026-10-07T00:00:00+00:00",
             view_count=1,
             like_count=1,
+            meta_fields=FOOTER_META_FIELDS_VERSION,
             tags=[],
             quoted_media_count=0,
             reply_media_count=0,

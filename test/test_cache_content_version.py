@@ -19,6 +19,7 @@ BASE = {
     "published_at": None,
     "view_count": None,
     "like_count": None,
+    "meta_fields": 1,
     "tags": [],
     "markdown_content": "",
     "quoted_media_count": 0,
