@@ -1,0 +1,401 @@
+{
+  "data": {
+    "tweetResult": {
+      "result": {
+        "__typename": "Tweet",
+        "core": {
+          "user_results": {
+            "result": {
+              "__typename": "User",
+              "affiliates_highlighted_label": {},
+              "has_graduated_access": true,
+              "id": "VXNlcjoxOTk5MDY4MDc0MjAxNDg5NDA4",
+              "is_blue_verified": true,
+              "legacy": {
+                "blocked_by": false,
+                "blocking": false,
+                "can_dm": false,
+                "can_media_tag": false,
+                "created_at": "Thu Dec 11 10:46:12 +0000 2025",
+                "default_profile": true,
+                "default_profile_image": false,
+                "description": "GANMA!にて好評連載中！TVアニメ「地雷なんですか？地原さん」公式アカウント🐈‍⬛\n原作：りょん/監督：藤井康晶/シリーズ構成：大知慶一郎/キャラクターデザイン：まじろ/音楽：桶狭間ありさ/音楽制作：キングレコード/アニメーション制作：SynergySP\n推奨ハッシュタグ：#アニメ地原さん",
+                "entities": {
+                  "description": {},
+                  "url": {
+                    "urls": [
+                      {
+                        "display_url": "chiharasan-anime.com",
+                        "expanded_url": "https://chiharasan-anime.com/",
+                        "indices": [
+                          0,
+                          23
+                        ],
+                        "url": "https://t.co/pfgK7QQy3P"
+                      }
+                    ]
+                  }
+                },
+                "fast_followers_count": 0,
+                "favourites_count": 2,
+                "follow_request_sent": false,
+                "followed_by": false,
+                "followers_count": 26457,
+                "following": false,
+                "friends_count": 10,
+                "has_custom_timelines": false,
+                "is_translator": false,
+                "listed_count": 68,
+                "location": "",
+                "media_count": 109,
+                "muting": false,
+                "name": "TVアニメ『地雷なんですか？地原さん』【公式】",
+                "needs_phone_verification": false,
+                "normal_followers_count": 26457,
+                "notifications": false,
+                "pinned_tweet_ids_str": [
+                  "2110672031205511204"
+                ],
+                "possibly_sensitive": false,
+                "profile_banner_url": "https://pbs.twimg.com/profile_banners/1999068074201489408/1783922679",
+                "profile_image_url_https": "https://pbs.twimg.com/profile_images/2004113658776076288/OEMdwQoc_normal.png",
+                "profile_interstitial_type": "",
+                "protected": false,
+                "screen_name": "chihara_anime",
+                "statuses_count": 177,
+                "time_zone": "",
+                "translator_type": "none",
+                "url": "https://t.co/pfgK7QQy3P",
+                "utc_offset": 0,
+                "verified": false,
+                "withheld_description": "",
+                "withheld_scope": ""
+              },
+              "profile_image_shape": "Circle",
+              "rest_id": "1999068074201489408",
+              "super_follow_eligible": false,
+              "super_followed_by": false,
+              "super_following": false,
+              "tipjar_settings": {
+                "bandcamp_handle": "",
+                "bitcoin_handle": "",
+                "cash_app_handle": "",
+                "ethereum_handle": "",
+                "gofundme_handle": "",
+                "is_enabled": false,
+                "patreon_handle": "",
+                "pay_pal_handle": "",
+                "venmo_handle": ""
+              }
+            }
+          }
+        },
+        "edit_control": {
+          "edit_tweet_ids": [
+            "2110672031205511204"
+          ],
+          "editable_until_msecs": "1792062001000",
+          "edits_remaining": "5",
+          "is_edit_eligible": true
+        },
+        "is_translatable": true,
+        "legacy": {
+          "bookmark_count": 416,
+          "bookmarked": false,
+          "conversation_id_str": "2110672031205511204",
+          "created_at": "Thu Oct 15 10:00:01 +0000 2026",
+          "display_text_range": [
+            0,
+            179
+          ],
+          "entities": {
+            "media": [
+              {
+                "additional_media_info": {
+                  "monetizable": false
+                },
+                "display_url": "pic.x.com/PpaYRED61k",
+                "expanded_url": "https://x.com/chihara_anime/status/2110672031205511204/video/1",
+                "ext_media_availability": {
+                  "status": "Available"
+                },
+                "id_str": "2110639494986924032",
+                "indices": [
+                  180,
+                  203
+                ],
+                "media_key": "13_2110639494986924032",
+                "media_results": {
+                  "result": {
+                    "media_key": "13_2110639494986924032"
+                  }
+                },
+                "media_url_https": "https://pbs.twimg.com/amplify_video_thumb/2110639494986924032/img/ayDGA63go_CuzlxG.jpg",
+                "original_info": {
+                  "focus_rects": [],
+                  "height": 1080,
+                  "width": 1920
+                },
+                "sizes": {
+                  "large": {
+                    "h": 1080,
+                    "resize": "fit",
+                    "w": 1920
+                  },
+                  "medium": {
+                    "h": 675,
+                    "resize": "fit",
+                    "w": 1200
+                  },
+                  "small": {
+                    "h": 383,
+                    "resize": "fit",
+                    "w": 680
+                  },
+                  "thumb": {
+                    "h": 150,
+                    "resize": "crop",
+                    "w": 150
+                  }
+                },
+                "type": "video",
+                "url": "https://t.co/PpaYRED61k",
+                "video_info": {
+                  "aspect_ratio": [
+                    16,
+                    9
+                  ],
+                  "duration_millis": 32661,
+                  "variants": [
+                    {
+                      "content_type": "application/x-mpegURL",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/pl/8KbO9EaNP1ycjlob.m3u8?tag=29&v=86b"
+                    },
+                    {
+                      "bitrate": 256000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/480x270/spyR-Ze3VRYMKrg6.mp4?tag=29"
+                    },
+                    {
+                      "bitrate": 832000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/640x360/ggOJOrGoQBsvHzn9.mp4?tag=29"
+                    },
+                    {
+                      "bitrate": 2176000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/1280x720/p8zfU76jLrJxRWPW.mp4?tag=29"
+                    },
+                    {
+                      "bitrate": 10368000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/1920x1080/y0cxmCdqL5jlLt8I.mp4?tag=29"
+                    }
+                  ]
+                }
+              }
+            ],
+            "urls": [
+              {
+                "display_url": "youtu.be/9MXzPz2cOYk",
+                "expanded_url": "https://youtu.be/9MXzPz2cOYk",
+                "indices": [
+                  112,
+                  135
+                ],
+                "url": "https://t.co/71jxhWZmEW"
+              }
+            ]
+          },
+          "extended_entities": {
+            "media": [
+              {
+                "additional_media_info": {
+                  "monetizable": false
+                },
+                "display_url": "pic.x.com/PpaYRED61k",
+                "expanded_url": "https://x.com/chihara_anime/status/2110672031205511204/video/1",
+                "ext_media_availability": {
+                  "status": "Available"
+                },
+                "id_str": "2110639494986924032",
+                "indices": [
+                  180,
+                  203
+                ],
+                "media_key": "13_2110639494986924032",
+                "media_results": {
+                  "result": {
+                    "media_key": "13_2110639494986924032"
+                  }
+                },
+                "media_url_https": "https://pbs.twimg.com/amplify_video_thumb/2110639494986924032/img/ayDGA63go_CuzlxG.jpg",
+                "original_info": {
+                  "focus_rects": [],
+                  "height": 1080,
+                  "width": 1920
+                },
+                "sizes": {
+                  "large": {
+                    "h": 1080,
+                    "resize": "fit",
+                    "w": 1920
+                  },
+                  "medium": {
+                    "h": 675,
+                    "resize": "fit",
+                    "w": 1200
+                  },
+                  "small": {
+                    "h": 383,
+                    "resize": "fit",
+                    "w": 680
+                  },
+                  "thumb": {
+                    "h": 150,
+                    "resize": "crop",
+                    "w": 150
+                  }
+                },
+                "type": "video",
+                "url": "https://t.co/PpaYRED61k",
+                "video_info": {
+                  "aspect_ratio": [
+                    16,
+                    9
+                  ],
+                  "duration_millis": 32661,
+                  "variants": [
+                    {
+                      "content_type": "application/x-mpegURL",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/pl/8KbO9EaNP1ycjlob.m3u8?tag=29&v=86b"
+                    },
+                    {
+                      "bitrate": 256000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/480x270/spyR-Ze3VRYMKrg6.mp4?tag=29"
+                    },
+                    {
+                      "bitrate": 832000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/640x360/ggOJOrGoQBsvHzn9.mp4?tag=29"
+                    },
+                    {
+                      "bitrate": 2176000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/1280x720/p8zfU76jLrJxRWPW.mp4?tag=29"
+                    },
+                    {
+                      "bitrate": 10368000,
+                      "content_type": "video/mp4",
+                      "url": "https://video.twimg.com/amplify_video/2110639494986924032/vid/avc1/1920x1080/y0cxmCdqL5jlLt8I.mp4?tag=29"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "favorite_count": 2856,
+          "favorited": false,
+          "full_text": "／\n　TVアニメ「地雷なんですか？地原さん」\n　放送日解禁!!!🐈‍⬛🐾\n＼\n\n2027年1月7日(木)毎週木曜深夜0:26～\n　　　　   放送スタート✨\n· · ────── ·🏫· ────── · ·\n\n🎥最新PV\nhttps://t.co/71jxhWZmEW\n\nMBS/TBS系28 局”スーパーアニメイズム TURBO”枠にて\n全国同時放送📡✨ https://t.co/PpaYRED61k",
+          "id_str": "2110672031205511204",
+          "is_quote_status": false,
+          "lang": "ja",
+          "possibly_sensitive": false,
+          "possibly_sensitive_editable": true,
+          "quote_count": 41,
+          "reply_count": 4,
+          "retweet_count": 610,
+          "retweeted": false,
+          "user_id_str": "1999068074201489408"
+        },
+        "note_tweet": {
+          "is_expandable": true,
+          "note_tweet_results": {
+            "result": {
+              "entity_set": {
+                "hashtags": [
+                  {
+                    "indices": [
+                      181,
+                      186
+                    ],
+                    "text": "鈴代紗弓"
+                  },
+                  {
+                    "indices": [
+                      193,
+                      197
+                    ],
+                    "text": "浦和希"
+                  },
+                  {
+                    "indices": [
+                      203,
+                      208
+                    ],
+                    "text": "内田真礼"
+                  },
+                  {
+                    "indices": [
+                      216,
+                      221
+                    ],
+                    "text": "杉田智和"
+                  },
+                  {
+                    "indices": [
+                      228,
+                      233
+                    ],
+                    "text": "小野大輔"
+                  },
+                  {
+                    "indices": [
+                      240,
+                      248
+                    ],
+                    "text": "アニメ地原さん"
+                  }
+                ],
+                "symbols": [],
+                "timestamps": [],
+                "urls": [
+                  {
+                    "display_url": "youtu.be/9MXzPz2cOYk",
+                    "expanded_url": "https://youtu.be/9MXzPz2cOYk",
+                    "indices": [
+                      112,
+                      135
+                    ],
+                    "url": "https://t.co/K2GIQtykKh"
+                  }
+                ],
+                "user_mentions": []
+              },
+              "id": "Tm90ZVR3ZWV0OjIxMTA2NzIwMzExNTUxNTQ5NDQ=",
+              "richtext": {
+                "richtext_tags": [
+                  {
+                    "from_index": 42,
+                    "richtext_types": [
+                      "Bold"
+                    ],
+                    "to_index": 54
+                  }
+                ]
+              },
+              "text": "／\n　TVアニメ「地雷なんですか？地原さん」\n　放送日解禁!!!🐈‍⬛🐾\n＼\n\n2027年1月7日(木)毎週木曜深夜0:26～\n　　　　   放送スタート✨\n· · ────── ·🏫· ────── · ·\n\n🎥最新PV\nhttps://t.co/K2GIQtykKh\n\nMBS/TBS系28 局”スーパーアニメイズム TURBO”枠にて\n全国同時放送📡✨\n\n#鈴代紗弓(地原舞役)\n#浦和希(黒木役)\n#内田真礼(岩倉千夏役)\n#杉田智和(日比谷役)\n#小野大輔(風見役)\n\n#アニメ地原さん"
+            }
+          }
+        },
+        "rest_id": "2110672031205511204",
+        "unmention_data": {},
+        "views": {
+          "count": "92318",
+          "state": "EnabledWithCount"
+        }
+      }
+    }
+  }
+}

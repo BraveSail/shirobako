@@ -46,11 +46,17 @@ class ResultRebuildUnavailable(RuntimeError):
 
 
 #: 结果层缓存的**正文格式版本**（与 bot 侧 ``CacheParseResult.content_version`` 同一语义）。
-#: 1 = 正文可能含 lib 层标记（twitter 长文 richtext 粗体 ``**``, 2026-10-13 引入）。
 #:
-#: 读缓存时**缺版本**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
-#: **只对 twitter** 强制（其它平台正文格式没变, 强制会让它们的 5 分钟缓存白失效）。
-_CACHE_CONTENT_VERSION = 1
+#: - 1 = 正文可能含 lib 层标记（twitter 长文 richtext 粗体 ``**``, 2026-10-13 引入）。
+#: - 2 = **粗体的区间换算修正**（2026-10-15）：``from_index``/``to_index`` 是
+#:   **UTF-16 code unit** 偏移，而取值时按 code point 切 —— 区间前有 emoji（非 BMP）时
+#:   标记整体左移（实测 ``[42:54]`` 切出 ``'27年1月7日(木)毎週'``，应为 ``'2027年1月7日(木)'``）。
+#:   虽然**格式没变**（还是 ``**``），但 v1 缓存里存的是**位置错了的标记** ——
+#:   不 bump 的话用户重发同一条链接会命中旧条目、看到一模一样的错误（观感等同“没修”）。
+#:
+#: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
+#: **只对 twitter** 强制（其它平台正文格式没变, 强制会让它们的缓存白失效）。
+_CACHE_CONTENT_VERSION = 2
 _CONTENT_VERSION_PLATFORMS = frozenset({"twitter"})
 
 

@@ -179,6 +179,73 @@ def test_a_quoted_tweet_with_bold_keeps_it():
     assert "**这一段是要加粗的内容。**" in got.quoted_status.full_text
 
 
+# ── UTF-16 索引（emoji 在前面时标记会整体左移）─────────────────────
+#
+# 用户报障「加粗偏掉了」(2026-10-15, x.com/chihara_anime/status/2110672031205511204):
+# 该推文的 tag 是 [42:54], 但区间**前面有 5 个 emoji** ——
+#
+#   按 code point 切: '27年1月7日(木)毎週'   ← 丢了开头的 "20"，偏掉
+#   按 UTF-16   切: '2027年1月7日(木)'      ← 正确
+#
+# X 的前端是 JS（字符串按 UTF-16 索引），而 Python 按 code point 索引；
+# 每个非 BMP 字符在 UTF-16 占 2 个 unit ⇒ 差出的正是 emoji 个数。
+
+
+def _utf16_len(s: str) -> int:
+    """该字符串在 UTF-16 下的 code unit 数（非 BMP 字符算 2）。"""
+    return len(s.encode("utf-16-le")) // 2
+
+
+def test_emoji_before_the_span_does_not_shift_it():
+    """**核心回归**: 区间前的 emoji 会让 UTF-16 索引与 code point 下标分叉。"""
+    prefix = "放送日解禁!!!🐈‍⬛🐾\n"          # 含非 BMP 字符
+    target = "2027年1月7日(木)"
+    text = f"{prefix}{target}毎週木曜深夜0:26～"
+    # 服务端给的是 **UTF-16** 偏移
+    start = _utf16_len(prefix)
+    end = start + _utf16_len(target)
+    assert _utf16_len(prefix) != len(prefix), "前提: 该前缀的两种长度必须不同"
+
+    got = _parse(_wrapped(note_tweet=_note(text, richtext=_rich((start, end, ["Bold"])))))
+    assert f"**{target}**" in got
+    assert "**27年" not in got, "不能把开头的 20 切掉（这正是原 bug 的形态）"
+
+
+def test_utf16_index_helper_matches_utf16_lengths():
+    """换算函数与 UTF-16 长度精确一致（含多个 emoji 与 BMP 混合）。"""
+    text = "a🐈b🎥c📡d"          # 3 个非 BMP
+    for cp_index, char in enumerate(text):
+        utf16_index = _utf16_len(text[:cp_index])
+        assert Twitter._utf16_index_to_codepoint(text, utf16_index) == cp_index, char
+    # 末尾/越界
+    assert Twitter._utf16_index_to_codepoint(text, _utf16_len(text)) == len(text)
+    assert Twitter._utf16_index_to_codepoint(text, 10_000) == len(text)
+    assert Twitter._utf16_index_to_codepoint(text, 0) == 0
+    assert Twitter._utf16_index_to_codepoint(text, -5) == 0
+
+
+def test_plain_text_indices_are_unchanged():
+    """没有非 BMP 字符时两种索引相同 —— 老行为不能变。"""
+    assert Twitter._utf16_index_to_codepoint(TEXT, 5) == 5
+    assert Twitter._utf16_index_to_codepoint(TEXT, len(TEXT)) == len(TEXT)
+
+
+def test_the_real_emoji_tweet_from_the_bug_report():
+    """用户报障的真实响应（落盘 fixture）: 加粗必须正好是 ``2027年1月7日(木)``。
+
+    之前切出的是 ``27年1月7日(木)毎週``（整段左移 5 个字符）。
+    """
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "twitter_richtext_emoji.json"
+    if not fixture.exists():
+        return
+    tweet = Twitter().parse(json.loads(fixture.read_text(encoding="utf-8")))
+    assert "**2027年1月7日(木)**" in tweet.full_text
+    assert "27年1月7日(木)毎週**" not in tweet.full_text
+
+
 # ── 真实推文数据 (落盘 fixture) ─────────────────────────────
 
 

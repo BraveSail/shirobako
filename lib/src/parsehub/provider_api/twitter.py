@@ -437,12 +437,19 @@ class Twitter:
 
             [{"from_index": 87, "to_index": 156, "richtext_types": ["Bold"]}, ...]
 
+        ⚠️ **索引是 UTF-16 code unit 偏移, 不是 Python 的 code point 下标** ——
+        X 的前端是 JS（字符串按 UTF-16 索引）。文本里出现**非 BMP 字符**
+        （emoji 等, 每个在 UTF-16 占 2 个 unit）时, 两者会差出字符数, 标记整体左移。
+        实例（``2110672031205511204``）: tag ``[42:54]``, 区间前有 5 个 emoji ⇒
+        按 code point 切出 ``'27年1月7日(木)毎週'``（**丢了开头的 20**）,
+        按 UTF-16 切才是 ``'2027年1月7日(木)'``。所以必须先用
+        :meth:`_utf16_index_to_codepoint` 换算。
+
         **索引指向 ``text`` 原文** (未经短链展开), 所以本函数必须在
         ``_restore_short_urls`` **之前**调用 —— 展开会改变长度、让区间漂移。
 
-        只有一个区间、且不嵌套时直接切片; 多个区间按顺序从后往前插入
-        (从后往前改文本不会让前面的区间偏移)。相同位置的标记按
-        ``_INLINE_STYLES`` 的映射裹上 ``**`` / ``*`` / ``~~``。
+        多个区间按顺序从后往前插入 (从后往前改文本不会让前面的区间偏移)。
+        相同位置的标记按 ``_INLINE_STYLES`` 的映射裹上 ``**`` / ``*`` / ``~~``。
 
         ``richtext_tags`` 缺失 / 为空 / 区间越界时原样返回 (旧响应没有这个字段)。
         """
@@ -454,7 +461,9 @@ class Twitter:
         spans: list[tuple[int, int, str]] = []
         for tag in tags:
             try:
-                start, end = int(tag.get("from_index")), int(tag.get("to_index"))
+                # UTF-16 偏移 -> code point 下标（emoji 在前面时两者不相等）
+                start = Twitter._utf16_index_to_codepoint(text, int(tag.get("from_index")))
+                end = Twitter._utf16_index_to_codepoint(text, int(tag.get("to_index")))
             except (TypeError, ValueError):
                 continue
             if start < 0 or end <= start or start >= length:
@@ -472,6 +481,28 @@ class Twitter:
         for start, end, marker in sorted(spans, key=lambda s: s[0], reverse=True):
             text = f"{text[:start]}{marker}{text[start:end]}{marker}{text[end:]}"
         return text
+
+    @staticmethod
+    def _utf16_index_to_codepoint(text: str, utf16_index: int) -> int:
+        """把 **UTF-16 code unit 偏移** 换算成 Python 的 code point 下标。
+
+        X 的 ``from_index`` / ``to_index`` 与 JS 的字符串索引一致（UTF-16）,
+        而 Python 按 code point 索引 —— 文本里有非 BMP 字符（emoji）时两者不等。
+
+        实现: 逐字符累加它在 UTF-16 下的宽度（非 BMP 算 2, 其余算 1）,
+        累加到目标偏移即为对应的 code point 下标。偏移落在某个非 BMP 字符
+        中间（只可能出现在区间边界上, 此时按保守处理）时返回该字符的下标。
+
+        偏移超过文本长度时返回 ``len(text)``（调用方会当作越界处理）。
+        """
+        if utf16_index <= 0:
+            return 0
+        units = 0
+        for index, char in enumerate(text):
+            if units >= utf16_index:
+                return index
+            units += 2 if ord(char) > 0xFFFF else 1
+        return len(text)
 
     @staticmethod
     def _restore_short_urls(text: str, url_entities: list[dict]) -> str:

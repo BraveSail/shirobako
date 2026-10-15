@@ -11,7 +11,7 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
-from services.cache import PersistentCache
+from services.cache import CONTENT_VERSION, PersistentCache
 
 BASE = {
     "title": "T",
@@ -45,8 +45,13 @@ def test_a_twitter_entry_without_content_version_is_refreshed():
 
 
 def test_a_twitter_entry_with_the_current_version_hits():
-    """写了 1 的 twitter 条目 → 正常命中"""
-    assert _get(_entry_payload(platform="twitter", content_version=1)) is not None
+    """写了**当前**版本的 twitter 条目 → 正常命中（引用常量, 别手抄字面量）"""
+    assert _get(_entry_payload(platform="twitter", content_version=CONTENT_VERSION)) is not None
+
+
+def test_a_twitter_entry_from_the_previous_version_is_refreshed():
+    """上一版（v1: 有 `**` 但区间算错）也要重解析 —— 观感与"没修"一样。"""
+    assert _get(_entry_payload(platform="twitter", content_version=CONTENT_VERSION - 1)) is None
 
 
 def test_other_platforms_are_not_refreshed():
@@ -55,7 +60,7 @@ def test_other_platforms_are_not_refreshed():
 
 
 def test_new_entries_carry_the_version():
-    """写入端必须带上 content_version=1 —— 否则下一次读又会被判旧, 无限重解析"""
+    """写入端必须带上**当前**版本 —— 否则下一次读又会被判旧, 无限重解析"""
     import types as _types
 
     from plugins.parse.inline_rich import rich_cache_entry
@@ -81,7 +86,7 @@ def test_new_entries_carry_the_version():
         platform=_types.SimpleNamespace(id="twitter"),
     )
     entry = rich_cache_entry(parse_result, [])
-    assert entry.parse_result.content_version == 1
+    assert entry.parse_result.content_version == CONTENT_VERSION
 
     # 直接往返一次: 该条目必须能命中 (不被判旧)
     payload = json.loads(entry.model_dump_json())

@@ -256,11 +256,13 @@ class CacheParseResult(BaseModel):
     #: 也没有占位符——那是 lib 新版才出的形态），行为与改动前一致。
     polls: list[dict] = []
 
-    #: 正文格式版本（cache 格式演进用）。当前值 1 = 正文可能含 lib 层标记
-    #: （twitter 长文的 richtext 粗体 ``**``，2026-10-13 引入）。
+    #: 正文格式版本（cache 格式演进用）。当前值见 ``CONTENT_VERSION``：
+    #: 1 = 正文可能含 lib 层标记（twitter 长文的 richtext 粗体 ``**``，2026-10-13）；
+    #: 2 = 粗体区间换算修正（UTF-16 → code point，2026-10-15）——
+    #:     格式没变但**位置是错的**，不重解析用户重发会看到一模一样的偏移。
     #:
-    #: 缺失（=0）的 **twitter** 条目会被判为旧格式重新解析 —— 否则用户重发链接
-    #: 命中的还是不含粗体的旧正文，症状与"没修"一模一样。
+    #: 缺失/低版本的 **twitter** 条目会被判为旧格式重新解析 —— 否则用户重发链接
+    #: 命中的还是旧正文，症状与"没修"一模一样。
     #: 其它平台不检查（它们的正文格式没变，让条目重解析只会白白重下媒体）。
     content_version: int = 0
 
@@ -271,6 +273,19 @@ class CacheParseResult(BaseModel):
 #: 在缓存里没法区分（``model_fields_set`` 也不行: 字段名早就在 schema 里）。不升版本的话
 #: 用户重发同一条链接命中的还是老条目, 看不到新接的那几段（症状与"没修"一样）。
 FOOTER_META_FIELDS_VERSION = 1
+
+
+#: ``CacheParseResult.content_version`` 的**当前写入版本**（仅 twitter 检查）。
+#:
+#: - 1 = 正文可能含 lib 层标记（twitter 长文 richtext 粗体 ``**``，2026-10-13）。
+#: - 2 = **粗体区间换算修正**（2026-10-15）：服务端的 ``from_index``/``to_index`` 是
+#:   UTF-16 code unit 偏移，取值时按 code point 切 ⇒ 区间前有 emoji 时标记整体左移。
+#:   注意这一版**正文格式没变**（仍是 ``**``），但 v1 缓存里存的是**位置错了的标记** ——
+#:   不 bump 的话用户重发同一条链接会命中旧条目、看到一模一样的偏移（观感等同"没修"）。
+#:
+#: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
+#: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
+CONTENT_VERSION = 2
 
 
 class CacheMedia(BaseModel):
@@ -356,11 +371,15 @@ class PersistentCache:
             self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
             return None
 
-        if entry.parse_result.platform == "twitter" and entry.parse_result.content_version < 1:
-            # twitter 长文的正文格式变了 (richtext 粗体支持, 2026-10-13):
-            # 旧条目里存的是没有 ``**`` 标记的正文, 复用会让用户以为修复没生效。
-            # 只查 twitter —— 其它平台正文格式未变, 让它们重解析只会白白重下媒体。
-            self.logger.debug(f"twitter 旧格式正文 (无 richtext 标记), 重新解析: key={url}")
+        if entry.parse_result.platform == "twitter" and entry.parse_result.content_version < CONTENT_VERSION:
+            # twitter 长文正文的格式/取值变过（richtext 粗体支持 2026-10-13；
+            # 粗体区间 UTF-16 换算修正 2026-10-15）:
+            # 旧条目里存的是没有 ``**``、或 **位置偏掉** 的正文，复用会让用户以为修复没生效。
+            # 只查 twitter —— 其它平台正文格式未变，让它们重解析只会白白重下媒体。
+            self.logger.debug(
+                f"twitter 旧格式正文 (content_version={entry.parse_result.content_version} "
+                f"< {CONTENT_VERSION}), 重新解析: key={url}"
+            )
             return None
 
         self.logger.debug(f"缓存命中: key={url}")
