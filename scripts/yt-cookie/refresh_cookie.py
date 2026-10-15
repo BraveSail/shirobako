@@ -151,13 +151,33 @@ async def refresh(*, headless: bool = True) -> dict[str, str]:
         # 让页面把会话 cookie 滚动一次（SIDTS 类值只在这里更新）
         await page.wait_for_timeout(4000)
 
-        logged_in = await page.evaluate(
-            """() => {
-                const sel = ['#avatar-btn', 'ytd-topbar-menu-button-renderer', 'button[aria-label*="Account"]'];
-                return sel.some(s => document.querySelector(s) !== null);
-            }"""
+        # ⚠️ 判据必须用 **ytcfg LOGGED_IN** —— 那是 YouTube 自己给 innertube 用的登录标志,
+        # 与"取流能不能成功"是同一个体系。
+        #
+        # 以前这里查 DOM 节点存在性 (`#avatar-btn` / `ytd-topbar-menu-button-renderer` /
+        # `button[aria-label*="Account"]` 里**任一**存在就算已登录), 有致命缺陷:
+        #   `ytd-topbar-menu-button-renderer` **对未登录用户也存在** —— 顶栏的「登录」
+        #   按钮就渲染在它里面。`.some()` 命中它 ⇒ **断言恒为 True**,
+        #   于是 cookie 早就失效了脚本还报"登录态正常"（实测误报:
+        #   同一环境下 avatar-btn=False / account_btn=False / sign_in_button=True,
+        #   页面上是登录墙, 而断言照样打 True）。
+        logged_in = bool(
+            await page.evaluate(
+                """() => {
+                    try {
+                        if (!window.ytcfg || !window.ytcfg.get) return false;
+                        return window.ytcfg.get('LOGGED_IN') === true;
+                    } catch (e) { return false; }
+                }"""
+            )
         )
-        log(f"登录态断言(页面元素): {logged_in}")
+        log(f"登录态断言(ytcfg LOGGED_IN): {logged_in}")
+        if not logged_in:
+            # 明确失败: 以前这里只打一行日志继续跑, 把失效的 cookie 原样写回,
+            # 让调用方以为"刷新成功"。现在直接报错 —— 失效需要人工提供新 cookie。
+            raise SystemExit(
+                "cookie 不是登录态（ytcfg LOGGED_IN 非 true）—— 需要人工提供新的 YouTube cookie"
+            )
 
         # 触发一次真正的已登录请求，促使服务端续期
         try:
@@ -205,8 +225,12 @@ def main() -> int:
         exp = load_expiry()
         now = int(time.time())
         print(f"cookie 条目: {len(ck)}")
-        print(f"登录标志: {[k for k in LOGIN_MARKERS if k in ck]}")
+        # ⚠️ 字段"在不在"**不代表登录态有效** —— 失效的 cookie 里 SID 照样在。
+        # 真正的判据只有让 YouTube 自己说（ytcfg LOGGED_IN / 取流是否 OK），
+        # 那需要开浏览器；这里只做静态检查, 所以要明确标注这一行的局限。
+        print(f"登录标志(仅表示字段存在, 不代表有效): {[k for k in LOGIN_MARKERS if k in ck]}")
         print(f"上次刷新: {STAMP.read_text().strip() if STAMP.exists() else '从未'}")
+        print("提示: 验证登录态是否**有效**请跑一次刷新（它用 ytcfg LOGGED_IN 断言）")
         # ★ 回答"还有多久到期"就是这一行
         soon = [
             f"{k}={datetime.fromtimestamp(v):%Y-%m-%d}({(v - now) / 86400:.0f}天后)"

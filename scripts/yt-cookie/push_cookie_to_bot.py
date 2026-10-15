@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from datetime import datetime
@@ -19,6 +20,10 @@ REPO = Path("/root/parse_hub_bot")
 COOKIE_JSON = Path("/root/yt-cookie/cookies.json")
 LOG = Path("/root/yt-cookie/push.log")
 CONTAINER = "shirobakobot-bot-1"
+
+#: 长期登录项 —— 缺任一项说明这份 cookie 不是（完整的）登录态。
+#: 与 refresh_cookie.py 的 LOGIN_MARKERS 同一组值。
+LOGIN_MARKERS = ("SID", "HSID", "SSID", "SAPISID", "__Secure-1PSID")
 
 
 def log(msg: str) -> None:
@@ -31,6 +36,26 @@ def log(msg: str) -> None:
 def main() -> int:
     if not COOKIE_JSON.exists():
         log(f"没有 cookie 文件: {COOKIE_JSON}")
+        return 1
+
+    # 0) 先确认 cookie 是**登录态**再说 —— 只看字段存在不够（失效的 cookie 里 SID 照样在）。
+    #    判据与刷新脚本一致: 必须有长期登录项。真正的有效性由 refresh_cookie.py 断言
+    #    （ytcfg LOGGED_IN）；这里挡住"被截断/只剩 __Secure-3*"这类明显残缺的输入。
+    try:
+        data = json.loads(COOKIE_JSON.read_text(encoding="utf-8"))
+        values = (
+            {k: v.get("value") for k, v in data["cookies"].items()}
+            if isinstance(data.get("cookies"), dict)
+            else data
+        )
+    except Exception as e:  # noqa: BLE001
+        log(f"cookie 文件读不了: {type(e).__name__}: {e}")
+        return 1
+    missing = [k for k in LOGIN_MARKERS if not values.get(k)]
+    if missing:
+        # 关键: 缺长期登录项说明这份 cookie 是残缺的（如刷新时被浏览器丢弃）
+        # —— 推上去只会让 bot 用一份无效登录态，不如明确失败。
+        log(f"cookie 缺少登录标志 {missing} —— 拒绝写入（不是登录态）")
         return 1
 
     # ⚠️ 必须用**仓库的 .venv** —— 系统 python3 没装 yaml。
