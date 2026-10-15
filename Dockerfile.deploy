@@ -21,9 +21,18 @@ COPY . .
 
 FROM python:3.12-slim AS runtime
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libglib2.0-0 \
+        libjemalloc2 \
+        ffmpeg \
+        media-types \
+        curl unzip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # bun: 给 YouTube 的 n-sig 解算当 JS 运行时（``parsehub.utils.nsig``; bun 优先、node 兜底）。
 # 单文件静态二进制，官方 release 直下 —— 版本与 sha256 都钉死（构建可复现）。
 # 校验和取自 bun-v1.4.3 的 SHASUMS256.txt；升级时两处一起改。
+# ⚠️ 必须在上面 apt 装完 curl/unzip 之后 —— slim 基础镜像里没有它们。
 ARG TARGETARCH
 ARG BUN_VERSION=1.4.3
 ARG BUN_SHA256_AARCH64=efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21
@@ -42,14 +51,6 @@ RUN set -eux; \
     install -m 0755 "/tmp/bunpkg/$(basename "${bun_zip}" .zip)/bun" /usr/local/bin/bun; \
     rm -rf /tmp/bun.zip /tmp/bunpkg; \
     bun --version
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libglib2.0-0 \
-        libjemalloc2 \
-        ffmpeg \
-        media-types \
-        curl unzip ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
 
 ENV PATH=/app/.venv/bin:$PATH \
     LD_PRELOAD=libjemalloc.so.2 \
