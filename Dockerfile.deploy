@@ -21,6 +21,28 @@ COPY . .
 
 FROM python:3.12-slim AS runtime
 
+# bun: 给 YouTube 的 n-sig 解算当 JS 运行时（``parsehub.utils.nsig``; bun 优先、node 兜底）。
+# 单文件静态二进制，官方 release 直下 —— 版本与 sha256 都钉死（构建可复现）。
+# 校验和取自 bun-v1.4.3 的 SHASUMS256.txt；升级时两处一起改。
+ARG TARGETARCH
+ARG BUN_VERSION=1.4.3
+ARG BUN_SHA256_AARCH64=efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21
+ARG BUN_SHA256_X64=3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+        arm64)  bun_zip="bun-linux-aarch64.zip"; bun_sha="${BUN_SHA256_AARCH64}" ;; \
+        amd64)  bun_zip="bun-linux-x64.zip";     bun_sha="${BUN_SHA256_X64}" ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/bun.zip \
+        "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${bun_zip}"; \
+    echo "${bun_sha}  /tmp/bun.zip" | sha256sum -c -; \
+    unzip -q /tmp/bun.zip -d /tmp/bunpkg; \
+    install -m 0755 "/tmp/bunpkg/$(basename "${bun_zip}" .zip)/bun" /usr/local/bin/bun; \
+    rm -rf /tmp/bun.zip /tmp/bunpkg; \
+    bun --version
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-0 \
         libjemalloc2 \

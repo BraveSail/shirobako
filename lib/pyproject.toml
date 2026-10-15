@@ -38,6 +38,8 @@ dependencies = [
     "cryptography>=49.0.0",
     "gmssl>=3.2.2",
     "signerpy>=0.12.0",
+    # YouTube 的 n-sig 解算需要 JS 挑战求解器（这个包只提供 JS 源码，执行靠 node）
+    "yt-dlp-ejs>=0.8.0",
 ]
 
 [project.scripts]

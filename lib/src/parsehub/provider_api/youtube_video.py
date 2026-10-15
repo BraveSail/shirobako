@@ -31,12 +31,17 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
+from loguru import logger
+
 from ..utils import http
+from ..utils import nsig as nsig_mod
 from ..utils.helpers import to_datetime, to_int
+
+logger = logger.bind(name="YoutubeVideo")
 
 # ── innertube client 常量 ──────────────────────────────────────────────────
 #
@@ -290,6 +295,44 @@ def _playability_error(data: dict[str, Any]) -> str | None:
     if isinstance(detail, dict):
         detail = detail.get("simpleText") or "".join(run.get("text", "") for run in detail.get("runs", []))
     return f"{code}{(': ' + str(detail)) if detail else ''}"
+
+
+def apply_solved_n(urls: list[str], solved: dict[str, str]) -> dict[str, str]:
+    """把解出的 ``n`` 写回 URL，返回 ``{原 url: 新 url}``（纯函数，便于离线测试）。
+
+    只替换 URL 里 ``n=`` 的**值**，其余参数一字不动 —— 实测**任何其它参数的顺序/取值
+    都不能改**（``sig`` 覆盖了 ``sparams`` 列出的那组参数，改一个就 403）。
+
+    解不出（或结果相同）的项**不放进返回值** —— 调用方据此保持原 URL，
+    行为与"没有 n 解算"完全一致（不劣化）。
+    """
+    out: dict[str, str] = {}
+    for url in urls:
+        raw = _param_value(url, "n")
+        solved_value = solved.get(raw) if raw else None
+        if not raw or not solved_value or solved_value == raw:
+            continue
+        head, sep, query = url.partition("?")
+        if not sep:
+            continue
+        parts = []
+        for kv in query.split("&"):
+            key, eq, value = kv.partition("=")
+            parts.append(f"{key}={solved_value}" if eq and key == "n" else kv)
+        out[url] = head + sep + "&".join(parts)
+    return out
+
+
+def _param_value(url: str, key: str) -> str:
+    """取 URL query 里某个参数的值（取不到返回空串）。"""
+    _, sep, query = url.partition("?")
+    if not sep:
+        return ""
+    for kv in query.split("&"):
+        name, eq, value = kv.partition("=")
+        if eq and name == key:
+            return value
+    return ""
 
 
 def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> YoutubeVideo:
@@ -666,9 +709,57 @@ async def fetch_video(
         else:
             video.user_agent = str(spec["_user_agent"])
             video.metadata = metadata
+            # n-sig: 直链里原样的 ``n`` 会被服务端 403, 必须解一遍（解不出就保持原样）
+            await _apply_nsig(video, data, proxy=proxy, cookie=cookie)
             return video
 
     raise YoutubeVideoError("player API 解析失败: " + "; ".join(errors))
+
+
+async def _apply_nsig(
+    video: YoutubeVideo,
+    data: dict[str, Any],
+    *,
+    proxy: str | None,
+    cookie: dict[str, str] | None,
+) -> None:
+    """把 ``video.streams`` 里所有 URL 的 n 参数解成有效值（原地改写）。
+
+    **为什么必须做**: 直链里的 ``n`` 是需 JS 变换的令牌 —— 原样请求会被 ``403``。
+    实测同一条视频: n 原样 → 403；解过后 → 206 / 可下载。
+
+    降级策略（每一层失败都不抛）:
+    - 没有 JS 运行时 / 拿不到播放器 JS / 求解器无输出 ⇒ **保持原 URL**（行为同改动前）
+    - 只有``n`` 还留在 URL 上的流才参与（其它流无 n，无需处理）
+    """
+    if not nsig_mod.find_runtime():
+        return
+    targets = [s.url for s in video.streams if _param_value(s.url, "n")]
+    if not targets:
+        return
+
+    player_id = nsig_mod.player_id_from_response(data)
+    if not player_id:
+        logger.debug("播放器响应里没有 jsUrl, 跳过 n-sig")
+        return
+
+    player_js = await nsig_mod.get_player_js(player_id, proxy=proxy)
+    if not player_js:
+        return
+
+    raw_values = list({_param_value(u, "n") for u in targets})
+    solved = nsig_mod.solve_n(player_js, raw_values)
+    if not solved:
+        return
+
+    mapping = apply_solved_n(targets, solved)
+    if not mapping:
+        return
+
+    # ``Stream`` 是 frozen dataclass ⇒ 用 ``replace`` 造新对象；``YoutubeVideo`` 不是
+    # frozen，直接改 ``streams`` 字段即可。
+    video.streams = [replace(s, url=mapping.get(s.url, s.url)) for s in video.streams]
+    logger.debug(f"n-sig 已解: {len(mapping)}/{len(targets)} 条流")
 
 
 __all__ = [
@@ -683,6 +774,7 @@ __all__ = [
     "VideoMetadata",
     "YoutubeVideo",
     "YoutubeVideoError",
+    "apply_solved_n",
     "fetch_video",
     "parse_microformat",
     "parse_player_response",
