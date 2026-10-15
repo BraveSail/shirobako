@@ -126,10 +126,41 @@ def test_player_id_from_assets():
     assert nsig.player_id_from_response(data) == "21090930"
 
 
+def test_player_id_from_watch_html_when_assets_are_absent():
+    """**watch 页的内嵌响应没有 ``assets``** —— playerId 只能从页面 HTML 里取。
+
+    这是实际踩到的坑: 主路走 watch 页后, 只查 ``assets`` 必然拿不到 id,
+    n 解不出来 → 直链下载 403（解析看着"成功", 下载却挂）。
+    """
+    html = (
+        "<html><script>var ytInitialPlayerResponse = {\"streamingData\": {...}};</script>"
+        'var cfg = {"jsUrl":"/s/player/21090930/player_ias.vflset/en_US/base.js"};'
+        "</html>"
+    )
+    assert nsig.player_id_from_response({"streamingData": {}}, html) == "21090930"
+
+
+def test_player_id_from_html_picks_the_most_frequent():
+    """页面里可能有多处 ``/s/player/`` 字样 —— 取出现次数最多的（真播放器 JS）。"""
+    html = (
+        "/s/player/11111111/x.js"
+        "/s/player/22222222/base.js"
+        "/s/player/22222222/base.js"
+    )
+    assert nsig.player_id_from_response({}, html) == "22222222"
+
+
+def test_player_id_prefers_assets_over_html():
+    """两条来源都在时, 结构化字段优先（HTML 里的正则可能被别的条目带偏）。"""
+    data = {"assets": {"js": "/s/player/99999999/player_ias.vflset/en_US/base.js"}}
+    assert nsig.player_id_from_response(data, "/s/player/11111111/base.js") == "99999999"
+
+
 def test_player_id_missing_returns_empty():
     assert nsig.player_id_from_response({}) == ""
     assert nsig.player_id_from_response({"assets": {}}) == ""
     assert nsig.player_id_from_response({"assets": {"js": "https://example.com/x.js"}}) == ""
+    assert nsig.player_id_from_response({}, "<html>no player id here</html>") == ""
 
 
 def test_solve_n_without_runtime_or_input_returns_empty(monkeypatch):

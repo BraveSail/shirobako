@@ -197,17 +197,29 @@ _player_cache: dict[str, tuple[float, str]] = {}
 _JS_ID_RE = re.compile(r"/s/player/([0-9a-zA-Z_-]+)/")
 
 
-def player_id_from_response(data: Any) -> str:
-    """从 player 响应里取播放器 id（纯函数；取不到返回空串）。
+def player_id_from_response(data: Any, html: str = "") -> str:
+    """取播放器 id（纯函数；取不到返回空串）。
 
-    路径优先问结构化字段（``assets.js``），取不到再退回全文本正则 ——
-    **不用全文正则当主路径**：响应里别的条目也可能带 ``/s/player/`` 字样。
+    **两条来源都要看**（2026-10-15 实测）:
+
+    1. ``data["assets"]["js"]`` —— innertube ``POST player`` 响应的字段。
+    2. **watch 页 HTML 里的播放器 JS 地址** —— 内嵌的 ``ytInitialPlayerResponse``
+       **没有 ``assets``**（实测: 30 条流、无 assets），所以只查它必然拿不到 id，
+       整条 n-sig 链就断了（表现: 直链下载 403）。
+
+    先问结构化字段，再退回 HTML 里的 ``/s/player/<id>/`` 字样。
     """
     assets = data.get("assets") if isinstance(data, dict) else None
     if isinstance(assets, dict):
         js = str(assets.get("js") or "")
         if match := _JS_ID_RE.search(js):
             return match.group(1)
+    if html:
+        # HTML 里可能有多处 /s/player/<id>/ 字样（如 poster 图、缓存预热），
+        # 取**出现次数最多**的那个 —— 播放器 JS 会在页面里被引用多次。
+        ids = _JS_ID_RE.findall(html)
+        if ids:
+            return max(set(ids), key=ids.count)
     return ""
 
 

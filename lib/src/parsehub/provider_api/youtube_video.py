@@ -789,7 +789,7 @@ async def fetch_video(
     # ── 主路: GET watch 页（一次拿全流 + 元数据）─────────────────────────
     watch_error = ""
     try:
-        data, _html = await _fetch_watch_page(video_id, proxy=proxy, cookie=cookie)
+        data, html = await _fetch_watch_page(video_id, proxy=proxy, cookie=cookie)
         video = parse_player_response(data, video_id=video_id)
     except YoutubeVideoError as exc:
         watch_error = str(exc)
@@ -799,7 +799,9 @@ async def fetch_video(
         video.user_agent = _WATCH_USER_AGENT
         # 元数据与流来自**同一份响应** —— 不再另发请求，也不用 visitor
         video.metadata = parse_microformat(data)
-        await _apply_nsig(video, data, proxy=proxy, cookie=cookie)
+        # ⚠️ 必须把 HTML 也传下去: 内嵌响应里**没有 assets**, playerId 只在页面里
+        # （漏了它 n 解不出来, 直链下载 403）
+        await _apply_nsig(video, data, html=html, proxy=proxy, cookie=cookie)
         return video
 
     # ── 兜底: POST player（老路，保留给 watch 页拿不到流的视频）──────────
@@ -830,6 +832,7 @@ async def _apply_nsig(
     video: YoutubeVideo,
     data: dict[str, Any],
     *,
+    html: str = "",
     proxy: str | None,
     cookie: dict[str, str] | None,
 ) -> None:
@@ -837,6 +840,10 @@ async def _apply_nsig(
 
     **为什么必须做**: 直链里的 ``n`` 是需 JS 变换的令牌 —— 原样请求会被 ``403``。
     实测同一条视频: n 原样 → 403；解过后 → 206 / 可下载。
+
+    ``html`` 是 watch 页原文 —— **主路必须传**：内嵌的 playerResponse 里没有
+    ``assets``，playerId 只能从页面里的 ``/s/player/<id>/`` 取（漏了它 n 解不出，
+    下载就是 403）。
 
     降级策略（每一层失败都不抛）:
     - 没有 JS 运行时 / 拿不到播放器 JS / 求解器无输出 ⇒ **保持原 URL**（行为同改动前）
@@ -848,9 +855,9 @@ async def _apply_nsig(
     if not targets:
         return
 
-    player_id = nsig_mod.player_id_from_response(data)
+    player_id = nsig_mod.player_id_from_response(data, html)
     if not player_id:
-        logger.debug("播放器响应里没有 jsUrl, 跳过 n-sig")
+        logger.debug("拿不到播放器 id(assets 与页面里都没有), 跳过 n-sig")
         return
 
     player_js = await nsig_mod.get_player_js(player_id, proxy=proxy)
