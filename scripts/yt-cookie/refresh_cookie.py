@@ -36,8 +36,31 @@ CK_NS = CK_DIR / "cookies.txt"
 STAMP = CK_DIR / "refreshed_at.txt"
 LOG = CK_DIR / "refresh.log"
 
-#: 登录态的标志性 cookie —— 少了它说明这份 cookie 根本不是登录态
-LOGIN_MARKERS = ("SID", "HSID", "SSID", "__Secure-1PSID")
+#: 登录态的判据（**与 yt-dlp 的 `_has_auth_cookies` 一致**）：
+#: 有 ``LOGIN_INFO`` 且至少有一个 SAPISID 系。
+#:
+#: ⚠️ **不能要求 ``SID``/``HSID``/``SSID``/``SAPISID``** —— 它们属于 ``.google.com``，
+#: 浏览器/导出工具只给 ``.youtube.com`` 那批时就不在里面。实测用户给的一份**有效**
+#: 登录态只有 ``__Secure-3PAPISID``（无 ``SID``/``SAPISID``），无头里
+#: ``ytcfg LOGGED_IN=True``、取流 31 条 —— 拿旧门槛去拦会把**有效** cookie 判成无效。
+LOGIN_INFO_COOKIE = "LOGIN_INFO"
+SAPISID_COOKIES = ("SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID")
+
+#: 展示用：这些是登录相关的关键项（`--check` / 到期报表里列出）
+LOGIN_MARKERS = (LOGIN_INFO_COOKIE, *SAPISID_COOKIES)
+
+
+def is_login_state(cookies: dict[str, str]) -> tuple[bool, str]:
+    """判断一份 cookie 是否是登录态，返回 ``(是否, 原因)``。
+
+    只做**静态**判断（字段在不在）。**有效**与否最终只能让平台自己说：
+    无头里的 ``ytcfg LOGGED_IN`` / 取流是否 ``OK``。
+    """
+    if not cookies.get(LOGIN_INFO_COOKIE):
+        return False, f"缺 {LOGIN_INFO_COOKIE}"
+    if not any(cookies.get(k) for k in SAPISID_COOKIES):
+        return False, f"缺 {'/'.join(SAPISID_COOKIES)} 中的任一项"
+    return True, "ok"
 
 #: curl 按域匹配；两套域都写（YouTube 与 Google 账号体系互相依赖）
 DOMAIN_SETS = (".youtube.com", ".google.com")
@@ -116,9 +139,9 @@ def expiry_report(raw: list[dict]) -> str:
 
 async def refresh(*, headless: bool = True) -> dict[str, str]:
     seed = load_cookies()
-    missing = [k for k in LOGIN_MARKERS if k not in seed]
-    if missing:
-        raise SystemExit(f"传入的 cookie 缺少登录标志 {missing} —— 不是登录态，拒绝继续")
+    ok, why = is_login_state(seed)
+    if not ok:
+        raise SystemExit(f"传入的 cookie 不是登录态（{why}）—— 拒绝继续")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -225,10 +248,11 @@ def main() -> int:
         exp = load_expiry()
         now = int(time.time())
         print(f"cookie 条目: {len(ck)}")
-        # ⚠️ 字段"在不在"**不代表登录态有效** —— 失效的 cookie 里 SID 照样在。
+        ok, why = is_login_state(ck)
+        # ⚠️ 字段"在不在"**不代表登录态有效** —— 失效的 cookie 里这些字段照样在。
         # 真正的判据只有让 YouTube 自己说（ytcfg LOGGED_IN / 取流是否 OK），
         # 那需要开浏览器；这里只做静态检查, 所以要明确标注这一行的局限。
-        print(f"登录标志(仅表示字段存在, 不代表有效): {[k for k in LOGIN_MARKERS if k in ck]}")
+        print(f"静态判据(登录字段是否齐): {'通过' if ok else f'不通过 ({why})'} —— 不代表有效")
         print(f"上次刷新: {STAMP.read_text().strip() if STAMP.exists() else '从未'}")
         print("提示: 验证登录态是否**有效**请跑一次刷新（它用 ytcfg LOGGED_IN 断言）")
         # ★ 回答"还有多久到期"就是这一行

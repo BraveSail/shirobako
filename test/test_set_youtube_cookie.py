@@ -55,8 +55,43 @@ FULL_COOKIE = {
     "SSID": "ssid-value",
     "SAPISID": "sapisid-value",
     "__Secure-1PSID": "psid-value",
+    "LOGIN_INFO": "login-info-value",
     "VISITOR_INFO1_LIVE": "visitor",
 }
+
+#: 用户实际给的那份**有效**登录态：**没有** SID/HSID/SSID/SAPISID（它们属于
+#: .google.com，按域导出时不在），只有 ``LOGIN_INFO`` + ``__Secure-3PAPISID``。
+#: 判据必须认它 —— 否则会把一份能用的 cookie 判成无效。
+USER_SHAPE_COOKIE = {
+    "LOGIN_INFO": "login-info-value",
+    "__Secure-3PAPISID": "3papisid-value",
+    "VISITOR_INFO1_LIVE": "visitor",
+}
+
+
+# ── 登录态判据 ──────────────────────────────────────────────────────────
+
+
+def test_accepts_sapisid_shape(mod):
+    assert mod.is_login_state(FULL_COOKIE)[0] is True
+
+
+def test_accepts_the_user_shape_without_sid(mod):
+    """只有 ``__Secure-3PAPISID``（无 ``SID``/``SAPISID``）也是登录态。"""
+    ok, why = mod.is_login_state(USER_SHAPE_COOKIE)
+    assert ok is True, why
+
+
+def test_rejects_a_visitor_only_cookie(mod):
+    ok, why = mod.is_login_state({"VISITOR_INFO1_LIVE": "x"})
+    assert ok is False
+    assert "LOGIN_INFO" in why
+
+
+def test_rejects_when_login_info_missing_but_sapisid_present(mod):
+    ok, why = mod.is_login_state({"SAPISID": "x"})
+    assert ok is False
+    assert "LOGIN_INFO" in why
 
 
 # ── 解析 ────────────────────────────────────────────────────────────────
@@ -190,13 +225,23 @@ def test_config_keeps_private_permissions(mod, repo, monkeypatch):
 
 
 def test_warns_but_writes_when_login_markers_are_missing(mod, repo, monkeypatch, capsys):
-    """缺登录标志只警告不阻断 —— 但要让调用方看见。"""
+    """不是登录态只警告不阻断 —— 但要让调用方看见。"""
     ck = repo / "c.json"
     ck.write_text(json.dumps({"VISITOR_INFO1_LIVE": "only-visitor"}), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["x", "--from-json", str(ck)])
 
     assert mod.main() == 0
-    assert "缺少登录标志" in capsys.readouterr().err
+    assert "不是登录态" in capsys.readouterr().err
+
+
+def test_does_not_warn_for_the_user_shape_cookie(mod, repo, monkeypatch, capsys):
+    """只有 ``LOGIN_INFO`` + ``__Secure-3PAPISID`` 的有效 cookie **不该**报警告。"""
+    ck = repo / "c.json"
+    ck.write_text(json.dumps(USER_SHAPE_COOKIE), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["x", "--from-json", str(ck)])
+
+    assert mod.main() == 0
+    assert "不是登录态" not in capsys.readouterr().err
 
 
 def test_missing_file_is_rejected(mod, repo, monkeypatch):

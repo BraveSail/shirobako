@@ -21,9 +21,21 @@ COOKIE_JSON = Path("/root/yt-cookie/cookies.json")
 LOG = Path("/root/yt-cookie/push.log")
 CONTAINER = "shirobakobot-bot-1"
 
-#: 长期登录项 —— 缺任一项说明这份 cookie 不是（完整的）登录态。
-#: 与 refresh_cookie.py 的 LOGIN_MARKERS 同一组值。
-LOGIN_MARKERS = ("SID", "HSID", "SSID", "SAPISID", "__Secure-1PSID")
+#: 登录态判据（**与 refresh_cookie.py 的 `is_login_state` 同源**，也和 yt-dlp 的
+#: `_has_auth_cookies` 一致）：``LOGIN_INFO`` 存在 **且** 至少一个 SAPISID 系。
+#:
+#: ⚠️ 别要求 ``SID``/``HSID``/``SSID``/``SAPISID`` —— 实测有效登录态可能只有
+#: ``__Secure-3PAPISID``（那些属于 .google.com，导出时常常不在）。
+LOGIN_INFO_COOKIE = "LOGIN_INFO"
+SAPISID_COOKIES = ("SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID")
+
+
+def is_login_state(cookies: dict[str, str]) -> tuple[bool, str]:
+    if not cookies.get(LOGIN_INFO_COOKIE):
+        return False, f"缺 {LOGIN_INFO_COOKIE}"
+    if not any(cookies.get(k) for k in SAPISID_COOKIES):
+        return False, f"缺 {'/'.join(SAPISID_COOKIES)} 中的任一项"
+    return True, "ok"
 
 
 def log(msg: str) -> None:
@@ -51,11 +63,11 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         log(f"cookie 文件读不了: {type(e).__name__}: {e}")
         return 1
-    missing = [k for k in LOGIN_MARKERS if not values.get(k)]
-    if missing:
-        # 关键: 缺长期登录项说明这份 cookie 是残缺的（如刷新时被浏览器丢弃）
-        # —— 推上去只会让 bot 用一份无效登录态，不如明确失败。
-        log(f"cookie 缺少登录标志 {missing} —— 拒绝写入（不是登录态）")
+    ok, why = is_login_state({k: v for k, v in values.items() if v})
+    if not ok:
+        # 关键: 不是登录态就别推 —— 推上去会让 bot 用一份无效登录态,
+        # 表现成"解析不出来"而没人知道是 cookie 的问题。
+        log(f"cookie 不是登录态（{why}）—— 拒绝写入")
         return 1
 
     # ⚠️ 必须用**仓库的 .venv** —— 系统 python3 没装 yaml。

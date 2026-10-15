@@ -37,8 +37,22 @@ import yaml
 
 CONFIG = Path("data/config/platform_config.yaml")
 
-#: 登录态的标志性 cookie —— 少了它这份 cookie 根本不是登录态（写进去也白搭）
-LOGIN_MARKERS = ("SID", "HSID", "SSID", "SAPISID", "__Secure-1PSID")
+#: 登录态判据（**与 `scripts/yt-cookie/refresh_cookie.py` 同源**，也和 yt-dlp 一致）：
+#: ``LOGIN_INFO`` 存在 **且** 至少一个 SAPISID 系。
+#:
+#: ⚠️ **别要求 ``SID``/``HSID``/``SSID``** —— 它们属于 ``.google.com``，
+#: 浏览器按域导出时常常不在。实测一份**有效**登录态只有 ``__Secure-3PAPISID``。
+LOGIN_INFO_COOKIE = "LOGIN_INFO"
+SAPISID_COOKIES = ("SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID")
+
+
+def is_login_state(cookies: dict[str, str]) -> tuple[bool, str]:
+    """静态判断（字段在不在）；**有效**与否要跑刷新时让平台说。"""
+    if not cookies.get(LOGIN_INFO_COOKIE):
+        return False, f"缺 {LOGIN_INFO_COOKIE}"
+    if not any(cookies.get(k) for k in SAPISID_COOKIES):
+        return False, f"缺 {'/'.join(SAPISID_COOKIES)} 中的任一项"
+    return True, "ok"
 
 
 def parse_cookie_text(text: str) -> dict[str, str]:
@@ -123,7 +137,8 @@ def main() -> int:
         if cookies:
             names = set(parse_cookie_text(str(cookies[0])))
         print(f"youtube.cookies: {len(cookies)} 条, 字段 {len(names)} 个")
-        print(f"  登录标志: {[m for m in LOGIN_MARKERS if m in names]}")
+        ok, why = is_login_state(dict.fromkeys(names, ""))
+        print(f"  静态判据(登录字段是否齐): {'通过' if ok else f'不通过 ({why})'} —— 不代表有效")
         print(f"  parser_proxy 关闭: {bool(entry.get('disable_parser_proxy'))}")
         print(f"  parser_proxies: {entry.get('parser_proxies')}")
         return 0
@@ -141,10 +156,11 @@ def main() -> int:
         print("cookie 解析出来是空的")
         return 2
 
-    missing = [m for m in LOGIN_MARKERS if m not in cookies]
-    if missing:
-        # 不阻断: 也许 Google 改了字段名 —— 但必须让调用方看见
-        print(f"⚠️  缺少登录标志 {missing} —— 这份 cookie 可能不是登录态", file=sys.stderr)
+    ok, why = is_login_state(cookies)
+    if not ok:
+        # 不阻断: 也许平台改了字段名 —— 但必须让调用方看见。
+        # 判据与刷新脚本/yt-dlp 一致（LOGIN_INFO + 任一 SAPISID 系）。
+        print(f"⚠️  cookie 不是登录态（{why}）—— 写进去也可能用不了", file=sys.stderr)
     print(f"cookie 字段 {len(cookies)} 个: {sorted(cookies)}")
 
     entry["cookies"] = [as_cookie_string(cookies)]
