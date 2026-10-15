@@ -63,6 +63,17 @@ def load_cookie_file(path: Path) -> dict[str, str]:
         data = json.loads(text)
         if not isinstance(data, dict):
             raise ValueError("cookie JSON 必须是对象 {name: value}")
+        # 兼容刷新脚本的新形态: {"captured_at": ..., "cookies": {"name": {"value":…, "expires":…}}}
+        # —— 那种形态下 cookie 值在嵌套的 "value" 里, 直接取会拿到 dict。
+        if "cookies" in data and isinstance(data["cookies"], dict):
+            nested = data["cookies"]
+            out: dict[str, str] = {}
+            for k, v in nested.items():
+                if isinstance(v, dict):
+                    out[str(k).strip()] = "" if v.get("value") is None else str(v["value"]).strip()
+                else:
+                    out[str(k).strip()] = "" if v is None else str(v).strip()
+            return out
         return {str(k).strip(): "" if v is None else str(v).strip() for k, v in data.items()}
     return parse_cookie_text(text)
 

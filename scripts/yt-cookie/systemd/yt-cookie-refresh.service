@@ -1,0 +1,15 @@
+[Unit]
+Description=Refresh YouTube cookies (headless) and push them to the bot config
+After=network-online.target
+Wants=network-online.target
+# ⚠️ 这两个键属于 [Unit]。写进 [Service] 会被 systemd **静默忽略**
+#    (journal 里只报 "Unknown key ... ignoring"), 失败保护等于没配 —— 会无限重试,
+#    而 cookie 被踢下线本来就该停下等人工。
+#    校验: systemctl show yt-cookie-refresh.service -p StartLimitIntervalUSec,StartLimitBurst
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+# 仓库里的脚本（改完记得 scp 到 /opt/yt-browser/ 或直接指向仓库路径）
+ExecStart=/root/parse_hub_bot/scripts/yt-cookie/refresh-and-push.sh

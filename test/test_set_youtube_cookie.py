@@ -77,6 +77,30 @@ def test_loads_json_object(mod, tmp_path):
     assert mod.load_cookie_file(p) == {"SID": "a"}
 
 
+def test_loads_the_refresh_scripts_nested_shape(mod, tmp_path):
+    """刷新脚本导出的形态是嵌套的 ``{"cookies": {"name": {"value":…, "expires":…}}}``。
+
+    直接按 ``name: value`` 解析会**拿到 dict 而不是字符串** —— 这条钉住兼容性。
+    """
+    payload = {
+        "captured_at": 1792076400,
+        "cookies": {
+            "SID": {"value": "sid-value", "expires": 1807628475},
+            "HSID": {"value": "hsid-value", "expires": -1},
+        },
+    }
+    p = tmp_path / "cookies.json"
+    p.write_text(json.dumps(payload), encoding="utf-8")
+    assert mod.load_cookie_file(p) == {"SID": "sid-value", "HSID": "hsid-value"}
+
+
+def test_loads_nested_shape_with_plain_values(mod, tmp_path):
+    """嵌套但值是裸字符串时同样要能吃下（形态演进的中间态）。"""
+    p = tmp_path / "cookies.json"
+    p.write_text(json.dumps({"cookies": {"SID": "abc"}}), encoding="utf-8")
+    assert mod.load_cookie_file(p) == {"SID": "abc"}
+
+
 def test_loads_txt_string(mod, tmp_path):
     p = tmp_path / "cookies.txt"
     p.write_text("SID=a; HSID=b", encoding="utf-8")
