@@ -2,7 +2,15 @@ import random
 from pathlib import Path
 
 from parsehub.types import Platform as PPlatform
-from pydantic import AnyUrl, BaseModel, ConfigDict, SecretStr, field_serializer, field_validator
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    ConfigDict,
+    PrivateAttr,
+    SecretStr,
+    field_serializer,
+    field_validator,
+)
 from yaml import safe_load
 
 from log import logger
@@ -81,6 +89,11 @@ class PlatformsConfig(BaseModel):
     default_downloader_proxies: list[AnyUrl] | None = None
     platforms: dict[str, Platform] = {}
 
+    _source: Path | None = PrivateAttr(default=None)
+    """配置文件路径 —— 热重载要拿它重新 stat / 读盘。"""
+    _mtime_ns: int = PrivateAttr(default=-1)
+    """上次加载时文件的 ``st_mtime_ns``；``-1`` 表示尚未记录（首次必重载）。"""
+
     @classmethod
     def load_config(cls, file: Path) -> "PlatformsConfig":
         if not file.exists():
@@ -120,8 +133,52 @@ class PlatformsConfig(BaseModel):
             default_downloader_proxies=cls._2l(data.get("default_downloader_proxies", None)),
             platforms=platforms,
         )
+        pc._source = file  # noqa: SLF001 - 记下来源, 供热重载使用
+        pc._mtime_ns = cls._stat_mtime_ns(file)  # noqa: SLF001
         logger.debug(f"已载入平台配置: {pc.model_dump_json(indent=4)}")
         return pc
+
+    @staticmethod
+    def _stat_mtime_ns(file: Path) -> int:
+        """取文件 mtime（纳秒）。**用 ns 不用秒** —— 同一秒内写入会漏掉变更。"""
+        try:
+            return file.stat().st_mtime_ns
+        except OSError:
+            return -1
+
+    def reload_if_changed(self) -> bool:
+        """配置文件变了就**原地**重新加载，返回是否发生了重载。
+
+        **为什么原地改**: ``pl_cfg`` 被 ``from core import pl_cfg`` 到处引用 ——
+        换成新对象的话, 别处持有的旧引用会一直用老配置。
+        所以这里只更新字段, 不动对象本身。
+
+        惰性触发（每次取配置时比对 mtime）而不是 SIGHUP:
+        刷新脚本改完文件后**下一次解析自动生效**, 不需要重启容器、也不需要外部发信号。
+        ``stat`` 是纯本地调用（不产生网络请求）, 稳态开销可忽略。
+
+        读盘/解析失败时**保留旧配置**并记日志 —— 半个坏文件不该让在跑的服务失去配置。
+        """
+        source = self._source  # noqa: SLF001
+        if source is None:
+            return False
+        mtime = self._stat_mtime_ns(source)
+        if mtime == self._mtime_ns:  # noqa: SLF001
+            return False
+        try:
+            fresh = type(self).load_config(source)
+        except Exception as e:  # noqa: BLE001 - 坏配置不能让在跑的服务挂掉
+            logger.error(f"热重载失败, 继续用旧配置: {type(e).__name__}: {e}")
+            # 记下这份坏文件的 mtime, 避免每次取配置都重试读盘刷日志
+            self._mtime_ns = mtime  # noqa: SLF001
+            return False
+
+        self.default_parser_proxies = fresh.default_parser_proxies
+        self.default_downloader_proxies = fresh.default_downloader_proxies
+        self.platforms = fresh.platforms
+        self._mtime_ns = mtime  # noqa: SLF001
+        logger.info(f"平台配置已热重载 ({len(self.platforms)} 个平台)")
+        return True
 
     @staticmethod
     def _2l[T](v: T | list[T] | None) -> list[T] | None:
@@ -132,6 +189,7 @@ class PlatformsConfig(BaseModel):
         return [v]
 
     def get(self, platform_id: str) -> Platform | None:
+        self.reload_if_changed()
         return self.platforms.get(platform_id)
 
     def roll_cookie(self, platform_id: str) -> MaskedSecretStr | None:

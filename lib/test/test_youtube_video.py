@@ -29,6 +29,7 @@ from parsehub.provider_api.youtube import parse_post_page
 from parsehub.provider_api.youtube_video import (
     DEFAULT_MAX_HEIGHT,
     YoutubeVideoError,
+    _extract_player_response,
     _reset_visitor_cache,
     fetch_video,
     parse_microformat,
@@ -46,6 +47,61 @@ VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 def _player(name: str = "youtube_player_visionos.json") -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _watch_html(data: dict | None = None) -> str:
+    """造一份最小 watch 页 HTML（内嵌 ``ytInitialPlayerResponse``）。
+
+    形态与真实页面一致：``var ytInitialPlayerResponse = {...};`` 前后有别的脚本。
+    """
+    payload = json.dumps(data if data is not None else _player())
+    return (
+        "<!DOCTYPE html><html><head><script>var ytcfg = {};</script></head><body>"
+        f"<script>var ytInitialPlayerResponse = {payload};</script>"
+        "<script>var ytInitialData = {};</script>"
+        "</body></html>"
+    )
+
+
+def _watch_client(
+    captured: dict | None = None,
+    *,
+    watch_data: dict | None = None,
+    watch_status: int = 200,
+    watch_html: str | None = None,
+    watch_calls: list | None = None,
+):
+    """假客户端：``get`` 回 watch 页（主路），``post`` 回兜底路径。
+
+    ``watch_status=401`` / ``watch_html="<html></html>"`` 用来模拟主路失败、逼出兜底。
+    """
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            if watch_calls is not None:
+                watch_calls.append((url, kwargs.get("headers", {})))
+            if captured is not None:
+                captured["watch_url"] = url
+                captured["watch_headers"] = kwargs.get("headers", {})
+            html = watch_html if watch_html is not None else _watch_html(watch_data)
+            return FakeResponse(watch_status, text=html)
+
+        async def post(self, url, **kwargs):
+            if captured is not None:
+                captured["headers"] = kwargs["headers"]
+                captured["body"] = json.loads(kwargs["data"].decode())
+            return FakeResponse(200, json_data=_player())
+
+    return FakeClient
 
 
 def _by_itag(video) -> dict:
@@ -84,6 +140,10 @@ def _fake_client(  # noqa: PLR0913 - 假客户端需要几个开关, 但都是�
 
         async def __aexit__(self, *_args):
             return False
+
+        async def get(self, url, **kwargs):
+            """watch 页（主路）—— 这里刻意让它失败，好让这些用例**显式**走 POST 兜底。"""
+            return FakeResponse(200, text="<html></html>")
 
         async def post(self, url, **kwargs):
             if "guide" in url:
@@ -270,6 +330,208 @@ def test_parser_rejects_a_url_without_a_video_id():
 # ── fetch_video: 网络入口 ─────────────────────────────────────────────────
 
 
+# ── ① 主路：GET watch 页 ──────────────────────────────────────────────────
+#
+# 反爬链路（2026-10-15 实测定案）: 浏览器**只 GET watch 页**, 服务端把
+# ``ytInitialPlayerResponse`` 内嵌进 HTML —— 它从不 POST player。
+# 受控对照: 同一视频/出口/cookie, POST player 一律 LOGIN_REQUIRED, GET watch 给 31 条明文流。
+# 且 watch 页一次就给全 **流 + microformat**, 所以稳态只发 1 次请求。
+
+
+def test_fetch_video_gets_the_watch_page_and_makes_only_one_request():
+    """**核心契约**: 主路只发 1 次请求（GET watch 页）, 且不再需要 visitor。"""
+    watch_calls: list = []
+    post_calls: list = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            watch_calls.append((url, kwargs.get("headers", {})))
+            return FakeResponse(200, text=_watch_html())
+
+        async def post(self, url, **kwargs):  # 主路成功就不该走到这里
+            post_calls.append(url)
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        video = asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085"))
+
+    assert len(watch_calls) == 1, "稳态只发 1 次请求（watch 页）"
+    assert watch_calls[0][0] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert post_calls == [], "主路成功就不该再 POST player"
+    assert video.video_id == "dQw4w9WgXcQ"
+    assert video.streams, "流来自内嵌响应"
+    assert video.user_agent, "要留下载用的 UA"
+
+
+def test_watch_page_request_looks_like_a_browser():
+    """watch 页请求必须像浏览器 —— 实测非浏览器 UA 会被判 LOGIN_REQUIRED。"""
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured["proxy"] = kwargs.get("proxy")
+            captured["cookies"] = kwargs.get("cookies")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            captured["headers"] = kwargs.get("headers", {})
+            return FakeResponse(200, text=_watch_html())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        asyncio.run(
+            fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085", cookie={"SID": "x"})
+        )
+
+    assert "Mozilla/5.0" in captured["headers"]["User-Agent"]
+    assert "text/html" in captured["headers"]["Accept"]
+    assert captured["headers"]["Accept-Language"].startswith("en")
+    assert captured["proxy"] == "socks5h://127.0.0.1:1085", "解析代理要透传"
+    assert captured["cookies"] == {"SID": "x"}, "cookie 必须带上（缺它两条路一起挂）"
+
+
+def test_metadata_comes_from_the_same_watch_response():
+    """**请求数从 2 降到 1 的依据**: watch 页同时给流与 microformat。"""
+    data = {**_player(), **MICROFORMAT}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            return FakeResponse(200, text=_watch_html(data))
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        video = asyncio.run(fetch_video("jTbsEsYSnpM"))
+
+    assert video.metadata.like_count == 368, "同一个响应里的 microformat 要填进元数据"
+    assert video.metadata.published_at is not None
+    assert video.streams
+
+
+def test_watch_page_failure_falls_back_to_post_player():
+    """watch 页拿不到流（改版/被拦）⇒ 降级到 POST player 老路, 不能整条挂。"""
+    posted: list = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            return FakeResponse(200, text="<html><body>no player response here</body></html>")
+
+        async def post(self, url, **kwargs):
+            posted.append(url)
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        video = asyncio.run(fetch_video("dQw4w9WgXcQ"))
+
+    assert posted, "应降级发 POST player"
+    assert video.streams
+
+
+def test_non_200_watch_page_falls_back():
+    """watch 页返回非 200（限流/封禁）同样要降级。"""
+    posted: list = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            return FakeResponse(429, text="")
+
+        async def post(self, url, **kwargs):
+            posted.append(url)
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        video = asyncio.run(fetch_video("dQw4w9WgXcQ"))
+
+    assert posted
+    assert video.streams
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "",
+        "<html></html>",
+        "<script>var ytInitialPlayerResponse = null;</script>",   # 不是对象
+        "<script>var ytInitialPlayerResponse = {broken json;</script>",
+        "<script>var ytInitialPlayerResponse={};</script>",       # 空对象
+    ],
+)
+def test_watch_page_extraction_tolerates_bad_html(html):
+    """页面改版/字段缺失 ⇒ 空 dict（由调用方降级）, **不抛异常**。"""
+    assert _extract_player_response(html) == {} or isinstance(_extract_player_response(html), dict)
+
+
+def test_watch_page_extraction_handles_nested_braces_and_strings():
+    """括号截取必须扛住嵌套对象与字符串里的花括号（否则会截断成非法 JSON）。"""
+    data = {"a": {"b": {"c": "}{\\\" 干扰"}}, "d": [1, 2, 3]}
+    html = f"<script>var ytInitialPlayerResponse = {json.dumps(data)}; </script>"
+    assert _extract_player_response(html) == data
+
+
+def test_player_response_fixture_is_reachable_from_the_watch_path():
+    """真实 fixture 走一遍主路 —— 钉住"内嵌响应能被完整解析"。"""
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            return FakeResponse(200, text=_watch_html())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        video = asyncio.run(fetch_video("dQw4w9WgXcQ"))
+
+    itags = {s.itag for s in video.streams}
+    assert 18 in itags or itags, "至少要拿到流"
+    assert video.title.startswith("Rick Astley")
+
+
+# ── ② 兜底：POST player 老路 ──────────────────────────────────────────────
+
+
 def test_fetch_video_uses_the_visionos_client():
     """只请求 VISIONOS（#101）—— 它是唯一"给明文 url 且不要 PO token"的 client。
 
@@ -400,7 +662,11 @@ def test_guide_is_the_fallback_when_the_web_response_has_no_visitor():
 
 
 def test_all_requests_go_over_the_same_proxy():
-    """两发请求（WEB 取元数据 / VISIONOS 取流）必须走**同一个出口**。"""
+    """一次解析里**所有**请求必须走同一个出口（代理不能中途换）。
+
+    新链路: 主路 1 发（watch 页）；这里让 watch 页失败以逼出兜底，
+    从而同时覆盖"watch + WEB + VISIONOS"三发都走同一代理。
+    """
     seen: list = []
 
     class FakeClient:
@@ -413,6 +679,9 @@ def test_all_requests_go_over_the_same_proxy():
         async def __aexit__(self, *_args):
             return False
 
+        async def get(self, url, **kwargs):
+            return FakeResponse(200, text="<html></html>")  # 主路失败 -> 走兜底
+
         async def post(self, url, **kwargs):
             if kwargs["headers"]["X-Youtube-Client-Name"] == "1":
                 return FakeResponse(200, json_data={**MICROFORMAT,
@@ -422,7 +691,32 @@ def test_all_requests_go_over_the_same_proxy():
     with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
         asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085"))
 
-    assert seen == ["socks5h://127.0.0.1:1085", "socks5h://127.0.0.1:1085"]
+    assert seen, "至少发过一次请求"
+    assert set(seen) == {"socks5h://127.0.0.1:1085"}, f"所有请求必须同一出口, 实际 {seen}"
+    assert len(seen) >= 2, "兜底路径会有 watch + WEB + VISIONOS 多发, 全部都要带代理"
+
+
+def test_watch_page_alone_uses_the_proxy():
+    """主路（watch 页）单独验证: 只发 1 次, 且带上传入的代理。"""
+    seen: list = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            seen.append(kwargs.get("proxy"))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            return FakeResponse(200, text=_watch_html())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085"))
+
+    assert seen == ["socks5h://127.0.0.1:1085"]
 
 
 def test_missing_visitor_degrades_instead_of_failing():

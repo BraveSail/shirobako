@@ -1,11 +1,13 @@
-"""YouTube 一个 parser 管两类链接：视频 / 音乐（自研 player API）与社区帖子（页面数据）。
+"""YouTube 一个 parser 管两类链接：视频 / 音乐（自研取流）与社区帖子（页面数据）。
 
-**视频 / 音乐自研, 不再依赖 yt-dlp**：请求 innertube ``/youtubei/v1/player``（**``VISIONOS``
-client** —— 唯一"既返回明文直链、又不要求 PO token"的那个, 选型依据见
-``provider_api/youtube_video.py``）拿到直链，再交给项目自研下载器
-（``utils/downloader.py``）。高画质是**音视频分离**的，本文件用 ffmpeg ``-c copy`` 合并
-（lib 之外 bot 侧本就在用 ffmpeg，见 ``utils/media_processing_unit.py``）。决策与 client
-常量的细节在 ``provider_api/youtube_video.py``。
+**视频 / 音乐自研, 不再依赖 yt-dlp**：GET ``watch?v=<id>`` 页面，从内嵌的
+``ytInitialPlayerResponse`` 里拿**明文直链**（同时拿到 ``microformat`` 元数据），
+再交给项目自研下载器（``utils/downloader.py``）。这条路就是浏览器走的路 ——
+**别改成 POST ``/youtubei/v1/player``**：实测那条路对同一条视频一律 ``LOGIN_REQUIRED``,
+而 watch 页给 31 条明文流（细节与受控对照见 ``provider_api/youtube_video.py``）。
+
+高画质是**音视频分离**的，本文件用 ffmpeg ``-c copy`` 合并
+（lib 之外 bot 侧本就在用 ffmpeg，见 ``utils/media_processing_unit.py``）。
 
 帖子（``/post/<id>``）走另一条路 —— yt-dlp 会把 ``/post/<id>`` 当成频道 tab
 （``[youtube:tab] post: This channel does not have a Ugk… tab``），所以帖子只能读页面里的

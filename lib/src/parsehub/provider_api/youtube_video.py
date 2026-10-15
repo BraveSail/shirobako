@@ -99,6 +99,22 @@ CLIENTS: tuple[dict[str, Any], ...] = (VISIONOS,)
 PLAYER_URL = "https://www.youtube.com/youtubei/v1/player"
 """innertube player 接口 (两种 client 共用)。"""
 
+WATCH_URL = "https://www.youtube.com/watch?v={video_id}"
+"""watch 页 —— **取流的正路**。
+
+**别用 POST ``/youtubei/v1/player`` 取流**（2026-10-15 实测定案）：同一条视频、同一出口、
+同一 cookie，``POST player`` 一律 ``LOGIN_REQUIRED``，而 ``GET watch`` 能拿到 31 条明文流。
+浏览器本身也**从不** POST player —— 它只 GET watch 页，服务端把
+``ytInitialPlayerResponse`` 内嵌在 HTML 里（CDP 抓包 0 个 player 请求即证据）。
+
+一次 GET 同时拿到 **流 + 元数据**（``microformat``: publishDate/likeCount/viewCount/
+ownerProfileUrl），所以不再需要单独的 WEB player 请求 —— 反爬链路从 2 请求降到 1。
+"""
+
+#: 取流用的浏览器 UA（与 ``_WEB_USER_AGENT`` 同一族）。**必须像浏览器** ——
+#: 用非浏览器 UA 请求 watch 页会直接 ``LOGIN_REQUIRED``。
+_WATCH_USER_AGENT = _WEB_USER_AGENT
+
 DEFAULT_MAX_HEIGHT = 1080
 """默认画质上限。
 
@@ -558,9 +574,13 @@ def _client_context(spec: dict[str, Any]) -> dict[str, Any]:
 
 # ── 视频元数据（发布时间 / 点赞 / 上传者）─────────────────────────────────
 #
-# ⚠️ **实测结论（别再试别的路）**：**没有一个 client 能一次同时给「明文流」和
-# ``microformat``** —— 25 个 client + player/next 两个接口 + JSON/protobuf 两种格式
-# + 8 个内置 key + 两个域名都试过：
+# ⚠️ **主路已经不用它了**（2026-10-15）：``fetch_video`` 现在 GET watch 页，
+# 一次就同时拿到 ``streamingData`` **和** ``microformat`` —— 稳态只发 1 次请求，
+# 下面这个 client 只在 watch 页失败时作**兜底**。
+#
+# 兜底为什么还需要它：**没有任何 innertube client 能一次同时给「明文流」和
+# ``microformat``**（25 个 client + player/next 两个接口 + JSON/protobuf 两种格式
+# + 8 个内置 key + 两个域名都试过）：
 #
 # | 能出明流的 client | ``microformat``（发布时间） |
 # | --- | --- |
@@ -568,14 +588,8 @@ def _client_context(spec: dict[str, Any]) -> dict[str, Any]:
 # |   next protobuf 逐字节搜发布日期戳, 0 命中）|
 # | ``WEB`` / ``MWEB``（带不带 PO token 都一样）| **有**（``publishDate`` / ``dateText``）|
 #
-# app 的发布时间来自服务端下发的 protobuf 字段
-# （``OfflineVideoCursorReader`` → ``bjjy.f115999h`` → ``new Date(SECONDS.toMillis(...))``
-#  → ``VideoMetadata.publishedDateText``），**匿名请求拿不到**（疑似要登录态）。
-#
-# ⇒ 所以是**两个 client 分工**：``VISIONOS`` 取流（唯一满足「给明流 + 不要 PO token」的），
-# ``WEB`` 取元数据。但这是**同一个请求位置**上的分工 —— ``fetch_video`` 只发两次请求，
-# 与之前「guide 取 visitor + VISIONOS 取流」**请求数完全相同**，只是把信息更少的 guide
-# 换成了 WEB player（它还顺手带回 visitorData）。别再加第三次请求。
+# ⇒ 兜底路径仍是两个 client 分工：``VISIONOS`` 取流、``WEB`` 取元数据（并顺手带回
+# visitorData，省掉原先单独那一发 guide）。这条路径的请求数是 2，**只有主路失败才会走**。
 
 MICROFORMAT_CLIENT: dict[str, Any] = {
     "clientName": "WEB",
@@ -595,6 +609,79 @@ MICROFORMAT_CLIENT: dict[str, Any] = {
 网页版即使播放被拦（``playabilityStatus`` 非 OK）**仍照常返回 ``microformat``** ——
 我们要的只是元数据，所以这个"播放不可用"不影响用途。
 """
+
+
+def _extract_player_response(html_text: str) -> dict[str, Any]:
+    """从 watch 页 HTML 里取出内嵌的 ``ytInitialPlayerResponse``（纯函数）。
+
+    不用正则硬啃 JSON —— 定位 ``ytInitialPlayerResponse = `` 后用**平衡括号 + 字符串
+    状态机**截出完整对象（与 ``provider_api/youtube.py`` 读 ``ytInitialData`` 同一手法）。
+
+    页面改版 / 字段缺失 ⇒ 返回 ``{}``，由调用方报错（**不抛**，保持纯函数）。
+    """
+    for marker in ("ytInitialPlayerResponse = ", "ytInitialPlayerResponse="):
+        start = html_text.find(marker)
+        if start == -1:
+            continue
+        start = html_text.find("{", start)
+        if start == -1:
+            continue
+        depth, in_string, escaped = 0, False, False
+        for index in range(start, len(html_text)):
+            char = html_text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        data = json.loads(html_text[start : index + 1])
+                    except ValueError:
+                        return {}
+                    return data if isinstance(data, dict) else {}
+    return {}
+
+
+async def _fetch_watch_page(
+    video_id: str,
+    *,
+    proxy: str | None,
+    cookie: dict[str, str] | None,
+) -> tuple[dict[str, Any], str]:
+    """GET watch 页并取出内嵌 playerResponse。
+
+    返回 ``(playerResponse, 原始 html)``；HTTP 非 200 或取不到内嵌响应都抛
+    ``YoutubeVideoError``（调用方据此换下一手）。
+
+    ``Accept-Language`` 与 UA 必须像真浏览器：实测非浏览器 UA 会被判 ``LOGIN_REQUIRED``。
+    """
+    headers = {
+        "User-Agent": _WATCH_USER_AGENT,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,*/*;q=0.8"
+        ),
+    }
+    url = WATCH_URL.format(video_id=video_id)
+    async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
+        response = await client.get(url, headers=headers)
+    if response.status_code != 200:
+        raise YoutubeVideoError(f"watch 页返回 HTTP {response.status_code}")
+    data = _extract_player_response(response.text)
+    if not data:
+        raise YoutubeVideoError("watch 页里没有 ytInitialPlayerResponse")
+    return data, response.text
 
 
 async def _request_player(
@@ -680,24 +767,47 @@ async def fetch_video(
     proxy: str | None = None,
     cookie: dict[str, str] | None = None,
 ) -> YoutubeVideo:
-    """请求 player API 并解析。
+    """取一条视频的流与元数据（**主路 = GET watch 页**）。
 
-    ``CLIENTS`` 只有 ``VISIONOS``（取流）；元数据另走一次 WEB player —— 见
-    ``MICROFORMAT_CLIENT`` 的说明：**没有一个 client 能同时给流和发布时间**，
-    所以是两个 client 分工，但请求总数仍是 2（WEB + VISIONOS），没有额外开销。
+    链路（2026-10-15 实测定案；反爬只认这两件事）:
 
-    取不到 visitor 时降级为不带它（回到"可能被 bot 检查拦住"的旧行为，不会更差）；
-    取不到元数据时时间/点赞留空（渲染层不显示空项）。
+    1. **GET ``watch?v=<id>``**，从 HTML 内嵌的 ``ytInitialPlayerResponse`` 里拿
+       ``streamingData``（31 条明文流）**和** ``microformat``（发布时间/点赞/上传者）。
+       浏览器就是这么干的 —— 它**从不** POST player。
+    2. 内嵌响应拿不到流时，降级到 ``POST /youtubei/v1/player``（``CLIENTS``，VISIONOS），
+       这条老路对**部分**视频仍有效，留着当兜底。
+
+    **必需条件只有两个**（受控对照实测）: ①浏览器 UA ②登录 cookie。
+    出口 IP 无关 —— 直连(IPv6)与代理(住宅/机房)表现一致。
+    cookie 缺失时 watch 页同样 ``LOGIN_REQUIRED``（两条路一起挂）。
+
+    请求数: 稳态 **1 次**（watch 页）。旧实现是 2 次（WEB player 取元数据 + VISIONOS 取流）。
     """
     if not video_id:
         raise YoutubeVideoError("缺少视频 ID")
 
+    # ── 主路: GET watch 页（一次拿全流 + 元数据）─────────────────────────
+    watch_error = ""
+    try:
+        data, _html = await _fetch_watch_page(video_id, proxy=proxy, cookie=cookie)
+        video = parse_player_response(data, video_id=video_id)
+    except YoutubeVideoError as exc:
+        watch_error = str(exc)
+    except Exception as exc:  # noqa: BLE001 - 网络异常同样降级
+        watch_error = f"{type(exc).__name__}: {exc}"
+    else:
+        video.user_agent = _WATCH_USER_AGENT
+        # 元数据与流来自**同一份响应** —— 不再另发请求，也不用 visitor
+        video.metadata = parse_microformat(data)
+        await _apply_nsig(video, data, proxy=proxy, cookie=cookie)
+        return video
+
+    # ── 兜底: POST player（老路，保留给 watch 页拿不到流的视频）──────────
     metadata, visitor = await _fetch_web_metadata(video_id, proxy=proxy, cookie=cookie)
     if not visitor:
-        # WEB 请求失败/没带 visitor ⇒ 回退到 guide（visitor 是必需项：缺它会 LOGIN_REQUIRED）
         visitor = await _get_visitor_data(proxy=proxy, cookie=cookie)
 
-    errors: list[str] = []
+    errors: list[str] = [f"watch 页: {watch_error}"]
     for spec in CLIENTS:
         try:
             data = await _request_player(video_id, spec, proxy=proxy, cookie=cookie, visitor=visitor)
