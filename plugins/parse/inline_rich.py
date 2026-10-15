@@ -312,7 +312,7 @@ def rich_cache_entry(
     """
     # 两个都是 bot 侧模块, 函数内延迟导入避免循环依赖 (与上面的 helper 同一手法)
     from plugins.helpers import get_parse_author_name
-    from services.cache import FOOTER_META_FIELDS_VERSION, CacheEntry, CacheParseResult
+    from services.cache import CONTENT_VERSION, FOOTER_META_FIELDS_VERSION, CacheEntry, CacheParseResult
 
     return CacheEntry(
         parse_result=CacheParseResult(
@@ -343,9 +343,12 @@ def rich_cache_entry(
             platform=getattr(getattr(parse_result, "platform", None), "id", "") or "",
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
-            # 正文格式版本（twitter 的 richtext 粗体让正文形态变了, 见 CacheParseResult）：
-            # 写 1 让这次之后写入的条目不再被判为旧格式。
-            content_version=1,
+            # 正文格式版本（twitter 的 richtext 粗体 / 区间换算修正让正文形态或取值变了,
+            # 见 CacheParseResult 与 services.cache.CONTENT_VERSION）：
+            # 写**当前版本**让这次之后写入的条目不再被判为旧格式。
+            # ⚠️ 必须引用常量 —— 手抄字面量会在 bump 时漏掉这里, 导致新条目立刻又被判旧、
+            # 无限重解析（测试 test_new_entries_carry_the_version 就是钉这个）。
+            content_version=CONTENT_VERSION,
         ),
         media=media or None,
         rich=True,
