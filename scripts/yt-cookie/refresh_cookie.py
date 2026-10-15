@@ -123,20 +123,26 @@ async def refresh(*, headless: bool = True) -> dict[str, str]:
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
         ctx = await browser.new_context(locale="en-US")
-        # ⚠️ ``__Secure-`` 前缀的 cookie（SID/PSID/PAPISID 等大半都是）**必须**带
-        # ``secure=True``，否则 Chromium 直接拒收（报 "Invalid cookie fields"）。
-        # 这是探针侧的坑，不是 cookie 的问题 —— 漏了它整条刷新都跑不起来。
+        # ⚠️ 两个域都要注: 长期登录项 (SID/HSID/SSID/SAPISID) 属于 **.google.com**,
+        # YouTube 自己的滚动令牌属于 **.youtube.com**。只注 .youtube.com 的话
+        # 页面看起来"已登录"(靠 __Secure-3* 就够渲染头像), 但 Google 不认这套身份,
+        # **SID 等长期项不会被续期、刷新后直接从浏览器里消失** ——
+        # 实测后果: 导出从 24 条掉到 15 条, 只剩 __Secure-3*/GPS/PREF, 登录态实际已丢。
+        # 这是真实踩过的坑（2026-10-16）, 分布写死不要改。
+        # ``__Secure-`` 前缀必须 ``secure=True``, 否则 Chromium 直接拒收
+        # (报 "Invalid cookie fields")。
         await ctx.add_cookies(
             [
                 {
                     "name": k,
                     "value": v,
-                    "domain": ".youtube.com",
+                    "domain": domain,
                     "path": "/",
                     "secure": True,
                     "httpOnly": False,
                 }
                 for k, v in seed.items()
+                for domain in DOMAIN_SETS
             ]
         )
         page = await ctx.new_page()
