@@ -1,0 +1,9 @@
+{
+  "name": "yt-sabr",
+  "private": true,
+  "type": "module",
+  "description": "YouTube SABR 取流工 — 用 LuanRT/googlevideo 的 SabrStream 拉高清流到本地文件",
+  "dependencies": {
+    "googlevideo": "^4.1.1"
+  }
+}

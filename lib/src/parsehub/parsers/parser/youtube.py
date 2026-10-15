@@ -32,6 +32,10 @@ from ...provider_api.youtube import (
     fetch_post,
     post_id_from_url,
 )
+from ...provider_api.youtube_sabr import (
+    SabrFetchError,
+    fetch_sabr_streams,
+)
 from ...provider_api.youtube_video import (
     DEFAULT_MAX_HEIGHT,
     SelectedStreams,
@@ -55,7 +59,7 @@ from ...types import (
     VideoRef,
 )
 from ...utils.downloader import download
-from ...utils.helpers import image_ext_from_url, profile_url
+from ...utils.helpers import SecretCookie, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 
@@ -80,16 +84,21 @@ class YtbParse(BaseParser):
         match = VIDEO_ID_RE.search(raw_url)
         if not match:
             raise ParseError(f"无法从链接中解析出视频 ID: {raw_url}")
+        cookie_value = self.cookie.get_value() if self.cookie else None
         try:
             video = await fetch_video(
                 match.group(1),
                 proxy=self.proxy,
-                cookie=self.cookie.get_value() if self.cookie else None,
+                cookie=cookie_value,
             )
         except YoutubeVideoError as e:
             raise ParseError(f"无法解析 YouTube 视频: {e}") from e
         selected = select_streams(video, max_height=DEFAULT_MAX_HEIGHT, allow_mux=self._ffmpeg_available())
-        return YtbVideoParseResult(info=video, selected=selected)
+        return YtbVideoParseResult(
+            info=video,
+            selected=selected,
+            cookie=str(SecretCookie(cookie_value)) if cookie_value else None,
+        )
 
     @staticmethod
     def _ffmpeg_available() -> bool:
@@ -187,13 +196,19 @@ class YtbVideoParseResult(VideoParseResult):
     - **合一流**（``selected.audio_url is None``）: 交付项目下载器下单个文件。
     - **分离流**: 分别下视频与音频, 用 ffmpeg ``-c copy`` 合并成一个 mp4
       （视频带进度回调, 音频静默 —— 用户看到的最大文件是视频）。
+    - **SABR**（``info.sabr`` 非空, 高清流没有明文直链）: 走
+      ``provider_api/youtube_sabr.py`` 的 bun 工具把高清视频 + 音频拉到本地,
+      再用 ffmpeg 合并 —— 直链下载器用不上（SABR 不是普通 HTTP 文件）。
 
     ``info``（player 元数据）与 ``selected``（选流）都保留为字段, 便于排查与测试。
     """
 
-    def __init__(self, *, info: YoutubeVideo, selected: SelectedStreams):
+    def __init__(self, *, info: YoutubeVideo, selected: SelectedStreams, cookie: str | None = None):
         self.info = info
         self.selected = selected
+        self.cookie = cookie
+        """取视频用的 cookie 串（``k=v; k=v``）—— SABR 子进程要用同一个身份。
+        只有走 SABR 时才需要; 明文直链下载自带签名, 用不上。"""
         super().__init__(
             title=info.title,
             content=info.description,
@@ -227,6 +242,14 @@ class YtbVideoParseResult(VideoParseResult):
         connections: int = 4,
     ) -> DownloadResult:
         headers = {**self._download_headers(), **(headers or {})}
+        # SABR: 高清流没有明文直链, 走 bun 工具拉流（不经过直链下载器）
+        if self.info.sabr is not None:
+            return await self._download_via_sabr(
+                output_dir=Path(output_dir),
+                callback=callback,
+                callback_args=callback_args,
+                callback_kwargs=callback_kwargs or {},
+            )
         if self.selected.audio_url is None:
             return await super()._do_download(
                 output_dir=output_dir,
@@ -245,6 +268,69 @@ class YtbVideoParseResult(VideoParseResult):
             proxy=proxy,
             headers=headers,
             connections=connections,
+        )
+
+    async def _download_via_sabr(
+        self,
+        *,
+        output_dir: Path,
+        callback: ProgressCallback | None,
+        callback_args: tuple,
+        callback_kwargs: dict,
+    ) -> DownloadResult:
+        """SABR 路径: bun 工具拉视频+音频到本地 → ffmpeg 合并 → 输出 mp4。
+
+        与直链路径的差别: 这里的字节来自 SABR 长连接（UMP 分帧）, 没有可下载的
+        普通 URL —— 所以**不能**走 ``utils/downloader``, 必须先在工具里落盘。
+
+        失败**明确报错**（``DownloadError``）, 不静默降级到 360p:
+        降级会让用户拿到低画质文件却以为解析成功。
+        """
+        sabr = self.info.sabr
+        if sabr is None:  # _do_download 已按 sabr 分派, 这里只是给类型收窄
+            raise DownloadError("内部错误: SABR 路径缺少素材")
+        temp_dir = output_dir / f".{self.name}.sabr"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        progress = self._byte_progress(callback, callback_args, callback_kwargs) if callback else None
+
+        # 预期总字节（用于进度）: 1080p 视频 + 音频的大致量级（取最高档 contentLength）
+        expected = 0
+        for item in sabr.adaptive_formats:
+            length = int(item.get("contentLength") or 0)
+            if length > expected and (item.get("mimeType") or "").startswith(("video/", "audio/")):
+                expected = max(expected, length)
+        expected = expected or 60 * 1024 * 1024
+
+        try:
+            result = await fetch_sabr_streams(
+                self.info.video_id,
+                abr_url=sabr.abr_url,
+                ustreamer_config=sabr.ustreamer_config,
+                adaptive_formats=list(sabr.adaptive_formats),
+                cookie=self.cookie or "",
+                output_dir=temp_dir,
+                video_quality=sabr.video_quality,
+                progress_callback=progress,
+                progress_total=expected,
+            )
+            output_path = output_dir / f"{self.name}.mp4"
+            await self._mux(result.video_path, result.audio_path, output_path)
+        except SabrFetchError as e:
+            raise DownloadError(f"SABR 取流失败: {e}") from e
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        if callback:
+            await callback(100, 100, "bytes", *callback_args, **callback_kwargs)
+
+        return DownloadResult(
+            VideoFile(
+                path=str(output_path),
+                width=self.selected.width,
+                height=self.selected.height,
+                duration=self.selected.duration,
+            ),
+            output_dir,
         )
 
     def _download_headers(self) -> dict[str, str]:

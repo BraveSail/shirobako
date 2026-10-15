@@ -219,6 +219,10 @@ class YoutubeVideo:
     """视频元数据（发布时间/点赞/上传者）。由 ``fetch_video`` 从 WEB client 的
     ``microformat`` 填入 —— 取流的 client 从不返回它，见 ``MICROFORMAT_CLIENT``。"""
     streams: list[Stream] = field(default_factory=list)
+    sabr: SabrSource | None = None
+    """SABR 素材（``serverAbrStreamingUrl`` 等）。**高清流没有明文 url 时**由
+    ``fetch_video`` 填入 —— 取流 / 下载改走 ``provider_api/youtube_sabr.py`` 的
+    bun 工具（LuanRT/googlevideo）。为 ``None`` 表示本视频用明文流即可。"""
 
     @property
     def author_url(self) -> str:
@@ -245,6 +249,23 @@ class SelectedStreams:
     height: int
     duration: int
     ext: str = "mp4"
+
+
+@dataclass(frozen=True, slots=True)
+class SabrSource:
+    """SABR 取流素材（``provider_api/youtube_sabr.py`` 的输入）。
+
+    出现它意味着**本条视频的高清流没有明文直链** —— ``adaptiveFormats`` 全部无
+    ``url``, 只有 ``serverAbrStreamingUrl``（SABR / Onesie 长连接）。旧实现据此只能
+    退回 360p 合一档；现在改由 bun + LuanRT/googlevideo 直接拉高清。
+
+    ``abr_url`` 里的 ``n`` **已经解过**（``_apply_nsig`` 之后的 URL 由调用方传入）。
+    """
+
+    abr_url: str
+    ustreamer_config: str
+    adaptive_formats: tuple[dict, ...]
+    video_quality: str = "1080p"
 
 
 # ── 纯函数: player JSON -> 结构化 ─────────────────────────────────────────
@@ -389,6 +410,47 @@ def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> Youtub
     )
 
 
+def extract_sabr_source(data: dict[str, Any]) -> SabrSource | None:
+    """从 player 响应里提取 SABR 素材；没有 ``serverAbrStreamingUrl`` 返回 ``None``（纯函数）。
+
+    判据（受控对照实测）: **高清 ``adaptiveFormats`` 里有没有明文 ``url``** ——
+
+    - 有明文 url（旧视频 / 部分新视频）⇒ 不需要 SABR, 返回 ``None``；
+    - 无明文 url、只有 ``serverAbrStreamingUrl``（``Nbc7I6y97FI`` 这类新视频）⇒
+      返回素材, 由 bun 工具拉高清。
+
+    只关心这两个来源里的 ``adaptiveFormats``（``formats`` 是合一档, SABR 不用它）。
+    """
+    streaming = data.get("streamingData")
+    if not isinstance(streaming, dict):
+        return None
+    abr_url = streaming.get("serverAbrStreamingUrl")
+    if not abr_url or not isinstance(abr_url, str):
+        return None
+
+    adaptive = streaming.get("adaptiveFormats") or []
+    if not isinstance(adaptive, list) or not adaptive:
+        return None
+
+    # 有明文 url 的高清流 ⇒ 用不上 SABR（只要有一条带 url 的 adaptive 就算）
+    if any(isinstance(item, dict) and item.get("url") for item in adaptive):
+        return None
+
+    ustreamer = (
+        ((data.get("playerConfig") or {}).get("mediaCommonConfig") or {})
+        .get("mediaUstreamerRequestConfig", {})
+        .get("videoPlaybackUstreamerConfig")
+    )
+    if not ustreamer or not isinstance(ustreamer, str):
+        return None
+
+    return SabrSource(
+        abr_url=abr_url,
+        ustreamer_config=ustreamer,
+        adaptive_formats=tuple(item for item in adaptive if isinstance(item, dict)),
+    )
+
+
 # ── 纯函数: 选流 ──────────────────────────────────────────────────────────
 
 #: 同分辨率下优先 H.264 (avc1) —— mux 成 mp4 最通用; AV1/VP9 次之。
@@ -419,6 +481,28 @@ def _ext_of(mime_type: str) -> str:
     return "mp4"
 
 
+def _sabr_best_quality(sabr: SabrSource, max_height: int = DEFAULT_MAX_HEIGHT) -> tuple[int, int] | None:
+    """SABR 素材里最高画质视频的 ``(width, height)``（纯函数）。
+
+    只用于填充 ``SelectedStreams`` 的画质（文件名 / 渲染层用）—— 真正的选流由
+    bun 工具内的 SabrStream 按 ``video_quality`` 做。
+    """
+    best: tuple[int, int] | None = None
+    for item in sabr.adaptive_formats:
+        mime = str(item.get("mimeType") or "")
+        if not mime.startswith("video/"):
+            continue
+        height = int(item.get("height") or 0)
+        if height <= 0:
+            continue
+        if max_height > 0 and height > max_height:
+            continue
+        width = int(item.get("width") or 0)
+        if best is None or height > best[1]:
+            best = (width, height)
+    return best
+
+
 def select_streams(
     video: YoutubeVideo,
     *,
@@ -429,15 +513,30 @@ def select_streams(
 
     策略:
 
-    1. ``allow_mux`` 且存在分离的视频流与音频流 -> **最高画质**: ``≤max_height`` 里
+    1. **SABR**（``video.sabr`` 非空）: 高清流没有明文直链, 由 bun 工具拉取高画质。
+       这里只回报画质信息（从 SABR 素材的 ``adaptiveFormats`` 取最高视频档）,
+       ``video_url`` 填空串 —— 调用方按 ``video.sabr`` 分派, **不读这个 url**。
+    2. ``allow_mux`` 且存在分离的视频流与音频流 -> **最高画质**: ``≤max_height`` 里
        最高的一条 (同分辨率优先 H.264) + 最优音频 (优先 AAC), 交给上层 mux。
-    2. 否则退回**音视频合一**的单文件流 (最高档)。
-    3. 都没有 -> 抛 ``YoutubeVideoError``（不静默出无声/空结果）。
+    3. 否则退回**音视频合一**的单文件流 (最高档)。
+    4. 都没有 -> 抛 ``YoutubeVideoError``（不静默出无声/空结果）。
 
     :param max_height: 画质上限, ``0`` 表示不设上限。
     :param allow_mux: 环境能否 mux (有 ffmpeg 才为 True)。False 时只用合一单文件,
         若又没有合一档则明确报错 —— 绝不输出无声视频。
     """
+    if video.sabr is not None:
+        quality = _sabr_best_quality(video.sabr, max_height)
+        width, height = quality if quality else (0, 0)
+        return SelectedStreams(
+            video_url="",
+            audio_url=None,
+            width=width,
+            height=height,
+            duration=video.duration,
+            ext="mp4",
+        )
+
     video_streams = [s for s in video.streams if s.has_video and not s.has_audio and s.height > 0]
     audio_streams = [s for s in video.streams if s.has_audio and not s.has_video]
     muxed_streams = [s for s in video.streams if s.is_muxed]
@@ -801,7 +900,13 @@ async def fetch_video(
         video.metadata = parse_microformat(data)
         # ⚠️ 必须把 HTML 也传下去: 内嵌响应里**没有 assets**, playerId 只在页面里
         # （漏了它 n 解不出来, 直链下载 403）
-        await _apply_nsig(video, data, html=html, proxy=proxy, cookie=cookie)
+        # SABR 素材（若有）的 abr_url 里也有 n，一并解 —— 解出的映射用来改写它。
+        sabr = extract_sabr_source(data)
+        extra = (sabr.abr_url,) if sabr else ()
+        mapping = await _apply_nsig(video, data, html=html, proxy=proxy, cookie=cookie, extra_urls=extra)
+        if sabr:
+            video.sabr = replace(sabr, abr_url=mapping.get(sabr.abr_url, sabr.abr_url))
+            logger.info(f"本条视频高清流走 SABR（明文流 {len(video.streams)} 条）")
         return video
 
     # ── 兜底: POST player（老路，保留给 watch 页拿不到流的视频）──────────
@@ -828,15 +933,16 @@ async def fetch_video(
     raise YoutubeVideoError("player API 解析失败: " + "; ".join(errors))
 
 
-async def _apply_nsig(
+async def _apply_nsig(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直白
     video: YoutubeVideo,
     data: dict[str, Any],
     *,
     html: str = "",
     proxy: str | None,
     cookie: dict[str, str] | None,
-) -> None:
-    """把 ``video.streams`` 里所有 URL 的 n 参数解成有效值（原地改写）。
+    extra_urls: tuple[str, ...] = (),
+) -> dict[str, str]:
+    """把 ``video.streams``（及 ``extra_urls``）里 URL 的 n 参数解成有效值（原地改写）。
 
     **为什么必须做**: 直链里的 ``n`` 是需 JS 变换的令牌 —— 原样请求会被 ``403``。
     实测同一条视频: n 原样 → 403；解过后 → 206 / 可下载。
@@ -845,38 +951,45 @@ async def _apply_nsig(
     ``assets``，playerId 只能从页面里的 ``/s/player/<id>/`` 取（漏了它 n 解不出，
     下载就是 403）。
 
+    ``extra_urls`` 是不在 ``streams`` 里、但同样需要解 n 的 URL（**SABR 的
+    ``serverAbrStreamingUrl`` 就是**）。返回值是 ``{原 url: 解后 url}`` —— 调用方
+    据此改写自己那份 URL（如 ``SabrSource.abr_url``）；解不出的项不在返回值里。
+
     降级策略（每一层失败都不抛）:
     - 没有 JS 运行时 / 拿不到播放器 JS / 求解器无输出 ⇒ **保持原 URL**（行为同改动前）
     - 只有``n`` 还留在 URL 上的流才参与（其它流无 n，无需处理）
     """
     if not nsig_mod.find_runtime():
-        return
-    targets = [s.url for s in video.streams if _param_value(s.url, "n")]
+        return {}
+    targets = [s.url for s in video.streams if _param_value(s.url, "n")] + [
+        url for url in extra_urls if _param_value(url, "n")
+    ]
     if not targets:
-        return
+        return {}
 
     player_id = nsig_mod.player_id_from_response(data, html)
     if not player_id:
         logger.debug("拿不到播放器 id(assets 与页面里都没有), 跳过 n-sig")
-        return
+        return {}
 
     player_js = await nsig_mod.get_player_js(player_id, proxy=proxy)
     if not player_js:
-        return
+        return {}
 
     raw_values = list({_param_value(u, "n") for u in targets})
     solved = nsig_mod.solve_n(player_js, raw_values)
     if not solved:
-        return
+        return {}
 
     mapping = apply_solved_n(targets, solved)
     if not mapping:
-        return
+        return {}
 
     # ``Stream`` 是 frozen dataclass ⇒ 用 ``replace`` 造新对象；``YoutubeVideo`` 不是
     # frozen，直接改 ``streams`` 字段即可。
     video.streams = [replace(s, url=mapping.get(s.url, s.url)) for s in video.streams]
     logger.debug(f"n-sig 已解: {len(mapping)}/{len(targets)} 条流")
+    return mapping
 
 
 __all__ = [
@@ -886,12 +999,14 @@ __all__ = [
     "MICROFORMAT_CLIENT",
     "PLAYER_URL",
     "VISIONOS",
+    "SabrSource",
     "SelectedStreams",
     "Stream",
     "VideoMetadata",
     "YoutubeVideo",
     "YoutubeVideoError",
     "apply_solved_n",
+    "extract_sabr_source",
     "fetch_video",
     "parse_microformat",
     "parse_player_response",
