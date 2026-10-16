@@ -63,11 +63,78 @@ if (!videoId || !serverAbrStreamingUrl || !videoPlaybackUstreamerConfig || !adap
 }
 
 mkdirSync(outdir, { recursive: true });
-const videoPath = join(outdir, 'video.mp4');
-const audioPath = join(outdir, 'audio.m4a');
+// 扩展名按**实际选中的容器**定（AVC/AV1→mp4, VP9→webm）—— 写死 .mp4 会撒谎，
+// 下游 ffmpeg mux / TG 发送都按扩展名判断，撒谎会炸。
+// 这里先占位，选出格式后在下方改真实的（见 vExt/aExt）。
+let videoPath = join(outdir, 'video.mp4');
+let audioPath = join(outdir, 'audio.m4a');
 
 const formats = adaptiveFormats.map(buildSabrFormat);
-console.error(`[sabr] formats=${formats.length} quality=${input.videoQuality || '1080p'}`);
+const maxHeight = Number(input.maxHeight || 0) || parseInt(input.videoQuality || '1080p', 10) || 1080;
+console.error(`[sabr] formats=${formats.length} quality=${input.videoQuality || '1080p'} maxHeight=${maxHeight}`);
+
+// 显式指定的 itag（可选）—— 比编码偏好更直接可控:
+//   videoItag: 137=avc/mp4, 248=vp9/webm, 399=av1/mp4 (1080p 三档)
+//   audioItag: 140=aac/mp4, 251=opus/webm
+// 不指定则走 codecPriority（下）。
+const videoItag = input.videoItag ? Number(input.videoItag) : undefined;
+const audioItag = input.audioItag ? Number(input.audioItag) : undefined;
+if (videoItag) console.error(`[sabr] 显式指定 video itag=${videoItag}`);
+if (audioItag) console.error(`[sabr] 显式指定 audio itag=${audioItag}`);
+
+/**
+ * 编码优先级选流（可选）。
+ *
+ * 值形如 ``['av1','vp9','avc']`` —— 按顺序挑第一个在素材里存在的编码。
+ * 库自带的 ``chooseFormat`` 只有 preferH264/preferWebM/preferMP4 三个布尔偏好、
+ * 且同分辨率下**按数组顺序**取（等于 AVC 优先），拿不到「AV1 > VP9 > AVC」这种次序。
+ *
+ * 选中的编码同时决定音频：av1/avc → mp4 容器（配 aac itag=140）；
+ * vp9 → webm 容器（配 opus itag=251）—— 容器要一致，跨容器 mux 兼容性差。
+ */
+const CODEC_PATTERNS = {
+  av01: 'av01',
+  av1: 'av01', // 用户/文档常写 av1，素材里是 av01 —— 两个键都要
+  vp9: 'vp9',
+  avc: 'avc1',
+  h264: 'avc1',
+};
+const CODEC_AUDIO = {
+  av01: { container: 'mp4', audio: 'mp4a' },
+  av1: { container: 'mp4', audio: 'mp4a' },
+  vp9: { container: 'webm', audio: 'opus' },
+  avc: { container: 'mp4', audio: 'mp4a' },
+  h264: { container: 'mp4', audio: 'mp4a' },
+};
+
+function pickByCodecPriority(priority) {
+  const wanted = priority.map((c) => String(c).toLowerCase());
+  for (const codec of wanted) {
+    const pattern = CODEC_PATTERNS[codec];
+    if (!pattern) continue;
+    // 1080p 上限内最高的那一档（同编码同分辨率可能有多个 itag，取码率最高）
+    const candidates = formats
+      .filter((f) => f.mimeType?.startsWith('video/') && f.mimeType.includes(pattern) && (f.height || 0) <= maxHeight)
+      .sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bitrate || 0) - (a.bitrate || 0));
+    if (candidates.length) {
+      const video = candidates[0];
+      const spec = CODEC_AUDIO[codec];
+      const acodec = spec?.audio || 'mp4a';
+      // ⚠️ 音频要挑**默认音轨**：同一 itag 有 xtags=undefined / 'CggKA2RyYxIBMQ'(dubbed) /
+      // 'CgcKAnZiEgEx'(secondary) 三个变体，按 bitrate 排会选到非默认音轨（实测踩过：
+      // av1 因此整条被跳过）。默认音轨 = xtags 为空。
+      const audios = formats
+        .filter((f) => f.mimeType?.startsWith('audio/') && f.mimeType.includes(acodec))
+        .sort((a, b) => {
+          const aDefault = a.xtags ? 1 : 0;
+          const bDefault = b.xtags ? 1 : 0;
+          return aDefault - bDefault || (b.bitrate || 0) - (a.bitrate || 0);
+        });
+      if (audios.length) return { video, audio: audios[0], codec };
+    }
+  }
+  return null;
+}
 
 // 自定义 fetch: 只补 cookie（SabrStream 自己管 headers/body）
 const fetchWithCookie = (url, options = {}) => {
@@ -93,16 +160,47 @@ try {
     console.error(`[sabr] stream error: ${streamError}`);
   });
 
+  // 显式 itag > codecPriority > 库默认
+  let videoSpec = videoItag;
+  let audioSpec = audioItag;
+  let pickedCodec = '';
+  if (!videoSpec && !audioSpec && Array.isArray(input.codecPriority) && input.codecPriority.length) {
+    const picked = pickByCodecPriority(input.codecPriority);
+    if (picked) {
+      videoSpec = picked.video;
+      audioSpec = picked.audio;
+      pickedCodec = picked.codec;
+      console.error(
+        `[sabr] codecPriority=${input.codecPriority.join('>')} → ${picked.codec} ` +
+          `(video itag=${picked.video.itag} ${picked.video.mimeType}, audio itag=${picked.audio.itag})`
+      );
+    } else {
+      console.error(`[sabr] codecPriority=${input.codecPriority.join('>')} 在素材里都找不到, 回退库默认`);
+    }
+  }
+
   const { videoStream, audioStream, selectedFormats } = await stream.start({
     videoQuality: input.videoQuality || '1080p',
     enabledTrackTypes: EnabledTrackTypes.VIDEO_AND_AUDIO,
     maxRetries: 3,
     stallDetectionMs: 30000,
-    // 优先 mp4 容器（h264 + aac），与输出 mp4 最兼容；拿不到就退回默认
-    preferMP4: input.preferMp4 !== false,
+    // 显式格式（itag 或对象都行）优先；都没有才让库按容器偏好选
+    videoFormat: videoSpec,
+    audioFormat: audioSpec,
+    preferMP4: !videoSpec && input.preferMp4 !== false,
+    preferWebM: !videoSpec && !!input.preferWebM,
   });
 
   console.error(`[sabr] selected video=${selectedFormats.videoFormat?.itag} audio=${selectedFormats.audioFormat?.itag}`);
+
+  // 按**选中格式的 mimeType** 定扩展名（vp9 的 webm 不能用 .mp4 撒谎）
+  const vMime = selectedFormats.videoFormat?.mimeType || '';
+  const aMime = selectedFormats.audioFormat?.mimeType || '';
+  const vExt = vMime.includes('webm') ? 'webm' : 'mp4';
+  const aExt = aMime.includes('webm') ? 'webm' : 'm4a';
+  videoPath = join(outdir, `video.${vExt}`);
+  audioPath = join(outdir, `audio.${aExt}`);
+  console.error(`[sabr] 产物: video.${vExt} (${vMime}) + audio.${aExt} (${aMime})`);
 
   const vOut = createWriteStream(videoPath);
   const aOut = createWriteStream(audioPath);

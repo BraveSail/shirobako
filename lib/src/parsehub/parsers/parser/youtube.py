@@ -278,10 +278,14 @@ class YtbVideoParseResult(VideoParseResult):
         callback_args: tuple,
         callback_kwargs: dict,
     ) -> DownloadResult:
-        """SABR 路径: bun 工具拉视频+音频到本地 → ffmpeg 合并 → 输出 mp4。
+        """SABR 路径: bun 工具拉视频+音频到本地 → ffmpeg 合并 → 输出单文件。
 
         与直链路径的差别: 这里的字节来自 SABR 长连接（UMP 分帧）, 没有可下载的
         普通 URL —— 所以**不能**走 ``utils/downloader``, 必须先在工具里落盘。
+
+        **输出格式跟素材走**: 选中的编码决定容器 —— vp9 是 webm（配 opus/webm），
+        av1/avc 是 mp4（配 aac/m4a）。ffmpeg 合并后按容器定扩展名（webm 内容不能
+        用 .mp4 撒谎：TG 与播放器都按扩展名识别）。
 
         失败**明确报错**（``DownloadError``）, 不静默降级到 360p:
         降级会让用户拿到低画质文件却以为解析成功。
@@ -310,10 +314,15 @@ class YtbVideoParseResult(VideoParseResult):
                 cookie=self.cookie or "",
                 output_dir=temp_dir,
                 video_quality=sabr.video_quality,
+                codec_priority=sabr.codec_priority,
+                video_itag=sabr.video_itag,
+                audio_itag=sabr.audio_itag,
                 progress_callback=progress,
                 progress_total=expected,
             )
-            output_path = output_dir / f"{self.name}.mp4"
+            # 输出容器 = 工具实际选中的视频容器（webm/mp4）
+            out_ext = result.video_path.suffix.lstrip(".").lower() or "mp4"
+            output_path = output_dir / f"{self.name}.{out_ext}"
             await self._mux(result.video_path, result.audio_path, output_path)
         except SabrFetchError as e:
             raise DownloadError(f"SABR 取流失败: {e}") from e
@@ -406,7 +415,11 @@ class YtbVideoParseResult(VideoParseResult):
 
     @staticmethod
     async def _mux(video_path: Path, audio_path: Path, output_path: Path) -> None:
-        """ffmpeg ``-c copy`` 合并（不转码, 秒级完成）。失败明确报错, 不产出空文件。"""
+        """ffmpeg ``-c copy`` 合并（不转码, 秒级完成）。失败明确报错, 不产出空文件。
+
+        ``-movflags +faststart`` 只对 mp4/mov 有效 —— webm 输出加上它 ffmpeg 会报错，
+        所以按输出扩展名决定要不要带。
+        """
         cmd = [
             "ffmpeg",
             "-v",
@@ -417,11 +430,10 @@ class YtbVideoParseResult(VideoParseResult):
             str(audio_path),
             "-c",
             "copy",
-            "-movflags",
-            "+faststart",
-            "-y",
-            str(output_path),
         ]
+        if output_path.suffix.lower() in (".mp4", ".m4v", ".mov"):
+            cmd += ["-movflags", "+faststart"]
+        cmd += ["-y", str(output_path)]
         proc = await asyncio.create_subprocess_exec(  # pylint: disable=no-member  # asyncio.subprocess 存在, pylint 解析不到
             *cmd,
             stdout=asyncio.subprocess.PIPE,  # pylint: disable=no-member

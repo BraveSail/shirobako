@@ -311,3 +311,53 @@ def test_sabr_available_false_without_tool(tmp_path: Path) -> None:
         assert sabr_available() is False
     finally:
         mod.SABR_TOOL_DIR = original
+
+
+def test_build_input_payload_includes_codec_options() -> None:
+    """codec_priority / video_itag / audio_itag 要原样进 payload（空值不出现）。"""
+    from parsehub.provider_api.youtube_sabr import _build_input_payload
+
+    base = _build_input_payload(
+        "vid",
+        abr_url="u",
+        ustreamer_config="c",
+        adaptive_formats=[{"itag": 1}],
+        cookie="k=v",
+        video_quality="1080p",
+    )
+    assert "codecPriority" not in base
+    assert "videoItag" not in base
+
+    full = _build_input_payload(
+        "vid",
+        abr_url="u",
+        ustreamer_config="c",
+        adaptive_formats=[{"itag": 1}],
+        cookie="k=v",
+        video_quality="1080p",
+        codec_priority=("av1", "vp9", "avc"),
+        video_itag=399,
+        audio_itag=140,
+    )
+    assert full["codecPriority"] == ["av1", "vp9", "avc"]
+    assert full["videoItag"] == 399
+    assert full["audioItag"] == 140
+
+
+def test_sabr_source_carries_codec_options() -> None:
+    """SabrSource 的三个编码字段要有默认值（避免改了 dataclass 忘同步调用点）。"""
+    src = SabrSource(abr_url="u", ustreamer_config="c", adaptive_formats=({"itag": 1},))
+    assert src.codec_priority == ()
+    assert src.video_itag == 0
+    assert src.audio_itag == 0
+
+    src2 = SabrSource(
+        abr_url="u",
+        ustreamer_config="c",
+        adaptive_formats=({"itag": 1},),
+        codec_priority=("av1",),
+        video_itag=399,
+        audio_itag=140,
+    )
+    assert src2.codec_priority == ("av1",)
+    assert src2.video_itag == 399

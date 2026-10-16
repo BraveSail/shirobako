@@ -67,7 +67,12 @@ def _runtime() -> str:
 
 @dataclass(frozen=True, slots=True)
 class SabrResult:
-    """一次 SABR 取流的结果（本地文件路径 + 实际选中的 itag / 字节数）。"""
+    """一次 SABR 取流的结果（本地文件路径 + 实际选中的 itag / 字节数）。
+
+    ``video_path`` / ``audio_path`` 的扩展名由**实际选中的编码**决定：
+    av1/avc → ``.mp4``/``.m4a``；vp9 → ``.webm``/``.webm``。
+    调用方据此定最终输出的容器（**别写死 mp4**）。
+    """
 
     video_path: Path
     audio_path: Path
@@ -77,7 +82,7 @@ class SabrResult:
     audio_bytes: int
 
 
-def _build_input_payload(
+def _build_input_payload(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直白
     video_id: str,
     *,
     abr_url: str,
@@ -85,8 +90,11 @@ def _build_input_payload(
     adaptive_formats: list[dict],
     cookie: str,
     video_quality: str,
+    codec_priority: tuple[str, ...] = (),
+    video_itag: int = 0,
+    audio_itag: int = 0,
 ) -> dict:
-    return {
+    payload = {
         "videoId": video_id,
         "serverAbrStreamingUrl": abr_url,
         "videoPlaybackUstreamerConfig": ustreamer_config,
@@ -94,6 +102,13 @@ def _build_input_payload(
         "cookie": cookie,
         "videoQuality": video_quality,
     }
+    if codec_priority:
+        payload["codecPriority"] = list(codec_priority)
+    if video_itag:
+        payload["videoItag"] = video_itag
+    if audio_itag:
+        payload["audioItag"] = audio_itag
+    return payload
 
 
 async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直白
@@ -105,14 +120,23 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     cookie: str,
     output_dir: Path,
     video_quality: str = "1080p",
+    codec_priority: tuple[str, ...] = (),
+    video_itag: int = 0,
+    audio_itag: int = 0,
     timeout: float = DEFAULT_TIMEOUT,
     progress_callback=None,
     progress_total: int = 0,
 ) -> SabrResult:
-    """跑 SABR 工具把视频/音频拉到 ``output_dir``（``video.mp4`` / ``audio.m4a``）。
+    """跑 SABR 工具把视频/音频拉到 ``output_dir``。
+
+    产物名按**实际选中的容器**定：``video.mp4``+``audio.m4a``（av1/avc）
+    或 ``video.webm``+``audio.webm``（vp9）—— 见 :class:`SabrResult`。
 
     失败抛 :class:`SabrFetchError`（调用方据此降级或明示错误, **不静默**）。
 
+    :param codec_priority: 编码优先级（如 ``("av1","vp9","avc")``）；空 = 工具默认。
+    :param video_itag: 显式视频 itag（0 = 不指定）；优先级高于 ``codec_priority``。
+    :param audio_itag: 显式音频 itag（0 = 不指定）。
     :param progress_callback: 可选的 ``async (current, total)`` —— 按临时文件大小
         轮询回推进度; ``progress_total`` 是预期的总字节（0 = 不报进度）。
     """
@@ -136,6 +160,9 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
                 adaptive_formats=adaptive_formats,
                 cookie=cookie,
                 video_quality=video_quality,
+                codec_priority=codec_priority,
+                video_itag=video_itag,
+                audio_itag=audio_itag,
             ),
             ensure_ascii=False,
         ),
