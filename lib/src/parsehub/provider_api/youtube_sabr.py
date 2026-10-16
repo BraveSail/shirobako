@@ -42,8 +42,8 @@ def _default_tool_dir() -> Path:
     return Path(__file__).resolve().parents[4] / "tools" / "yt-sabr"
 
 
-SABR_TOOL_DIR = Path(os.environ.get("PARSEHUB_YT_SABR_DIR") or _default_tool_dir())
-"""工具目录（``sabr.mjs`` 所在处）。"""
+SABR_TOOL_DIR = Path(os.environ.get("PARSEHUB_YT_SABR_DIR") or _default_tool_dir()).resolve()
+"""工具目录（``sabr.mjs`` 所在处）—— 绝对路径（env 覆盖也 resolve）。"""
 
 _SCRIPT_NAME = "sabr.mjs"
 
@@ -121,7 +121,10 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
         raise SabrFetchError(f"SABR 工具不存在: {script}")
 
     runtime = _runtime()
-    output_dir = Path(output_dir)
+    # ⚠️ **必须绝对化** —— bun 子进程的 cwd 是工具目录（不是本进程的 cwd），
+    # 相对路径会被它按**自己的** cwd 解析，于是它找不到 Python 写好的输入文件：
+    # 生产实际踩过（bs.download_dir = "downloads" 是相对路径 ⇒ ENOENT）。
+    output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     input_path = output_dir / "_sabr_input.json"
     input_path.write_text(

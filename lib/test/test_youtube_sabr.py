@@ -178,6 +178,56 @@ def _run_fetch(monkeypatch: pytest.MonkeyPatch, tool_dir: Path, proc: _FakeProc,
     )
 
 
+def test_relative_output_dir_is_absolutized(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """★ 回归（用户实际踩过）：相对 ``output_dir`` 必须转成绝对路径。
+
+    生产 ``bs.download_dir`` 是相对路径 ``downloads`` —— 子进程的 cwd 是**工具目录**，
+    相对路径会被它按自己的 cwd 解析 ⇒ 找不到 Python 写好的输入 JSON（ENOENT）。
+
+    本测试钉住两点：① 传给子进程的 ``--input`` / ``--outdir`` 都是绝对路径；
+    ② 输入文件恰好在 ``output_dir.resolve()`` 下（子进程按绝对路径能找到）。
+    """
+    import parsehub.provider_api.youtube_sabr as mod
+
+    tool_dir = _fake_tool(tmp_path, "// fake")
+    seen: dict = {}
+
+    class _Proc:
+        returncode = 1
+        async def communicate(self):
+            return b'{"ok":false,"error":"x"}', b""
+        def kill(self):
+            pass
+
+    async def _fake_exec(runtime, script, *args, **kwargs):
+        seen["argv"] = [runtime, script, *args]
+        seen["input"] = args[1]  # --input 的值
+        seen["outdir"] = args[3]  # --outdir 的值
+        return _Proc()
+
+    monkeypatch.setattr(mod, "SABR_TOOL_DIR", tool_dir)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/bun" if name == "bun" else None)
+    monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SabrFetchError):
+        asyncio.run(
+            fetch_sabr_streams(
+                "x",
+                abr_url="u",
+                ustreamer_config="c",
+                adaptive_formats=[{"itag": 1}],
+                cookie="",
+                output_dir=Path("downloads") / "视频名" / ".x.sabr",  # 相对路径（生产形态）
+            )
+        )
+
+    assert Path(seen["input"]).is_absolute(), f"--input 不是绝对路径: {seen['input']}"
+    assert Path(seen["outdir"]).is_absolute(), f"--outdir 不是绝对路径: {seen['outdir']}"
+    # 输入文件确实写在 outdir 里（子进程按绝对路径能找到）
+    assert Path(seen["input"]).parent == Path(seen["outdir"]).resolve()
+
+
 def test_fetch_sabr_streams_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """工具输出合法 JSON ⇒ SabrResult, 且字段取自输出。"""
     tool_dir = _fake_tool(tmp_path, "// fake")
