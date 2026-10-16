@@ -384,7 +384,7 @@ def build_cached_rich_content(
     :param spoiler_tag: 用户这次要求遮住内容 (``/s``)。缓存存的是**解析字段**
         而非渲染结果, 所以遮与不遮在排版时决定 —— 命中缓存也必须照遮。
     """
-    from plugins.helpers import build_rich_markdown_by_str, wrap_collage
+    from plugins.helpers import build_rich_markdown_by_str
 
     # 平台: 优先用缓存里存的短名; 老缓存没这个字段 ⇒ 按 raw_url 推断。
     # **必须给一个真实平台** —— 渲染里标签等依赖它, 传 None 会静默降级成纯文本。
