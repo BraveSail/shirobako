@@ -37,7 +37,7 @@ def _entry(**kwargs):
 
 def test_cache_media_blocks_reuses_file_ids_without_upload():
     """file_id 直接进 InputMedia, 不触发上传"""
-    media, placeholders, quoted, reply, blocks = cache_media_blocks(_entry())
+    media, placeholders, quoted, reply, blocks, _urls = cache_media_blocks(_entry())
     assert len(media) == 3
     assert placeholders == [
         "![](tg://photo?id=m0)",
@@ -54,7 +54,7 @@ def test_cache_media_blocks_splits_the_quoted_tail():
     """末尾 N 项属于引用块: 要单独给出来, 否则被引用内容的媒体会摆到正文后面"""
     entry = _entry()
     entry.parse_result.quoted_media_count = 1
-    media, placeholders, quoted, reply, blocks = cache_media_blocks(entry)
+    media, placeholders, quoted, reply, blocks, _urls = cache_media_blocks(entry)
     assert placeholders == ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"]
     assert quoted == ["![](tg://video?id=m2)"]
     assert reply == []
@@ -309,7 +309,7 @@ def test_extract_handles_documents_and_animations():
 
 def test_sensitive_entry_produces_spoiler_blocks():
     entry = _entry(is_sensitive=True)
-    _media, _placeholders, _quoted, _reply, blocks = cache_media_blocks(entry)
+    _media, _placeholders, _quoted, _reply, blocks, _urls = cache_media_blocks(entry)
     assert blocks, "敏感内容的缓存必须产出 blocks 映射, 否则没处打码"
     kinds = {type(v).__name__ for v in blocks.values()}
     assert kinds == {"SpoilerPhotoBlock", "SpoilerVideoBlock"}
@@ -322,7 +322,7 @@ def test_non_sensitive_entry_produces_unspoiled_blocks():
     (helpers.markdown_needs_blocks), 那条路要靠这份映射把占位符换成图。
     走不走 blocks 由 cached_rich_message 的判据决定, 这里只管映射齐不齐。
     """
-    _media, _placeholders, _quoted, _reply, blocks = cache_media_blocks(_entry())
+    _media, _placeholders, _quoted, _reply, blocks, _urls = cache_media_blocks(_entry())
     assert blocks, "非敏感也要有映射 (引用卡片带媒体时需要它)"
     assert all(getattr(v, "spoiler", True) is False for v in blocks.values()), "非敏感不该打码"
 

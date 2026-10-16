@@ -287,16 +287,20 @@ async def _upload_and_cache_inline_media(
     media: list,
     quoted_placeholders: list[str],
     reply_placeholders: list[str],
+    media_urls: list[str] | None = None,
 ):
     """先自己上传拿 file_id, 并把这条 inline 消息的媒体写进缓存。
 
-    为什么要自己上传: inline 消息只能用 ``EditInlineBotMessage`` 更新, 它**只回 Bool**,
+    为什么要自己上传: inline 消息只能用 ``EditInlineMessage`` 更新, 它**只回 Bool**,
     拿不到服务端生成的 file_id —— 所以 inline 路径以前**从不写**缓存, 每次选中都要
     重新下载 + 上传。这里先上传一次, file_id 就能记下来 (调用方随后用 file_id 引用编辑,
     不会二次上传)。
 
     记账是 **all-or-nothing**: 只有**全部**媒体都拿到 file_id 才写 —— 部分成功时引用/回复
     媒体的计数会对不上, 下次命中会把图放错块 (宁可这次不写)。返回写成功的缓存条目, 否则 None。
+
+    ``media_urls`` 是原始 URL 表 (与 media 平铺对齐) —— 存进缓存, 缓存命中时正文外链图
+    才能换成上传媒体引用 (见 ``inline_rich.rich_cache_entry``)。
     """
     uploaded = await upload_media_for_cache(cli, media)
     if not uploaded:
@@ -317,6 +321,8 @@ async def _upload_and_cache_inline_media(
         reply_media_count=reply_items,
         # 投票同进缓存 (inline 命中缓存时同样要渲染表格)
         polls=getattr(parse_result, "polls", None),
+        # 原始 URL 同进缓存: 正文外链图在缓存命中时也换成上传媒体引用
+        urls=media_urls,
     )
     await persistent_cache.set(raw_url, entry)
     logger.info(
@@ -386,7 +392,14 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 if config.video_cover
                 else {}
             )
-            media, placeholders, media_blocks, quoted_placeholders, reply_placeholders = build_rich_media(
+            (
+                media,
+                placeholders,
+                media_blocks,
+                quoted_placeholders,
+                reply_placeholders,
+                media_urls,
+            ) = build_rich_media(
                 media_refs,
                 result.processed_list,
                 video_cover=config.video_cover,
@@ -403,6 +416,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 media_placeholders=placeholders,
                 quote_media_placeholders=quoted_placeholders,
                 reply_media_placeholders=reply_placeholders,
+                media_urls=media_urls,
                 hide_content=spoiler_tag,
             )
             logger.debug(
@@ -412,7 +426,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             # 两条路都先自己上传拿 file_id: 编辑时就用 file_id 引用 (不再上传), 同时这条
             # inline 消息的媒体也进了缓存 —— 以前 inline 从不写, 每次选中都得重新下载。
             entry = await _upload_and_cache_inline_media(
-                cli, raw_url, parse_result, media, quoted_placeholders, reply_placeholders
+                cli, raw_url, parse_result, media, quoted_placeholders, reply_placeholders, media_urls
             )
             if (parse_result.is_sensitive and media_blocks) or markdown_needs_blocks(markdown):
                 # 敏感内容: markdown+media 路径的 raw 类型没有 spoiler, 只能走 blocks。

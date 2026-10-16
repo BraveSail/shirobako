@@ -556,7 +556,7 @@ async def send_rich_media(
         if sender.config.video_cover
         else {}
     )
-    media, placeholders, media_blocks, quoted_placeholders, reply_placeholders = build_rich_media(
+    media, placeholders, media_blocks, quoted_placeholders, reply_placeholders, media_urls = build_rich_media(
         media_refs,
         processed_list,
         video_cover=sender.config.video_cover,
@@ -574,6 +574,7 @@ async def send_rich_media(
         media_placeholders=placeholders,
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
+        media_urls=media_urls,
         hide_content=spoiler_tag,
     )
     if (parse_result.is_sensitive and media_blocks) or markdown_needs_blocks(markdown):
@@ -612,6 +613,8 @@ async def send_rich_media(
                     reply_media_count=reply_items,
                     # 投票要进缓存 —— 否则"第二次发同一条链接"占位符渲染不出来
                     polls=getattr(parse_result, "polls", None),
+                    # 原始 URL 也进缓存: 缓存命中时正文外链图才能换成上传媒体引用
+                    urls=media_urls,
                 ),
             )
             logger.debug(

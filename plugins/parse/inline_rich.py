@@ -53,7 +53,7 @@ def build_rich_media(
     video_thumbs: Mapping[str, Path] | None = None,
     quoted_media_count: int = 0,
     reply_media_count: int = 0,
-) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any], list[str], list[str]]:
+) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any], list[str], list[str], list[str]]:
     """把已下载的媒体构造成富文本 media 块 + 正文占位符 + (打码用的) blocks 映射。
 
     媒体用下载好的本地文件上传 (``send_rich_message`` 内部走 ``messages.UploadMedia``),
@@ -66,7 +66,10 @@ def build_rich_media(
     :param quoted_media_count: ``media_refs`` 末尾有多少个属于**被引用内容**。
     :param reply_media_count: 紧接在被引用媒体之前的多少个属于**被回复内容**。
         两者的占位符分别作为第四、五个返回值给出, 由调用方放进对应的引用块内部。
-    :return: ``(media, placeholders, media_blocks, quoted_placeholders, reply_placeholders)``
+    :return: ``(media, placeholders, media_blocks, quoted_placeholders, reply_placeholders, media_urls)``
+        —— ``media_urls`` 与 ``placeholders`` **平铺对齐** (同一个 ref 展开成多份时
+        共用它的 URL), 渲染层用它把正文外链图换成上传媒体引用
+        (见 ``helpers.rewrite_external_images``)。
     """
     from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
     from services.media import resolve_media_info
@@ -78,10 +81,14 @@ def build_rich_media(
     index = 0
     # 每个 ref 产出的占位符 (一个 ref 可能展开成多个文件), 供末尾切分引用帖媒体
     per_ref: list[list[str]] = []
+    # 与 placeholders **平铺对齐**的原始 URL (同一个 ref 展开出的多份共用它的 url)。
+    # 渲染层靠它把正文外链图换成上传媒体引用 (见 helpers.rewrite_external_images)。
+    urls_flat: list[str] = []
 
     for media_ref, processed in zip(media_refs, processed_list, strict=False):
         group: list[str] = []
         per_ref.append(group)
+        ref_url = str(getattr(media_ref, "url", "") or "")
         file_paths = processed.output_paths or [processed.source.path]
         for file_path in file_paths:
             file_path_str = str(file_path)
@@ -128,6 +135,8 @@ def build_rich_media(
             placeholder = f"![](tg://{kind}?id={media_id})"
             placeholders.append(placeholder)
             group.append(placeholder)
+            # URL 与占位符**同步追加** —— 一个 ref 展开成多份时共用它的 url
+            urls_flat.append(ref_url)
             # blocks 路径: 官方 API 的 InputRichBlockPhoto/Video 没有 spoiler, 自定义块才有
             match processed.source:
                 case ImageFile():
@@ -146,12 +155,19 @@ def build_rich_media(
     def flat(groups: list[list[str]]) -> list[str]:
         return [p for ref_group in groups for p in ref_group]
 
+    # urls 按 placeholder 的顺序切同一刀: urls_flat 与 placeholders 是逐步同步追加的,
+    # 按 per_ref 的分组边界切出正文段 (前面切给引用块的段不带回 — 渲染层只用正文段)。
+    def urls_slice(end: int) -> list[str]:
+        count = sum(len(g) for g in per_ref[:end])
+        return urls_flat[:count]
+
     return (
         media,
         flat(per_ref[:head_split]),
         media_blocks,
         flat(per_ref[tail_split:]),
         flat(per_ref[head_split:tail_split]),
+        urls_slice(head_split),
     )
 
 
@@ -190,7 +206,7 @@ async def edit_inline_rich_message(
     return True
 
 
-def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], dict]:
+def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], dict, list[str]]:
     """把缓存里的 file_id 变成富文本的 media 块 + 正文/被引用/被回复三级占位符。
 
     用已存在的 file_id 走 ``InputMediaPhoto/Document``: pyrogram 的 ``_get_input_photo``
@@ -198,6 +214,9 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
 
     缓存的媒体是平铺的媒体项列表, 顺序与 ``media_refs`` 一致
     (``[正文..., 被回复..., 被引用...]``), 按两个计数从末尾往前划给对应的引用块。
+
+    :return: ``(media, placeholders, quoted_placeholders, reply_placeholders, media_blocks, urls)``
+        —— ``urls`` 与**正文段**占位符平铺对齐（老缓存无 url 字段时为空列表）。
 
     **敏感内容 (``is_sensitive``) 额外产出一份 blocks 映射** —— 官方 API 的富文本媒体块
     没有 spoiler 字段, 只有 raw 的 ``PageBlockPhoto/Video(spoiler=)`` 才有, 所以敏感内容
@@ -250,12 +269,16 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
     tail_split = len(placeholders) - quoted_count
     reply_count = max(0, min(int(getattr(pr, "reply_media_count", 0) or 0), tail_split))
     head_split = tail_split - reply_count
+    # 原始 URL 表（与占位符平铺对齐）: 老缓存没有 url 字段 ⇒ 全是空串，正文外链图
+    # 在渲染时会被剥掉（图仍在末尾出现，只是不在原位）。
+    urls_flat = [str(getattr(m, "url", "") or "") for m in (entry.media or [])]
     return (
         media,
         placeholders[:head_split],
         placeholders[tail_split:],
         placeholders[head_split:tail_split],
         media_blocks,
+        urls_flat[: head_split] if len(urls_flat) == len(placeholders) else [],
     )
 
 
@@ -299,6 +322,7 @@ def rich_cache_entry(
     quoted_media_count: int = 0,
     reply_media_count: int = 0,
     polls: list | None = None,
+    urls: list[str] | None = None,
 ):
     """把一次富文本发送的字段与媒体 file_id 收成缓存条目。
 
@@ -308,11 +332,26 @@ def rich_cache_entry(
     ``polls`` 是**投票数据** (``result.polls`` 的序列化) —— 正文里的 ``{{poll:N}}``
     占位符要靠它才能渲染; 不传 (老调用点/没有投票) 时按空处理, 渲染层不替换。
 
+    ``urls`` 是**与媒体项平铺对齐**的原始 URL 表 (``build_rich_media`` 第六个返回值)
+    —— 缓存命中时正文外链图靠它换成上传媒体引用; 不传则那些图只能剥掉。
+
     放在这里而不是发送层: 私聊/群 (``sender``) 与 guest 都要写同一种条目。
     """
     # 两个都是 bot 侧模块, 函数内延迟导入避免循环依赖 (与上面的 helper 同一手法)
     from plugins.helpers import get_parse_author_name
     from services.cache import CONTENT_VERSION, FOOTER_META_FIELDS_VERSION, CacheEntry, CacheParseResult
+
+    # 把 URL 灌进媒体项 (顺序一致; 数量不符时不硬灌, 让那几项留空 —— 退化为剥图)
+    url_list = list(urls or [])
+    if url_list and len(url_list) == len(media or []):
+        media = [
+            m.model_copy(update={"url": url}) if hasattr(m, "model_copy") else m
+            for m, url in zip(media, url_list, strict=False)
+        ]
+    elif url_list:
+        from log import logger as _logger
+
+        _logger.warning(f"缓存媒体的 URL 数不符, 本次不写 URL: urls={len(url_list)}, media={len(media or [])}")
 
     return CacheEntry(
         parse_result=CacheParseResult(
@@ -394,7 +433,7 @@ def build_cached_rich_content(
 
         platform = ParseHub().get_platform(raw_url) if raw_url else None
 
-    media, placeholders, quoted_placeholders, reply_placeholders, media_blocks = cache_media_blocks(entry)
+    media, placeholders, quoted_placeholders, reply_placeholders, media_blocks, media_urls = cache_media_blocks(entry)
     markdown = build_rich_markdown_by_str(
         entry.parse_result.title,
         entry.parse_result.content,
@@ -426,6 +465,8 @@ def build_cached_rich_content(
         media_placeholders=placeholders,
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
+        # 原始 URL (缓存里存的): 正文外链图换成上传媒体引用 —— 不传就全被剥掉
+        media_urls=media_urls,
         hide_content=spoiler_tag,
         platform=platform,
     )

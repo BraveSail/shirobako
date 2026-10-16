@@ -292,6 +292,11 @@ class CacheMedia(BaseModel):
     type: CacheMediaType
     file_id: str
     cover_file_id: str | None = None
+    #: 媒体原始 URL（与发送时的 ref 一一对应）。
+    #: 渲染层用它把正文里的外链图换成上传媒体引用（``rewrite_external_images``）——
+    #: 没有这张表，缓存命中时正文外链图只能一律剥掉（图会跑到末尾）。
+    #: 老缓存没有这个字段 ⇒ 默认空串，行为退化为剥掉。
+    url: str = ""
 
 
 class CacheEntry(BaseModel):

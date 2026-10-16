@@ -51,7 +51,7 @@ def test_the_cache_media_builder_uses_the_stored_cover():
         media=[CacheMedia(type=CacheMediaType.VIDEO, file_id="vid", cover_file_id="cov")],
         rich=True,
     )
-    media, _ph, _blocks, _q, _r = cache_media_blocks(entry)
+    media, _ph, _blocks, _q, _r, _urls = cache_media_blocks(entry)
     assert media[0].media.thumb == "cov", "缓存里的封面 file_id 应作为 thumb"
 
 

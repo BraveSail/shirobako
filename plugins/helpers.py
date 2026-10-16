@@ -343,6 +343,41 @@ _POLL_PLACEHOLDER_RE = re.compile(r"^(> )?\{\{poll:(\d+)\}\}$")
 #: 这里用子串匹配（不像 ``{{poll:N}}`` 是块级表格、要求整行）。
 _MEDIA_PLACEHOLDER_RE = re.compile(r"\{\{media:(\d+)\}\}")
 
+#: 正文里的**外链图**（``![](https://…)``）。富文本要求正文里的图必须引用**已上传**的
+#: 媒体（``tg://photo?id=``）；外链 URL 由 Telegram 服务端去抓，抓不到（SVG 等非位图、
+#: 防盗链、404）就**整条消息被拒**（``400 RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND``，
+#: 2026-10-16 linux.do 的 onebox SVG 实锤）。所以正文外链图要么换成上传媒体引用
+#: （URL 能对上 media 时），要么剥掉（对不上时）。
+_EXTERNAL_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*(https?://[^)\s]+)[^)]*\)")
+
+
+def rewrite_external_images(content: str, media_urls: Sequence[str]) -> str:
+    """正文里的外链图 → ``{{media:N}}`` 标记（对不上 media 的剥掉）。
+
+    N = ``media_urls`` 里的下标（该列表与 ``build_rich_media`` 产出的占位符平铺对齐）。
+
+    为什么必须处理: 富文本的正文图只能是 ``tg://`` 上传媒体引用；外链图交给 Telegram
+    服务端抓，抓不到就**整条消息 400**（SVG 必炸 —— 服务端不把 SVG 当图抓）。而 lib
+    抽图时是按附件渠道走的（``media``），正文里的 ``![](url)`` 是原始外链形态 ——
+    两边各写各的，正文那份不换掉就会炸。
+
+    对不上的（图不在 media 里，例如平台的 link-preview 图标没被抽）**剥掉**:
+    宁可少一张装饰图，也不能让整条消息发不出去。
+    """
+    if not content or "![" not in content:
+        return content
+    index_by_url = {url: i for i, url in enumerate(media_urls) if url}
+
+    def _replacement(match: re.Match[str]) -> str:
+        url = match.group(1).strip()
+        index = index_by_url.get(url)
+        if index is None:
+            logger.warning(f"正文外链图不在媒体列表里, 已剥掉(防 Telegram 拒收): {url[:120]}")
+            return ""
+        return f"{{{{media:{index}}}}}"
+
+    return _EXTERNAL_IMAGE_RE.sub(_replacement, content)
+
 
 def replace_media_placeholders(content: str, placeholders: Sequence[str]) -> str:
     """把正文里的 ``{{media:N}}`` 标记换成第 N 个媒体占位符。
@@ -546,6 +581,7 @@ def build_rich_markdown(
     media_placeholders: Sequence[str] = (),
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
+    media_urls: Sequence[str] = (),
     hide_content: str = "",
     progress: str = "",
 ) -> str:
@@ -560,6 +596,11 @@ def build_rich_markdown(
     :param progress: 处理过程的阶段文案 (如 ``▎下 载 中...``), 放在**页尾的第一段**。
         处理过程用它渲染"最终排版的无媒体版": 主体 (标题/作者/正文/标签) 与结果
         完全一致, 只有页尾那段从"进度"变成"时间 · 统计"—— 位置不动, 不跳版。
+
+    :param media_urls: 与 ``media_placeholders`` **平铺对齐**的原始 URL 列表
+        (``build_rich_media`` 的第六个返回值)。正文里的外链图靠它换成上传媒体引用 ——
+        外链图 Telegram 抓不到就整条 400 (SVG 必炸)。空列表时的行为:
+        正文外链图**全部剥掉**(防炸), 图仍以末尾附加媒体的形式出现。
 
     富文本由 Telegram 服务端解析 markdown, 所以正文直接沿用解析器给出的原文格式
     (标题/列表/引用/表格/加粗等都会被还原), 不像旧路径那样先转成 HTML 再拼 caption。
@@ -576,6 +617,12 @@ def build_rich_markdown(
         getattr(parse_result, "polls", None) or [],
         lang,
     )
+    # 正文外链图 (`![](https://…)`) → `{{media:N}}` 标记 (对不上 media 的剥掉):
+    # 富文本正文里的图必须是 tg:// 上传媒体引用, 外链由 Telegram 服务端去抓, 抓不到
+    # (SVG / 防盗链 / 404) 就**整条 400** —— linux.do 的 onebox SVG 图标就是实锤。
+    # **无条件执行**: media_urls 为空时外链图会全部剥掉 (防炸), 图还能从末尾附加
+    # 媒体的形式出现; 不剥的话一次 400 就是整条消息都收不到。
+    poll_content = rewrite_external_images(poll_content, media_urls)
     # 原位媒体标记 (`{{media:N}}`): lib 把正文图抽出走 media 通道时, 原位置留标记;
     # 这里换成对应的 ``![](tg://photo?id=mN)`` 占位符, 图就留在文章原位
     # (不换的话标记会字面泄漏给用户; media_placeholders 为空时零变化)。
@@ -849,6 +896,7 @@ def build_rich_markdown_by_str(
     media_placeholders: Sequence[str] = (),
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
+    media_urls: Sequence[str] = (),
     hide_content: str = "",
     platform: Platform | None = None,
     markdown_content: str = "",
@@ -869,6 +917,9 @@ def build_rich_markdown_by_str(
     解析字段，这条路上都得有对应参数**。漏一个的症状是"第一次发对、第二次（命中缓存）不对"。
     最典型的是 ``markdown_content``：RichText 平台的 ``content`` 是 markdown 转出来的
     **纯文本**，不给源就等于让富文本渲染吃纯文本（引用块、链接全塌）。
+
+    ``media_urls`` 同理：缓存里存了原始 URL 才能把正文外链图换成上传媒体引用；
+    漏传（老缓存）时那些图会被剥掉（图仍在末尾，只是不在原位）。
     """
     return build_rich_markdown(
         _RichFields(  # type: ignore[arg-type]
@@ -898,6 +949,7 @@ def build_rich_markdown_by_str(
         media_placeholders=media_placeholders,
         quote_media_placeholders=quote_media_placeholders,
         reply_media_placeholders=reply_media_placeholders,
+        media_urls=media_urls,
         hide_content=hide_content,
     )
 

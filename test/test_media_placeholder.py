@@ -17,6 +17,7 @@ from plugins.helpers import (
     _consumed_media_indices,
     build_rich_markdown,
     replace_media_placeholders,
+    rewrite_external_images,
 )
 
 PH = ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)", "![](tg://photo?id=m2)"]
@@ -145,3 +146,66 @@ def test_partial_consumption_keeps_rest_at_tail():
     assert md.count("![](tg://photo?id=m0)") == 1
     assert "![](tg://photo?id=m1)" in md
     assert "![](tg://photo?id=m2)" in md
+
+
+# ── ③ 正文外链图 → 上传媒体引用（防 400 RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND）──
+
+URLS = ["https://cdn.example.com/a.png", "https://cdn.example.com/b.svg", "https://cdn.example.com/c.jpg"]
+
+
+def test_external_image_rewritten_to_uploaded_media():
+    """正文外链图能对上 media → 换成该媒体的 tg:// 引用（图留在原位）。"""
+    md = "前文\n\n![](https://cdn.example.com/a.png)\n\n后文"
+    out = rewrite_external_images(md, URLS)
+    assert out == "前文\n\n{{media:0}}\n\n后文"
+    assert "https://" not in out
+
+
+def test_external_image_not_in_media_is_stripped():
+    """对不上 media 的外链图 → 剥掉（SVG 之类会让 Telegram 拒整条消息）。"""
+    out = rewrite_external_images("![](https://cdn.example.com/unknown.svg)", URLS)
+    assert out == ""
+    assert "https://" not in out
+
+
+def test_external_image_rewrite_leaves_tg_references_alone():
+    """已有的 tg:// 引用不许动。"""
+    md = "![](tg://photo?id=m0)"
+    assert rewrite_external_images(md, URLS) == md
+
+
+def test_external_image_rewrite_with_empty_urls_strips_all():
+    """没有 URL 表（老缓存 / 无媒体路径）→ 外链图一律剥掉，绝不放行给服务端抓。"""
+    out = rewrite_external_images("前\n![x](https://cdn.example.com/a.png)\n后", [])
+    assert "https://" not in out
+    assert "前" in out and "后" in out
+
+
+def test_build_rich_markdown_uses_media_urls_to_keep_image_in_place():
+    """端到端: media_urls 把正文外链图换成上传媒体引用, 而不是堆在末尾。"""
+    md = build_rich_markdown(
+        _parse_result("A\n\n![](https://cdn.example.com/a.png)\n\nB"),
+        config=_config(),
+        lang="zh-hans",
+        media_placeholders=PH,
+        media_urls=URLS,
+    )
+    assert md.count("![](tg://photo?id=m0)") == 1
+    assert md.index("A") < md.index("![](tg://photo?id=m0)") < md.index("B")
+    # 其余未消费的媒体仍在末尾
+    assert "![](tg://photo?id=m1)" in md
+    # 那张外链图不该以任何图片语法的形式再出现（footer 的来源链接不算）
+    assert "](https://cdn.example.com/a.png)" not in md
+    assert "](https://cdn.example.com/b.svg)" not in md
+
+
+def test_build_rich_markdown_without_media_urls_still_strips():
+    """没传 media_urls → 外链图剥掉（防炸），消息仍能发出。"""
+    md = build_rich_markdown(
+        _parse_result("A\n\n![](https://cdn.example.com/a.png)\n\nB"),
+        config=_config(),
+        lang="zh-hans",
+        media_placeholders=PH,
+    )
+    assert "](https://cdn.example.com/a.png)" not in md
+    assert "A" in md and "B" in md

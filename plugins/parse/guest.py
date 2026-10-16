@@ -306,7 +306,7 @@ async def _answer(
             if config.video_cover
             else {}
         )
-        media, placeholders, _blocks, quoted_ph, reply_ph = build_rich_media(
+        media, placeholders, _blocks, quoted_ph, reply_ph, media_urls = build_rich_media(
             media_refs,
             result.processed_list,
             video_cover=config.video_cover,
@@ -323,6 +323,7 @@ async def _answer(
             media_placeholders=placeholders,
             quote_media_placeholders=quoted_ph,
             reply_media_placeholders=reply_ph,
+            media_urls=media_urls,
             hide_content=spoiler_tag,
         )
         title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
