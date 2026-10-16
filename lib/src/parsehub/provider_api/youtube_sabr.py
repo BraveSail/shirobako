@@ -180,8 +180,10 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     stderr_text = (stderr or b"").decode("utf-8", "replace").strip()
     stdout_text = (stdout or b"").decode("utf-8", "replace").strip()
     if proc.returncode != 0:
-        detail = stderr_text.splitlines()[-1] if stderr_text else f"退出码 {proc.returncode}"
-        raise SabrFetchError(f"SABR 工具失败: {detail}")
+        # ⚠️ 报错必须带上**工具自己的 stdout/stderr** —— 只报「退出码 N」会让现场
+        # 无法定位（工具把错误写成一行 JSON 到 stdout；node/bun 的报错在 stderr）。
+        detail = stdout_text[-500:] or stderr_text[-500:] or f"退出码 {proc.returncode}"
+        raise SabrFetchError(f"SABR 工具失败(退出码 {proc.returncode}): {detail}")
 
     payload: dict = {}
     for line in reversed(stdout_text.splitlines()):
