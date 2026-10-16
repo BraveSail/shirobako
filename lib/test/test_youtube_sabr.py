@@ -345,9 +345,11 @@ def test_build_input_payload_includes_codec_options() -> None:
 
 
 def test_sabr_source_carries_codec_options() -> None:
-    """SabrSource 的三个编码字段要有默认值（避免改了 dataclass 忘同步调用点）。"""
+    """SabrSource 的编码字段：默认 av1>vp9>avc（生产默认），显式可覆盖。"""
+    from parsehub.provider_api.youtube_video import DEFAULT_SABR_CODEC_PRIORITY
+
     src = SabrSource(abr_url="u", ustreamer_config="c", adaptive_formats=({"itag": 1},))
-    assert src.codec_priority == ()
+    assert src.codec_priority == DEFAULT_SABR_CODEC_PRIORITY == ("av1", "vp9", "avc")
     assert src.video_itag == 0
     assert src.audio_itag == 0
 
@@ -355,9 +357,16 @@ def test_sabr_source_carries_codec_options() -> None:
         abr_url="u",
         ustreamer_config="c",
         adaptive_formats=({"itag": 1},),
-        codec_priority=("av1",),
+        codec_priority=("avc",),
         video_itag=399,
         audio_itag=140,
     )
-    assert src2.codec_priority == ("av1",)
+    assert src2.codec_priority == ("avc",)
     assert src2.video_itag == 399
+
+
+def test_extract_sabr_source_sets_default_codec_priority() -> None:
+    """走 extract_sabr_source 造出来的素材要带上默认编码优先级（别漏了这条链路）。"""
+    source = extract_sabr_source(_player_response())
+    assert source is not None
+    assert source.codec_priority == ("av1", "vp9", "avc")

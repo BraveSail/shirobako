@@ -251,6 +251,17 @@ class SelectedStreams:
     ext: str = "mp4"
 
 
+DEFAULT_SABR_CODEC_PRIORITY: tuple[str, ...] = ("av1", "vp9", "avc")
+"""SABR 默认编码优先级（用户 2026-10-16 定案：**设为默认**）。
+
+AV1 优先（同画质体积约为 AVC 的 47%，且是 YouTube 新视频的主推编码），
+其次 VP9（webm，兼容性好），最后 AVC（最通用但体积翻倍）。
+
+代价（用户已知悉）: AV1 在很老的设备/客户端上可能解不了 —— 需要时可用
+``SabrSource.codec_priority=("avc",)`` 单独把它降级。
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class SabrSource:
     """SABR 取流素材（``provider_api/youtube_sabr.py`` 的输入）。
@@ -266,11 +277,11 @@ class SabrSource:
     ustreamer_config: str
     adaptive_formats: tuple[dict, ...]
     video_quality: str = "1080p"
-    codec_priority: tuple[str, ...] = ()
-    """编码优先级（如 ``("av1", "vp9", "avc")``）——按序取第一个素材里存在的编码。
+    codec_priority: tuple[str, ...] = DEFAULT_SABR_CODEC_PRIORITY
+    """编码优先级 —— 默认 ``("av1","vp9","avc")``（见 ``DEFAULT_SABR_CODEC_PRIORITY``）。
 
-    空 = 不指定，走工具默认（mp4/AVC 优先 —— 最通用，但体积最大）。
-    选中的编码同时决定音频与输出容器：vp9→webm/opus, av1 或 avc→mp4/aac。
+    按序取第一个素材里存在的编码；选中的编码同时决定音频与输出容器：
+    vp9→webm/opus, av1 或 avc→mp4/aac。
     """
     video_itag: int = 0
     """显式指定视频 itag（0 = 不用）。优先级高于 ``codec_priority``。"""
@@ -1005,6 +1016,7 @@ async def _apply_nsig(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直
 __all__ = [
     "CLIENTS",
     "DEFAULT_MAX_HEIGHT",
+    "DEFAULT_SABR_CODEC_PRIORITY",
     "GUIDE_URL",
     "MICROFORMAT_CLIENT",
     "PLAYER_URL",
