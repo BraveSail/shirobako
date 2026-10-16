@@ -338,6 +338,42 @@ def _meta_divider(meta_parts: Sequence[str], parts: Sequence[str]) -> list[str]:
 #: lib 只出数据 (见计划「方案 C」)。
 _POLL_PLACEHOLDER_RE = re.compile(r"^(> )?\{\{poll:(\d+)\}\}$")
 
+#: lib 放进正文的**原位媒体标记**: ``{{media:N}}``（N = 正文媒体占位符下标）。
+#: 媒体占位符 ``![](tg://photo?id=mN)`` 是**内联**结构（可以出现在行中），所以
+#: 这里用子串匹配（不像 ``{{poll:N}}`` 是块级表格、要求整行）。
+_MEDIA_PLACEHOLDER_RE = re.compile(r"\{\{media:(\d+)\}\}")
+
+
+def replace_media_placeholders(content: str, placeholders: Sequence[str]) -> str:
+    """把正文里的 ``{{media:N}}`` 标记换成第 N 个媒体占位符。
+
+    - 索引越界 / ``placeholders`` 为空 (**没有媒体的路径**: inline 文字版、处理过程
+      的中间状态、纯文字兜底) → **删掉标记** + warning —— 标记字面量绝不能泄漏给用户
+      (与 ``replace_poll_placeholders`` 同一纪律)。
+    - 引用块内 (``> {{media:0}}``) → 产物带 ``> `` 前缀, 媒体留在引用块里。
+
+    只能替换**正文段**的占位符: 参数只收正文媒体那一段 (``build_rich_media``
+    第二个返回值), 引用块媒体不在这个列表里 —— 索引天然对齐。
+    """
+    if not content or "{{media:" not in content:
+        return content
+
+    def _replacement(match: re.Match[str]) -> str:
+        index = int(match.group(1))
+        if index >= len(placeholders):
+            logger.warning(f"媒体标记没有对应媒体, 已删除: index={index}, media={len(placeholders)}")
+            return ""
+        # 子串替换: 标记前面的内容 (含引用块的 '> ' 前缀) 原样留在正文里,
+        # 所以这里直接给占位符即可 —— 行中/行首/引用块内都自然对齐。
+        return placeholders[index]
+
+    return _MEDIA_PLACEHOLDER_RE.sub(_replacement, content)
+
+
+def _consumed_media_indices(content: str) -> set[int]:
+    """正文里所有 ``{{media:N}}`` 标记用到的下标集合（供末尾追加列表去重）。"""
+    return {int(m.group(1)) for m in _MEDIA_PLACEHOLDER_RE.finditer(content)}
+
 
 def _poll_field(source: object, name: str, default=None):
     """读一个投票字段 —— lib 给的是对象 (属性访问), 缓存里是 dict (键访问)。"""
@@ -540,11 +576,20 @@ def build_rich_markdown(
         getattr(parse_result, "polls", None) or [],
         lang,
     )
+    # 原位媒体标记 (`{{media:N}}`): lib 把正文图抽出走 media 通道时, 原位置留标记;
+    # 这里换成对应的 ``![](tg://photo?id=mN)`` 占位符, 图就留在文章原位
+    # (不换的话标记会字面泄漏给用户; media_placeholders 为空时零变化)。
+    # 被原位消费的媒体**从末尾追加列表里摘掉** —— 否则同一张图会出现两次
+    # (原位一次、末尾一次)。
+    body_with_media = replace_media_placeholders(poll_content, media_placeholders)
+    if "{{media:" in poll_content:
+        consumed = _consumed_media_indices(poll_content)
+        media_placeholders = [p for i, p in enumerate(media_placeholders) if i not in consumed]
     # lib 输出的可翻译片段（``{{t:讨论}}`` 这类内联短文案）同样在这里展开。
     content = preserve_linebreaks(
         escape_setext_underlines(
             link_hashtags(
-                replace_translatable_fragments(poll_content, lang),
+                replace_translatable_fragments(body_with_media, lang),
                 parse_result.platform,
                 # 平台实体给的标签名（拿不到时为空列表 → 退回正则）
                 getattr(parse_result, "hashtags", None),

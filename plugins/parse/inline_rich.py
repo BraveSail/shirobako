@@ -420,7 +420,10 @@ def build_cached_rich_content(
         like_count=entry.parse_result.like_count,
         tags=entry.parse_result.tags,
         custom_content=custom_content,
-        media_placeholders=wrap_collage(placeholders),
+        # 原位标记 (``{{media:N}}``) 的 N 是**原始占位符列表**的下标, 末尾追加
+        # 才用 collage 合并 —— 所以两条通道分开传: 这里给原始列表, `build_rich_markdown`
+        # 内部互换 (原位取原始, 追加走 collage)。
+        media_placeholders=placeholders,
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
         hide_content=spoiler_tag,

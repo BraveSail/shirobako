@@ -111,8 +111,9 @@ class DouyinParser(BaseParser):
         外部 URL 会被渲染层剥掉（``strip_media_markdown`` 防
         ``EXTERNAL_MEDIA_NOT_SUPPORTED``）。不抽出来，图就整批消失。
 
-        与知乎 / 微信 / 小黑盒同一模式: markdown 里的图片语法**换成空行**
-        （避免渲染层看到裸 URL 或残缺语法），图片本体走 ``media`` 通道。
+        抽出后正文**原位置留 ``{{media:N}}`` 标记**（``_extract_markdown_images``）——
+        渲染层把它换成第 N 个媒体的占位符，图就出现在文章里，而不是堆到末尾
+        （用户报「图片怎么是尾部一堆？不是在文章里？」后改成原位）。
 
         图片 URL 优先用 ``fe_data.image_list`` 的 ``origin_image_url``（原图）；
         正文里的 ``~tplv-dy-long-article`` URL 是低清 HEIC 缩略。两个列表按**顺序**
@@ -181,6 +182,17 @@ class DouyinArticleParseResult(DouyinParseResult, RichTextParseResult):
 #: ``[^)\s]+`` 以防将来出现带 title 的写法）
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
 
+#: 原位媒体标记：图片被抽出后，正文**原位置**留 ``{{media:N}}``（N = ``media`` 索引）。
+#: 渲染层把它换成第 N 个媒体的 ``![](tg://photo?id=mN)`` 占位符 —— 图就出现在原文位置，
+#: 而不是堆到末尾（2026-10-16 用户报「图片怎么是尾部一堆？不是在文章里？」）。
+#: 与 ``{{poll:N}}`` 同一套模式（lib 出数据、渲染层出形态）。
+#:
+#: ⚠️ 用 f-string **不要用 ``str.format``** —— 后者会把 ``{{`` 当转义、产出单层
+#: ``{media:0}``（实测踩过）。
+def media_placeholder(index: int) -> str:
+    """生成原位媒体标记，形如 ``{{media:3}}``。"""
+    return f"{{{{media:{index}}}}}"
+
 #: douyinpic 资源标识: ``/tos-cn-i-<bucket>/<hash>``。URL 的 host、签名与
 #: ``~tplv-<变体>`` 后缀可以不同，这一段是**同一张图**的稳定标识。
 _DOUYINPIC_RES_RE = re.compile(r"/tos-cn-i-[^/]+/[0-9a-zA-Z]+")
@@ -208,22 +220,35 @@ def _resolve_origin_images(images: list[str], origin_candidates: list[str]) -> l
 
 
 def _extract_markdown_images(markdown: str) -> tuple[str, list[str]]:
-    """把 markdown 里的图片抽出来，返回 ``(去掉图片语法的正文, 图片 URL 列表)``（纯函数）。
+    """把 markdown 里的图片抽出来，返回 ``(原位置换成标记的正文, 图片 URL 列表)``（纯函数）。
 
     为什么必须抽（2026-10-16，用户报「图片丢了」）: 富文本
     （``InputRichMessage``）只认 ``tg://photo?id=`` 引用的**已上传**媒体，外部 URL
     会被渲染层 ``strip_media_markdown`` 剥掉（防 ``EXTERNAL_MEDIA_NOT_SUPPORTED``）。
     图片本体必须走 ``media`` 通道才有得发。
 
-    替换成**空行**而不是删掉整行 —— 图片通常独占一行，留空行保住它与上下文的段落
-    间隔；直接删行会让前后两段贴在一起。
+    抽走的位置留 ``{{media:N}}``（N = 本函数返回列表的下标）—— 渲染层
+    ``replace_media_placeholders`` 把它换成第 N 个媒体的占位符，图片就渲染在
+    **文章原位**（与 ``{{poll:N}}`` 同一套机制）。不留标记的话图全堆到末尾
+    （用户报「图片怎么是尾部一堆？不是在文章里？」）。
+
+    只把**图片语法**换成标记，周围文字与空行原样保留。
     """
     urls: list[str] = []
-    for match in _MD_IMAGE_RE.finditer(markdown or ""):
+    index_by_url: dict[str, int] = {}
+
+    def _replacement(match: re.Match[str]) -> str:
         url = match.group(1).strip()
-        if url and url not in urls:  # 同一张图重复出现时只发一次
+        if not url:
+            return match.group(0)
+        index = index_by_url.get(url)
+        if index is None:
+            index = len(urls)
             urls.append(url)
-    cleaned = _MD_IMAGE_RE.sub("", markdown or "")
+            index_by_url[url] = index
+        return media_placeholder(index)
+
+    cleaned = _MD_IMAGE_RE.sub(_replacement, markdown or "")
     return cleaned, urls
 
 

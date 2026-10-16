@@ -169,17 +169,19 @@ class TestMarkdownImages(unittest.TestCase):
         self.assertIn("前文", cleaned)
         self.assertIn("后文", cleaned)
 
-    def test_keeps_blank_line_between_paragraphs(self):
-        """图片独占一行 → 换成空行保住段落间隔（不把前后段贴在一起）。"""
+    def test_keeps_marker_in_place(self):
+        """图片抽走后**原位置留标记** ``{{media:N}}``（不空行、不删行）。"""
         md = "A\n![图](https://x.com/a.jpg)\nB"
         cleaned, _ = _extract_markdown_images(md)
-        self.assertEqual(cleaned, "A\n\nB")
+        self.assertEqual(cleaned, "A\n{{media:0}}\nB")
 
-    def test_dedupes_repeated_image(self):
-        """同一张图出现两次 → media 里只放一次（重复引用不重复下载）。"""
-        md = "![图](https://x.com/a.jpg)\n\n![图](https://x.com/a.jpg)"
-        _, urls = _extract_markdown_images(md)
+    def test_duplicate_image_reuses_same_index(self):
+        """同一张图出现两次 → 同一个下标（media 里只放一次，两处都指它）。"""
+        md = "{{}}\n![图](https://x.com/a.jpg)\n\n![图](https://x.com/a.jpg)"
+        cleaned, urls = _extract_markdown_images(md)
         self.assertEqual(urls, ["https://x.com/a.jpg"])
+        self.assertEqual(cleaned.count("{{media:0}}"), 2)
+        self.assertNotIn("{{media:1}}", cleaned)
 
     def test_no_images_is_noop(self):
         cleaned, urls = _extract_markdown_images("纯文字")
