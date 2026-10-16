@@ -884,6 +884,10 @@ class DouyinMobileCrawler:
             re.compile(r"[?&]modal_id=(\d+)"),
             re.compile(r"note/([^/?]*)"),
             re.compile(r"[?&]vid=(\d+)"),
+            # 文章（长图文）：`/article/<id>` 与视频共用同一个 detail 接口
+            # （页面向 `/aweme/v1/web/aweme/detail/?aweme_id=<id>` 请求，实测），
+            # 只是 aweme_type=163、正文在 article_info.article_content 里。
+            re.compile(r"/article/(\d+)"),
         ]:
             match = pattern.search(raw_url)
             if match:

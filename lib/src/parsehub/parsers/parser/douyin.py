@@ -1,20 +1,22 @@
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Self, Union
+from typing import Self
 
 from ... import ProgressCallback
 from ...provider_api.douyin import DouyinMobileCrawler, DouyinMobileDevice, DouyinWebCrawler
 from ...types import (
+    AnyParseResult,
     DownloadResult,
     ImageParseResult,
     ImageRef,
     LivePhotoRef,
-    MultimediaParseResult,
     ParseError,
     ParseResult,
     Platform,
+    RichTextParseResult,
     VideoParseResult,
     VideoRef,
 )
@@ -29,7 +31,7 @@ class DouyinParser(BaseParser):
     __redirect_keywords__ = ["v.douyin", "iesdouyin"]
     __reserved_parameters__ = ["modal_id"]
 
-    async def _do_parse(self, raw_url: str) -> Union["VideoParseResult", "ImageParseResult", "MultimediaParseResult"]:
+    async def _do_parse(self, raw_url: str) -> "AnyParseResult":
         result = await self._fetch_api_result(raw_url)
 
         match result.type:
@@ -37,6 +39,8 @@ class DouyinParser(BaseParser):
                 return self._build_video_result(result)
             case DouyinMediaType.IMAGE:
                 return self._build_image_result(result)
+            case DouyinMediaType.ARTICLE:
+                return self._build_article_result(result)
 
     async def _fetch_api_result(self, raw_url: str) -> "DouyinApiResult":
         """获取并解析抖音 API 结果"""
@@ -94,6 +98,26 @@ class DouyinParser(BaseParser):
             like_count=result.like_count,
         )
 
+    @staticmethod
+    def _build_article_result(result: "DouyinApiResult") -> "RichTextParseResult":
+        """构建长图文解析结果（正文是平台给的 markdown）。
+
+        标题用 ``article_title``（``desc`` 只是短摘要）；正文里的图片是
+        markdown 内联形式（``![alt](https://...douyinpic.com/...)``）—— 图片链接
+        带签名会过期，但**下载是即时发生的**，且 CDN 无防盗链（走基类的 Referer
+        注入，与视频/图集同一条路）。
+        """
+        return DouyinArticleParseResult(
+            title=result.article_title or result.desc,
+            markdown_content=result.article_markdown,
+            author_name=result.author_name,
+            author_handle=result.author_uid,
+            author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
+            published_at=result.published_at,
+            view_count=result.view_count,
+            like_count=result.like_count,
+        )
+
 
 class DouyinParseResult(ParseResult):
     async def _do_download(
@@ -125,6 +149,15 @@ class DouyinVideoParseResult(DouyinParseResult, VideoParseResult): ...
 
 
 class DouyinImageParseResult(DouyinParseResult, ImageParseResult): ...
+
+
+class DouyinArticleParseResult(DouyinParseResult, RichTextParseResult):
+    """抖音长图文（``/article/<id>``）。
+
+    正文是平台给的 **markdown**（``article_info.article_content.markdown``），
+    图片已内联在其中（``![alt](https://...douyinpic.com/...)``）—— 沿用基类的
+    下载链路（``_do_download`` 注 Referer，douyinpic 图无防盗链但带上无害）。
+    """
 
 
 def remove_video_watermark(url: str) -> str:
@@ -188,6 +221,7 @@ class DouyinMediaType(Enum):
 
     VIDEO = "video"
     IMAGE = "image"  # 实况图片 + 图片
+    ARTICLE = "article"  # 长图文（aweme_type=163），正文是平台给的 markdown
 
 
 @dataclass
@@ -208,6 +242,12 @@ class DouyinApiResult:
     published_at: datetime | None = None
     view_count: int | None = None
     like_count: int | None = None
+    #: 长文章正文（markdown）。只在 ``type == ARTICLE`` 时有值；图片已内联在
+    #: markdown 里（``![alt](https://...douyinpic.com/...)``），不必另抽。
+    article_markdown: str = ""
+    #: 文章标题（``article_info.article_title``）。文章页的 ``desc`` 是短摘要，
+    #: 真标题在这里。
+    article_title: str = ""
 
     @classmethod
     def parse(cls, json_dict: dict) -> Self:
@@ -215,14 +255,19 @@ class DouyinApiResult:
         if not data:
             raise ParseError("抖音解析失败: 未获取到作品详情")
 
-        desc = data.get("desc", "")
-
-        if images := data.get("images"):
-            result = cls._parse_images(images, desc)
-        elif image_post_info := data.get("image_post_info"):
-            result = cls._parse_image_post_info(image_post_info, desc)
+        # 长图文（`/article/<id>`，aweme_type=163）: 正文在
+        # `article_info.article_content`（一个**双重编码**的 JSON 字符串，里层含
+        # markdown）。⚠️ 不能落进 images/video 分支 —— 那样会得到空结果或误判。
+        if article := data.get("article_info"):
+            result = cls._parse_article(article, str(data.get("desc") or ""))
         else:
-            result = cls._parse_video(data, desc)
+            desc = data.get("desc", "")
+            if images := data.get("images"):
+                result = cls._parse_images(images, desc)
+            elif image_post_info := data.get("image_post_info"):
+                result = cls._parse_image_post_info(image_post_info, desc)
+            else:
+                result = cls._parse_video(data, desc)
         author = data.get("author") or {}
         result.author_name = get_author_name(author)
         result.author_sec_uid = str(author.get("sec_uid") or "")
@@ -237,6 +282,39 @@ class DouyinApiResult:
         views = to_int(stats.get("play_count"))
         result.view_count = views or None
         return result
+
+    @classmethod
+    def _parse_article(cls, article: dict, desc: str) -> Self:
+        """解析长图文（``aweme_type=163``）。
+
+        ``article_content`` 是**双重编码**：值是 JSON 字符串，解出来是
+        ``{"long_article_abstract": …, "markdown": …}`` —— 正文（含内联图片）在
+        ``markdown`` 里。
+
+        解不出时**不抛**，退回 ``long_article_abstract`` 摘要；两者都没有才报错 ——
+        平台格式变动不该让整条解析失败。
+        """
+        title = str(article.get("article_title") or "").strip()
+        markdown = ""
+        abstract = ""
+        raw = article.get("article_content")
+        if isinstance(raw, str) and raw:
+            try:
+                content = json.loads(raw)
+            except ValueError:
+                content = {}
+            if isinstance(content, dict):
+                markdown = str(content.get("markdown") or "")
+                abstract = str(content.get("long_article_abstract") or "")
+        body = markdown or abstract
+        if not body:
+            raise ParseError("抖音文章解析失败: article_content 里没有正文")
+        return cls(
+            type=DouyinMediaType.ARTICLE,
+            desc=desc,
+            article_markdown=body,
+            article_title=title,
+        )
 
     @classmethod
     def _parse_images(cls, images: list[dict], desc: str) -> Self:
