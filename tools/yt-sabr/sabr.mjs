@@ -85,12 +85,22 @@ if (audioItag) console.error(`[sabr] 显式指定 audio itag=${audioItag}`);
 /**
  * 编码优先级选流（可选）。
  *
- * 值形如 ``['av1','vp9','avc']`` —— 按顺序挑第一个在素材里存在的编码。
- * 库自带的 ``chooseFormat`` 只有 preferH264/preferWebM/preferMP4 三个布尔偏好、
- * 且同分辨率下**按数组顺序**取（等于 AVC 优先），拿不到「AV1 > VP9 > AVC」这种次序。
+ * 值形如 ``['av1','vp9','avc']``。库自带的 ``chooseFormat`` 只有
+ * preferH264/preferWebM/preferMP4 三个布尔偏好、且同分辨率下**按数组顺序**取
+ * （等于 AVC 优先），拿不到「AV1 > VP9 > AVC」这种次序。
  *
- * 选中的编码同时决定音频：av1/avc → mp4 容器（配 aac itag=140）；
- * vp9 → webm 容器（配 opus itag=251）—— 容器要一致，跨容器 mux 兼容性差。
+ * ★★ **分辨率优先，同分辨率内才比编码**（2026-10-16 修正 —— 这是必须的）:
+ *
+ * 编码优先级**不能跨分辨率**用。实测反例（`_IBAJkEsuG4`）:
+ *   avc1: 144p / 360p / 720p / **1080p**   ← 高清只有 AVC
+ *   vp9:  只有 **360p**                     ← VP9 只有低清
+ *   av01: 无
+ * 若「按编码优先」先找 vp9，会命中它的 360p 并**降到 360p**（而 AVC 有 1080p）。
+ * 正确做法: 先取素材里可用的**最高分辨率**，在该档内按 codecPriority 挑编码；
+ * 该档没有偏好编码就取这一档里码率最高的（而不是掉到低分辨率的偏好编码）。
+ *
+ * 选中的编码决定音频：av1/avc → mp4 容器（配 aac itag=140）；
+ * vp9 → webm 容器（配 opus itag=251）—— 同一编码族的容器要一致。
  */
 const CODEC_PATTERNS = {
   av01: 'av01',
@@ -109,31 +119,47 @@ const CODEC_AUDIO = {
 
 function pickByCodecPriority(priority) {
   const wanted = priority.map((c) => String(c).toLowerCase());
-  for (const codec of wanted) {
-    const pattern = CODEC_PATTERNS[codec];
+  const videos = formats.filter(
+    (f) => f.mimeType?.startsWith('video/') && (f.height || 0) > 0 && (f.height || 0) <= maxHeight
+  );
+  if (!videos.length) return null;
+
+  // ① 最高分辨率档（分辨率优先 —— 不能为了编码牺牲画质）
+  const topHeight = Math.max(...videos.map((f) => f.height || 0));
+  const topTier = videos.filter((f) => (f.height || 0) === topHeight);
+
+  // ② 该档内按 codecPriority 挑；都没有就取这一档码率最高的
+  let video = null;
+  let codec = '';
+  for (const want of wanted) {
+    const pattern = CODEC_PATTERNS[want];
     if (!pattern) continue;
-    // 1080p 上限内最高的那一档（同编码同分辨率可能有多个 itag，取码率最高）
-    const candidates = formats
-      .filter((f) => f.mimeType?.startsWith('video/') && f.mimeType.includes(pattern) && (f.height || 0) <= maxHeight)
-      .sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bitrate || 0) - (a.bitrate || 0));
-    if (candidates.length) {
-      const video = candidates[0];
-      const spec = CODEC_AUDIO[codec];
-      const acodec = spec?.audio || 'mp4a';
-      // ⚠️ 音频要挑**默认音轨**：同一 itag 有 xtags=undefined / 'CggKA2RyYxIBMQ'(dubbed) /
-      // 'CgcKAnZiEgEx'(secondary) 三个变体，按 bitrate 排会选到非默认音轨（实测踩过：
-      // av1 因此整条被跳过）。默认音轨 = xtags 为空。
-      const audios = formats
-        .filter((f) => f.mimeType?.startsWith('audio/') && f.mimeType.includes(acodec))
-        .sort((a, b) => {
-          const aDefault = a.xtags ? 1 : 0;
-          const bDefault = b.xtags ? 1 : 0;
-          return aDefault - bDefault || (b.bitrate || 0) - (a.bitrate || 0);
-        });
-      if (audios.length) return { video, audio: audios[0], codec };
+    const hit = topTier
+      .filter((f) => f.mimeType?.includes(pattern))
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+    if (hit) {
+      video = hit;
+      codec = want;
+      break;
     }
   }
-  return null;
+  if (!video) {
+    video = topTier.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+    codec = Object.keys(CODEC_PATTERNS).find((k) => video.mimeType?.includes(CODEC_PATTERNS[k])) || '';
+  }
+
+  // ③ 音频: 按选中视频的容器族配（vp9→opus, 其它→aac），默认音轨（空 xtags）优先
+  const spec = CODEC_AUDIO[codec];
+  const acodec = spec?.audio || 'mp4a';
+  const audios = formats
+    .filter((f) => f.mimeType?.startsWith('audio/') && f.mimeType.includes(acodec))
+    .sort((a, b) => {
+      const aDefault = a.xtags ? 1 : 0;
+      const bDefault = b.xtags ? 1 : 0;
+      return aDefault - bDefault || (b.bitrate || 0) - (a.bitrate || 0);
+    });
+  if (!audios.length) return null;
+  return { video, audio: audios[0], codec };
 }
 
 // ★ **UA 单一真源** —— 与无头刷新脚本（``scripts/yt-cookie/refresh_cookie.py`` 的 ``UA``）
