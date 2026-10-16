@@ -19,7 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parsehub.errors import ParseError  # noqa: E402
 from parsehub.parsers.parser.douyin import (  # noqa: E402
     DouyinApiResult,
+    DouyinArticleParseResult,
     DouyinMediaType,
+    DouyinParser,
+    _extract_markdown_images,
+    _resolve_origin_images,
 )
 from parsehub.provider_api.douyin import DouyinMobileCrawler  # noqa: E402
 
@@ -152,6 +156,88 @@ class TestArticleParse(unittest.TestCase):
         }
         result = DouyinApiResult.parse(payload)
         self.assertIs(result.type, DouyinMediaType.IMAGE)
+
+
+class TestMarkdownImages(unittest.TestCase):
+    """正文图片抽取（2026-10-16 用户报「图片丢了」）。"""
+
+    def test_extracts_inline_images(self):
+        md = "前文\n\n![图片描述](https://x.com/a.jpg)\n\n后文"
+        cleaned, urls = _extract_markdown_images(md)
+        self.assertEqual(urls, ["https://x.com/a.jpg"])
+        self.assertNotIn("![", cleaned)
+        self.assertIn("前文", cleaned)
+        self.assertIn("后文", cleaned)
+
+    def test_keeps_blank_line_between_paragraphs(self):
+        """图片独占一行 → 换成空行保住段落间隔（不把前后段贴在一起）。"""
+        md = "A\n![图](https://x.com/a.jpg)\nB"
+        cleaned, _ = _extract_markdown_images(md)
+        self.assertEqual(cleaned, "A\n\nB")
+
+    def test_dedupes_repeated_image(self):
+        """同一张图出现两次 → media 里只放一次（重复引用不重复下载）。"""
+        md = "![图](https://x.com/a.jpg)\n\n![图](https://x.com/a.jpg)"
+        _, urls = _extract_markdown_images(md)
+        self.assertEqual(urls, ["https://x.com/a.jpg"])
+
+    def test_no_images_is_noop(self):
+        cleaned, urls = _extract_markdown_images("纯文字")
+        self.assertEqual((cleaned, urls), ("纯文字", []))
+
+    def test_tolerates_title_in_image_syntax(self):
+        """带 title 的写法 ``![alt](url "title")`` 也要抽得对。"""
+        _, urls = _extract_markdown_images('![图](https://x.com/a.jpg "标题")')
+        self.assertEqual(urls, ["https://x.com/a.jpg"])
+
+
+class TestResolveOriginImages(unittest.TestCase):
+    """正文缩略 URL → fe_data 原图 URL（按资源标识匹配）。"""
+
+    BODY = "https://p5-ex-gddgtc-sign.douyinpic.com/tos-cn-i-jm8ajry58r/70a308fc7f24462cbf1a8b3d25085bf8~tplv-dy-long-article:0:0.heic?sig=a"
+    ORIGIN = "https://p5-ex-gddgtc-sign.douyinpic.com/tos-cn-i-jm8ajry58r/70a308fc7f24462cbf1a8b3d25085bf8~tplv-shrink:0:0.heic?sig=b"
+
+    def test_matches_by_resource_id_despite_different_variant(self):
+        """同一资源不同变体（tplv 段不同、签名不同）要能配上。"""
+        self.assertEqual(_resolve_origin_images([self.BODY], [self.ORIGIN]), [self.ORIGIN])
+
+    def test_falls_back_to_body_url_when_no_origin(self):
+        """fe_data 没这张图时保留正文 URL —— 宁可用缩略图也不丢图。"""
+        self.assertEqual(_resolve_origin_images([self.BODY], []), [self.BODY])
+
+    def test_keeps_non_douyinpic_urls(self):
+        url = "https://example.com/plain.jpg"
+        self.assertEqual(_resolve_origin_images([url], [self.ORIGIN]), [url])
+
+
+class TestArticleResultMedia(unittest.TestCase):
+    """`_build_article_result` 必须把图抽成 media 并打开 requires_media_download。"""
+
+    def _article_api_result(self, markdown: str, images: list[str] | None = None) -> DouyinApiResult:
+        return DouyinApiResult(
+            type=DouyinMediaType.ARTICLE,
+            article_markdown=markdown,
+            article_title="标题",
+            article_images=images or [],
+        )
+
+    def test_extracts_images_into_media(self):
+        md = "正文\n\n![图](https://p5-ex-gddgtc-sign.douyinpic.com/tos-cn-i-jm8ajry58r/aaa111~tplv-dy-long-article:0:0.heic?sig=a)"
+        result = DouyinParser._build_article_result(self._article_api_result(md))
+        self.assertIsInstance(result, DouyinArticleParseResult)
+        self.assertEqual(len(result.media or []), 1)
+        self.assertTrue(result.requires_media_download)
+
+    def test_uses_origin_url_when_available(self):
+        body = "https://p5-ex-gddgtc-sign.douyinpic.com/tos-cn-i-jm8ajry58r/aaa111~tplv-dy-long-article:0:0.heic?sig=a"
+        origin = "https://p11-sign.douyinpic.com/tos-cn-i-jm8ajry58r/aaa111~tplv-shrink:0:0.heic?sig=z"
+        result = DouyinParser._build_article_result(self._article_api_result(f"![图]({body})", [origin]))
+        media = list(result.media or [])
+        self.assertEqual(media[0].url, origin)  # type: ignore[attr-defined]
+
+    def test_media_download_required_is_on(self):
+        """流水线看这个开关决定要不要下载 —— False 时图全丢（就是用户报的现象）。"""
+        self.assertTrue(DouyinArticleParseResult.requires_media_download)
 
 
 if __name__ == "__main__":

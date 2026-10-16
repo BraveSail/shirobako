@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -102,14 +103,27 @@ class DouyinParser(BaseParser):
     def _build_article_result(result: "DouyinApiResult") -> "RichTextParseResult":
         """构建长图文解析结果（正文是平台给的 markdown）。
 
-        标题用 ``article_title``（``desc`` 只是短摘要）；正文里的图片是
-        markdown 内联形式（``![alt](https://...douyinpic.com/...)``）—— 图片链接
-        带签名会过期，但**下载是即时发生的**，且 CDN 无防盗链（走基类的 Referer
-        注入，与视频/图集同一条路）。
+        标题用 ``article_title``（``desc`` 只是短摘要）。
+
+        **图片要抽成 media**（2026-10-16，用户报「图片丢了」）：平台把图内联在
+        markdown 里（``![图片描述](https://...douyinpic.com/...)``），但富文本
+        （``InputRichMessage``）**只认 ``tg://photo?id=`` 引用的已上传媒体** ——
+        外部 URL 会被渲染层剥掉（``strip_media_markdown`` 防
+        ``EXTERNAL_MEDIA_NOT_SUPPORTED``）。不抽出来，图就整批消失。
+
+        与知乎 / 微信 / 小黑盒同一模式: markdown 里的图片语法**换成空行**
+        （避免渲染层看到裸 URL 或残缺语法），图片本体走 ``media`` 通道。
+
+        图片 URL 优先用 ``fe_data.image_list`` 的 ``origin_image_url``（原图）；
+        正文里的 ``~tplv-dy-long-article`` URL 是低清 HEIC 缩略。两个列表按**顺序**
+        对应（实测 5/5 一致）—— 数量对不上时退回正文 URL，不猜。
         """
+        markdown, images = _extract_markdown_images(result.article_markdown)
+        images = _resolve_origin_images(images, result.article_images)
         return DouyinArticleParseResult(
             title=result.article_title or result.desc,
-            markdown_content=result.article_markdown,
+            markdown_content=markdown,
+            media=[ImageRef(url=url, ext=image_ext_from_url(url) or "jpg") for url in images],
             author_name=result.author_name,
             author_handle=result.author_uid,
             author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
@@ -154,10 +168,63 @@ class DouyinImageParseResult(DouyinParseResult, ImageParseResult): ...
 class DouyinArticleParseResult(DouyinParseResult, RichTextParseResult):
     """抖音长图文（``/article/<id>``）。
 
-    正文是平台给的 **markdown**（``article_info.article_content.markdown``），
-    图片已内联在其中（``![alt](https://...douyinpic.com/...)``）—— 沿用基类的
-    下载链路（``_do_download`` 注 Referer，douyinpic 图无防盗链但带上无害）。
+    正文是平台给的 **markdown**（``article_info.article_content.markdown``）；
+    图片从正文抽出走 ``media`` 通道（见 ``_build_article_result``），因此
+    ``requires_media_download`` 必须为 True —— 否则流水线跳过下载，图全丢。
+    沿用基类的下载链路（``_do_download`` 注 Referer）。
     """
+
+    requires_media_download = True
+
+
+#: markdown 内联图片：``![alt](url)``（douyin 的 URL 里没有空格，但保留
+#: ``[^)\s]+`` 以防将来出现带 title 的写法）
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
+
+#: douyinpic 资源标识: ``/tos-cn-i-<bucket>/<hash>``。URL 的 host、签名与
+#: ``~tplv-<变体>`` 后缀可以不同，这一段是**同一张图**的稳定标识。
+_DOUYINPIC_RES_RE = re.compile(r"/tos-cn-i-[^/]+/[0-9a-zA-Z]+")
+
+
+def _resolve_origin_images(images: list[str], origin_candidates: list[str]) -> list[str]:
+    """把正文图片 URL 换成 ``fe_data`` 提供的原图 URL（纯函数）。
+
+    正文 markdown 里的图片是 ``~tplv-dy-long-article`` 低清缩略；``fe_data.image_list``
+    给出同一张图的 ``origin_image_url``（原图）。两个集合的 URL **不同源**（host、
+    签名、变体全是新的），不能按字符串相等或位置对齐 —— 按**资源标识**
+    （``/tos-cn-i-<bucket>/<hash>``）匹配；匹配不到的保留原 URL（宁可用缩略图，
+    不能丢图）。
+    """
+    by_res: dict[str, str] = {}
+    for url in origin_candidates:
+        if match := _DOUYINPIC_RES_RE.search(url):
+            by_res.setdefault(match.group(0), url)
+
+    result: list[str] = []
+    for url in images:
+        match = _DOUYINPIC_RES_RE.search(url)
+        result.append(by_res.get(match.group(0), url) if match else url)
+    return result
+
+
+def _extract_markdown_images(markdown: str) -> tuple[str, list[str]]:
+    """把 markdown 里的图片抽出来，返回 ``(去掉图片语法的正文, 图片 URL 列表)``（纯函数）。
+
+    为什么必须抽（2026-10-16，用户报「图片丢了」）: 富文本
+    （``InputRichMessage``）只认 ``tg://photo?id=`` 引用的**已上传**媒体，外部 URL
+    会被渲染层 ``strip_media_markdown`` 剥掉（防 ``EXTERNAL_MEDIA_NOT_SUPPORTED``）。
+    图片本体必须走 ``media`` 通道才有得发。
+
+    替换成**空行**而不是删掉整行 —— 图片通常独占一行，留空行保住它与上下文的段落
+    间隔；直接删行会让前后两段贴在一起。
+    """
+    urls: list[str] = []
+    for match in _MD_IMAGE_RE.finditer(markdown or ""):
+        url = match.group(1).strip()
+        if url and url not in urls:  # 同一张图重复出现时只发一次
+            urls.append(url)
+    cleaned = _MD_IMAGE_RE.sub("", markdown or "")
+    return cleaned, urls
 
 
 def remove_video_watermark(url: str) -> str:
@@ -243,11 +310,18 @@ class DouyinApiResult:
     view_count: int | None = None
     like_count: int | None = None
     #: 长文章正文（markdown）。只在 ``type == ARTICLE`` 时有值；图片已内联在
-    #: markdown 里（``![alt](https://...douyinpic.com/...)``），不必另抽。
+    #: markdown 里（``![alt](https://...douyinpic.com/...)``），由 parser 层抽成
+    #: ``media``（平台正文里的 URL 是低清 HEIC 缩略占位，见 ``article_images``）。
     article_markdown: str = ""
     #: 文章标题（``article_info.article_title``）。文章页的 ``desc`` 是短摘要，
     #: 真标题在这里。
     article_title: str = ""
+    #: 长图文的图片（``fe_data.image_list`` 里的 ``origin_image_url``，按正文出现顺序）。
+    #: 正文 markdown 里的 ``![](…)`` 用的是 ``~tplv-dy-long-article`` 低清缩略（HEIC），
+    #: 这个列表给的是**同一批图的原图 URL**（仍是 HEIC，由下载层 ``MediaProcessingUnit``
+    #: 转 JPEG —— ``bot.py`` 已注册 ``pillow_heif``）。长度可能与正文图片数不一致
+    #: （正文引用不全），parser 层按 URL 对得上才用，对不上就退回正文 URL。
+    article_images: list[str] = field(default_factory=list)
 
     @classmethod
     def parse(cls, json_dict: dict) -> Self:
@@ -309,11 +383,31 @@ class DouyinApiResult:
         body = markdown or abstract
         if not body:
             raise ParseError("抖音文章解析失败: article_content 里没有正文")
+
+        # fe_data.image_list: 每张图带多个 URL 变体，正文 markdown 里用的是
+        # ``~tplv-dy-long-article``（低清 HEIC 缩略）；``origin_image_url`` 是原图。
+        # 顺序与正文出现顺序一致（实测 5/5 对得上）。
+        images: list[str] = []
+        fe_raw = article.get("fe_data")
+        if isinstance(fe_raw, str) and fe_raw:
+            try:
+                fe = json.loads(fe_raw)
+            except ValueError:
+                fe = {}
+            if isinstance(fe, dict):
+                for item in fe.get("image_list") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    url = str(item.get("origin_image_url") or item.get("high_image_url") or "").strip()
+                    if url:
+                        images.append(url)
+
         return cls(
             type=DouyinMediaType.ARTICLE,
             desc=desc,
             article_markdown=body,
             article_title=title,
+            article_images=images,
         )
 
     @classmethod
