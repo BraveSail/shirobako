@@ -136,10 +136,26 @@ function pickByCodecPriority(priority) {
   return null;
 }
 
-// 自定义 fetch: 只补 cookie（SabrStream 自己管 headers/body）
+// ★ **UA 单一真源** —— 与无头刷新脚本（``scripts/yt-cookie/refresh_cookie.py`` 的 ``UA``）
+// 和取流侧（``youtube_video.py`` 的 ``_WEB_USER_AGENT`` / ``_WATCH_USER_AGENT``）
+// **必须逐字一致**。三个环节在跟同一个账号会话打交道，UA 不一致会露馅。
+//
+// **取值依据 = curl_cffi 实际发出的 UA**（项目取流主路用它）: ``http.IMPERSONATE`` 是
+// ``chrome150`` ⇒ TLS 指纹伪装成 Chrome 150（macOS），UA 必须跟它匹配。实测回显:
+// ``https://httpbin.org/user-agent``。
+//
+// ⚠️ 不设的话 bun 的 fetch 会发 ``Bun/1.4.3`` —— 完全不是浏览器，直球暴露自动化。
+// 改这里要同时改另外两处（``test_youtube_ua_consistency.py`` 钉住三处一致）。
+const DEFAULT_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
+const UA = input.userAgent || DEFAULT_UA;
+console.error(`[sabr] UA: ${UA.slice(0, 60)}...`);
+
+// 自定义 fetch: 补 cookie + UA（SabrStream 自己管 headers/body）
 const fetchWithCookie = (url, options = {}) => {
   const headers = new Headers(options.headers || {});
   if (cookie) headers.set('cookie', cookie);
+  if (!headers.has('user-agent')) headers.set('user-agent', UA);
   return fetch(url, { ...options, headers });
 };
 

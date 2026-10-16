@@ -30,6 +30,26 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
+#: ★ **UA 单一真源** —— 与取流侧（``parsehub.provider_api.youtube_video._WEB_USER_AGENT``）
+#: 和 SABR 工具（``tools/yt-sabr/sabr.mjs`` 的 ``DEFAULT_UA``）**必须逐字一致**。
+#:
+#: **取值依据 = curl_cffi 实际发出的 UA**（项目取流主路用它）：``http.IMPERSONATE``
+#: 是 ``chrome150`` ⇒ curl_cffi 把 TLS 指纹伪装成 Chrome 150（macOS），UA 必须跟它匹配，
+#: 否则两个字段互相矛盾（反爬可以交叉验证）。实测回显：
+#: ``https://httpbin.org/user-agent``。
+#:
+#: 为什么统一: 三个环节（无头刷新 / 取流 / SABR 取流）都在跟同一个账号会话打交道，
+#: 同一个 cookie 配三种 UA 会露馅 —— Playwright 默认带的 ``HeadlessChrome/x.y``
+#: 标记更是直球暴露自动化（真浏览器 UA 里没有 ``Headless``）。
+#:
+#: ⚠️ 改这里就要同时改另外两处（三处的值必须完全相同，``test_youtube_ua_consistency.py`` 钉住）:
+#:   - ``lib/src/parsehub/provider_api/youtube_video.py`` 的 ``_WEB_USER_AGENT``
+#:   - ``tools/yt-sabr/sabr.mjs`` 的 ``DEFAULT_UA``
+UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+)
+
 CK_DIR = Path("/root/yt-cookie")
 CK_JSON = CK_DIR / "cookies.json"
 CK_NS = CK_DIR / "cookies.txt"
@@ -145,7 +165,10 @@ async def refresh(*, headless: bool = True) -> dict[str, str]:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
-        ctx = await browser.new_context(locale="en-US")
+        # user_agent 必须显式指定: Playwright 默认给 ``HeadlessChrome/156``（带 Headless
+        # 标记 = 直球暴露自动化）。统一到 ``UA``（见文件顶部的真源说明）。
+        # viewport 也设成与 UA 同一族的桌面尺寸，别用 Playwright 默认的 1280x720。
+        ctx = await browser.new_context(locale="en-US", user_agent=UA, viewport={"width": 1920, "height": 1080})
         # ⚠️ 两个域都要注: 长期登录项 (SID/HSID/SSID/SAPISID) 属于 **.google.com**,
         # YouTube 自己的滚动令牌属于 **.youtube.com**。只注 .youtube.com 的话
         # 页面看起来"已登录"(靠 __Secure-3* 就够渲染头像), 但 Google 不认这套身份,

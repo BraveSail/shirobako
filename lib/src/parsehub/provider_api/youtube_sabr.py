@@ -93,6 +93,7 @@ def _build_input_payload(  # noqa: PLR0913 - 素材字段本来就多, 平铺更
     codec_priority: tuple[str, ...] = (),
     video_itag: int = 0,
     audio_itag: int = 0,
+    user_agent: str = "",
 ) -> dict:
     payload = {
         "videoId": video_id,
@@ -108,6 +109,8 @@ def _build_input_payload(  # noqa: PLR0913 - 素材字段本来就多, 平铺更
         payload["videoItag"] = video_itag
     if audio_itag:
         payload["audioItag"] = audio_itag
+    if user_agent:
+        payload["userAgent"] = user_agent
     return payload
 
 
@@ -123,6 +126,7 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     codec_priority: tuple[str, ...] = (),
     video_itag: int = 0,
     audio_itag: int = 0,
+    user_agent: str = "",
     timeout: float = DEFAULT_TIMEOUT,
     progress_callback=None,
     progress_total: int = 0,
@@ -137,6 +141,8 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     :param codec_priority: 编码优先级（如 ``("av1","vp9","avc")``）；空 = 工具默认。
     :param video_itag: 显式视频 itag（0 = 不指定）；优先级高于 ``codec_priority``。
     :param audio_itag: 显式音频 itag（0 = 不指定）。
+    :param user_agent: 请求 UA（**必须与取流/无头刷新一致** —— 见 skill 的 UA 单一真源）。
+        空 = 用工具内置默认（两者当前是同一个 Chrome/146 串）。
     :param progress_callback: 可选的 ``async (current, total)`` —— 按临时文件大小
         轮询回推进度; ``progress_total`` 是预期的总字节（0 = 不报进度）。
     """
@@ -163,6 +169,7 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
                 codec_priority=codec_priority,
                 video_itag=video_itag,
                 audio_itag=audio_itag,
+                user_agent=user_agent,
             ),
             ensure_ascii=False,
         ),

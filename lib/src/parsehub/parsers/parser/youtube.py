@@ -317,6 +317,7 @@ class YtbVideoParseResult(VideoParseResult):
                 codec_priority=sabr.codec_priority,
                 video_itag=sabr.video_itag,
                 audio_itag=sabr.audio_itag,
+                user_agent=self.info.user_agent,
                 progress_callback=progress,
                 progress_total=expected,
             )

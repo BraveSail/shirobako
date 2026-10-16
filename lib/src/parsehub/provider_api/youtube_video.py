@@ -72,10 +72,21 @@ VISIONOS: dict[str, Any] = {
 }
 
 _WEB_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
 )
-"""网页版 UA (取 ``visitorData`` 的 guide 请求用; 与 yt-dlp 的 ``web`` client 一致)。"""
+"""网页版 UA —— ★ **单一真源**，且必须与 ``http.IMPERSONATE``（curl_cffi 的 ``chrome150``
+预设）一致：curl_cffi 会把 TLS 指纹伪装成 **Chrome 150（macOS）**，UA 若写成别的
+版本/平台（曾经是 Windows Chrome/146），UA 与 TLS 指纹就对不上 —— 反爬可以直接
+拿这两个字段交叉验证。
+
+取值方法：``impersonate=chrome150`` 时 curl_cffi 实际发出的 UA，实测回显：
+``https://httpbin.org/user-agent`` → 上面这一串。
+
+⚠️ 改这里要同时改另外两处（三处必须逐字相同；有测试 ``test_youtube_ua_consistency.py`` 钉住）:
+  - ``scripts/yt-cookie/refresh_cookie.py`` 的 ``UA``（无头浏览器）
+  - ``tools/yt-sabr/sabr.mjs`` 的 ``DEFAULT_UA``（bun 的 fetch）
+"""
 
 #: 按尝试顺序排列 (首选在前)。``fetch_video`` 依次尝试, 全失败才抛错。
 #:
