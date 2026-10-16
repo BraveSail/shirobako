@@ -19,7 +19,7 @@
  */
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { buildSabrFormat, EnabledTrackTypes } from 'googlevideo/utils';
-import { createWriteStream, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createWriteStream, readFileSync, mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const args = {};
@@ -32,9 +32,22 @@ const inputPath = args.input;
 const outdir = args.outdir || '/tmp/yt-sabr-out';
 if (!inputPath) fail('missing --input');
 
+/**
+ * 输出一行 JSON 后**等 stdout flush 再退出**。
+ *
+ * ⚠️ 不能写完就 `process.exit()`：stdout 是管道（Python 子进程就是）时它是**异步**的，
+ * exit 会把还没 flush 的数据丢掉 —— 现象是「退出码 1、stderr 空、没有任何错误信息」，
+ * 排查时完全瞎（本项目实际踩过）。
+ */
+function exitAfterFlush(code) {
+  const done = () => process.exit(code);
+  if (process.stdout.writableLength === 0) done();
+  else process.stdout.write('', done);
+}
+
 function fail(msg) {
   console.log(JSON.stringify({ ok: false, error: String(msg) }));
-  process.exit(1);
+  exitAfterFlush(1);
 }
 
 let input;
@@ -100,7 +113,11 @@ try {
       const { done, value } = await r.read();
       if (done) break;
       add(value.length);
-      out.write(value);
+      // ⚠️ **必须等 write 回调** —— 只调 out.write() 不等的话, 流还在缓冲区里就
+      // 走到 process.exit(0), 磁盘慢时静默丢数据（实测同一视频落盘 27MB/44MB 不定）。
+      await new Promise((resolve, reject) => {
+        out.write(value, (err) => (err ? reject(err) : resolve()));
+      });
     }
   };
 
@@ -108,6 +125,19 @@ try {
     pump(videoStream, vOut, (n) => { vb += n; }),
     pump(audioStream, aOut, (n) => { ab += n; }),
   ]);
+
+  // 显式关流并等 flush（end 回调 = 数据真正落盘）
+  await Promise.all([
+    new Promise((resolve) => vOut.end(resolve)),
+    new Promise((resolve) => aOut.end(resolve)),
+  ]);
+
+  // 落盘字节数必须与流内累计一致 —— 不一致说明写丢了（宁可失败也不要截断的产物）
+  const vWritten = statSync(videoPath).size;
+  const aWritten = statSync(audioPath).size;
+  if (vWritten !== vb || aWritten !== ab) {
+    fail(`落盘字节与流累计不一致 (video ${vWritten}/${vb}, audio ${aWritten}/${ab}) —— 写入丢数据`);
+  }
 
   if (vb === 0) fail(streamError || 'no video bytes downloaded');
   if (ab === 0) fail(streamError || 'no audio bytes downloaded');
@@ -121,7 +151,7 @@ try {
     videoBytes: vb,
     audioBytes: ab,
   }));
-  process.exit(0);
+  exitAfterFlush(0);
 } catch (e) {
   fail(e?.message || e);
 }
