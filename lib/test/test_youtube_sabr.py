@@ -80,9 +80,15 @@ def test_extract_returns_none_without_abr_url() -> None:
     assert extract_sabr_source(_player_response(with_abras=False)) is None
 
 
-def test_extract_returns_none_when_adaptive_has_url() -> None:
-    """adaptiveFormats 里有明文 url ⇒ 用得上直链, 不该走 SABR。"""
-    assert extract_sabr_source(_player_response(adaptive_has_url=True)) is None
+def test_extract_returns_source_even_when_adaptive_has_url() -> None:
+    """**有明文 url 也走 SABR**（2026-10-17 用户定案: 全部 SABR, 明文流不再用）。
+
+    SABR 画质不低于明文（明文自适应档封顶 720p, SABR 有 1080p）, 且没有 n 解算的坑;
+    只要响应带 ``serverAbrStreamingUrl`` 就用它。
+    """
+    source = extract_sabr_source(_player_response(adaptive_has_url=True))
+    assert source is not None
+    assert source.abr_url.startswith("https://")
 
 
 def test_extract_returns_source_for_sabr_only_video() -> None:

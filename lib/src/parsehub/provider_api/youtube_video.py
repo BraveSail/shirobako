@@ -408,7 +408,13 @@ def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> Youtub
     """把 innertube player 响应转成 ``YoutubeVideo``（纯函数, 便于离线测试）。
 
     :raises YoutubeVideoError: playabilityStatus 非 OK, 或缺 ``videoDetails`` /
-        没有任何带明文 url 的流 —— **不静默返回空结果**。
+        **既没有带明文 url 的流、也没有 SABR 素材** —— 不静默返回空结果。
+
+    ⚠️ **无明文流但有 ``serverAbrStreamingUrl`` 是合法形态**（纯 SABR 视频,
+    2026-10-17 ``_QCcVv1sBYM`` 实测: ``formats`` 1 条 + ``adaptiveFormats`` 26 条
+    全部没有明文 url, 高清完全由 SABR 提供）。以前这里无条件要求明文流, 这类视频
+    直接判失败并降级到 POST player（那条路反而 ``LOGIN_REQUIRED``）, 症状是"视频解析不了"。
+    流列表允许为空 —— 由 ``select_streams`` 的 SABR 分支接手（它读 ``video.sabr``）。
     """
     if error := _playability_error(data):
         raise YoutubeVideoError(error)
@@ -420,7 +426,7 @@ def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> Youtub
     streaming = data.get("streamingData") or {}
     raw_streams = list(streaming.get("formats") or []) + list(streaming.get("adaptiveFormats") or [])
     streams = [stream for raw in raw_streams if (stream := _stream_from_raw(raw)) is not None]
-    if not streams:
+    if not streams and extract_sabr_source(data) is None:
         raise YoutubeVideoError("player 响应里没有带明文 url 的流")
 
     thumbnails = (details.get("thumbnail") or {}).get("thumbnails") or []
@@ -445,13 +451,17 @@ def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> Youtub
 def extract_sabr_source(data: dict[str, Any]) -> SabrSource | None:
     """从 player 响应里提取 SABR 素材；没有 ``serverAbrStreamingUrl`` 返回 ``None``（纯函数）。
 
-    判据（受控对照实测）: **高清 ``adaptiveFormats`` 里有没有明文 ``url``** ——
+    判据（2026-10-17 用户定案）: **只要响应带 ``serverAbrStreamingUrl`` 就用 SABR** ——
+    不再看 ``adaptiveFormats`` 有没有明文 url。理由：
 
-    - 有明文 url（旧视频 / 部分新视频）⇒ 不需要 SABR, 返回 ``None``；
-    - 无明文 url、只有 ``serverAbrStreamingUrl``（``Nbc7I6y97FI`` 这类新视频）⇒
-      返回素材, 由 bun 工具拉高清。
+    - SABR 拿到的画质**不低于**明文流（明文自适应档封顶 720p；SABR 有 1080p av1/vp9），
+      而明文直链的 ``n`` 是需要解算的坑（解不出就 403）—— 统一走 SABR 链路只有一条。
+    - 有些新视频**完全没有明文流**（``_QCcVv1sBYM`` 实测: 27 条全部只有
+      ``signatureCipher``/裸格式），旧判据（要求"无明文 url 才用 SABR"）让它们
+      既拿不到 SABR、又走不了明文，直接解析失败。
 
-    只关心这两个来源里的 ``adaptiveFormats``（``formats`` 是合一档, SABR 不用它）。
+    没有 ``serverAbrStreamingUrl`` 的响应（老视频 / 部分冷门视频）返回 ``None`` ——
+    调用方自然退回明文流，这是**格式上没有 SABR 可选**时的唯一出路，不是主动降级。
     """
     streaming = data.get("streamingData")
     if not isinstance(streaming, dict):
@@ -462,10 +472,6 @@ def extract_sabr_source(data: dict[str, Any]) -> SabrSource | None:
 
     adaptive = streaming.get("adaptiveFormats") or []
     if not isinstance(adaptive, list) or not adaptive:
-        return None
-
-    # 有明文 url 的高清流 ⇒ 用不上 SABR（只要有一条带 url 的 adaptive 就算）
-    if any(isinstance(item, dict) and item.get("url") for item in adaptive):
         return None
 
     ustreamer = (
