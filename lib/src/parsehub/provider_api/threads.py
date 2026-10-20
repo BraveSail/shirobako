@@ -269,6 +269,9 @@ class ThreadsPost:
     snippet: str = ""
     #: 帖子附带的**投票**（caption 下方的贴纸）—— 渲染形态（表格）由 parser 决定。
     poll: ThreadsPoll | None = None
+    #: 帖子所属的**话题**（``text_post_app_info.tag_header.display_name``）——
+    #: 页面上显示在帖子顶部。渲染形态由 parser 决定（现在是归属行：标题与作者之间）。
+    topic: str = ""
 
     @classmethod
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
@@ -300,7 +303,26 @@ class ThreadsPost:
             like_count=to_int(post.get("like_count")),
             snippet=snippet,
             poll=cls._parse_poll(post),
+            topic=cls._parse_topic(post),
         )
+
+    @staticmethod
+    def _parse_topic(post: dict[str, Any]) -> str:
+        """帖子所属的**话题** —— ``text_post_app_info.tag_header.display_name``。
+
+        实测结构（2026-10-20）::
+
+            "tag_header": {"display_name": "申請審判", "id": "18626374978065524",
+                           "is_community": false, "tag_cluster_name": "申請審判",
+                           "community_emoji": null}
+
+        没有话题时该字段是 ``null`` ⇒ 返回空串。取 ``display_name``（页面显示的那份），
+        不取 ``tag_cluster_name``（实测两者相同，但前者才是给用户看的）。
+        """
+        header = (post.get("text_post_app_info") or {}).get("tag_header")
+        if not isinstance(header, dict):
+            return ""
+        return str(header.get("display_name") or "").strip()
 
     @staticmethod
     def _parse_poll(post: dict[str, Any]) -> ThreadsPoll | None:

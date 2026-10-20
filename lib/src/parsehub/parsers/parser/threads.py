@@ -1,3 +1,6 @@
+import html
+from urllib.parse import quote
+
 from ...provider_api.threads import (
     ThreadsAPI,
     ThreadsAPIError,
@@ -17,6 +20,22 @@ from ...types import (
 )
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
+
+#: 话题页地址模板 —— 实测 ``/tag/<URL 编码的话题名>`` 返回 200（``/tagged/…`` 是 404）。
+TOPIC_PAGE_URL = "https://www.threads.com/tag/{name}"
+
+
+def _topic_origin_line(topic: str) -> str:
+    """帖子话题 → **归属行**（标题与作者之间，与 bgm 的归属行同一位置）。
+
+    形态 ``**<a href="话题页">話題名</a>**`` —— 与 bgm 归属行里的名称部分同形
+    （加粗 + 链接）。话题名要 ``html.escape``（平台文本可能带尖括号），
+    URL 段要 ``quote``（中文话题名必须编码）。
+    """
+    if not topic:
+        return ""
+    url = TOPIC_PAGE_URL.format(name=quote(topic))
+    return f'**<a href="{html.escape(url, quote=True)}">{html.escape(topic)}</a>**'
 
 
 class ThreadsParser(BaseParser):
@@ -76,6 +95,8 @@ class ThreadsParser(BaseParser):
             # 引用块的角色（被回复帖在最前）—— 渲染层据此归位媒体, 不再靠位置
             quote_roles=roles,
             polls=polls,
+            # 帖子话题 → **归属行**（渲染层放在标题与作者之间，与 bgm 同一位置）
+            origin_line=_topic_origin_line(post.topic),
         )
 
     @staticmethod
