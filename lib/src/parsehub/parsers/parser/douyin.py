@@ -21,7 +21,14 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import get_author_name, image_ext_from_url, profile_url, to_datetime, to_int
+from ...utils.helpers import (
+    get_author_name,
+    image_ext_from_url,
+    media_placeholder,
+    profile_url,
+    to_datetime,
+    to_int,
+)
 from ..base.base import BaseParser
 
 
@@ -182,16 +189,8 @@ class DouyinArticleParseResult(DouyinParseResult, RichTextParseResult):
 #: ``[^)\s]+`` 以防将来出现带 title 的写法）
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
 
-#: 原位媒体标记：图片被抽出后，正文**原位置**留 ``{{media:N}}``（N = ``media`` 索引）。
-#: 渲染层把它换成第 N 个媒体的 ``![](tg://photo?id=mN)`` 占位符 —— 图就出现在原文位置，
-#: 而不是堆到末尾（2026-10-16 用户报「图片怎么是尾部一堆？不是在文章里？」）。
-#: 与 ``{{poll:N}}`` 同一套模式（lib 出数据、渲染层出形态）。
-#:
-#: ⚠️ 用 f-string **不要用 ``str.format``** —— 后者会把 ``{{`` 当转义、产出单层
-#: ``{media:0}``（实测踩过）。
-def media_placeholder(index: int) -> str:
-    """生成原位媒体标记，形如 ``{{media:3}}``。"""
-    return f"{{{{media:{index}}}}}"
+#: 原位媒体标记 ``{{media:N}}`` —— 见 ``parsehub.utils.helpers.media_placeholder``
+#: （2026-10-19 从本模块提升到公共层：bgm.tv 也要用同一套协议）。
 
 #: douyinpic 资源标识: ``/tos-cn-i-<bucket>/<hash>``。URL 的 host、签名与
 #: ``~tplv-<变体>`` 后缀可以不同，这一段是**同一张图**的稳定标识。

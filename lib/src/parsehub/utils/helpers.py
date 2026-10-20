@@ -23,6 +23,23 @@ IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "bm
 ANIMATED_EXTS = IMAGE_EXTS | {"mp4", "webm", "mov", "m4v"}
 
 
+def media_placeholder(index: int) -> str:
+    """原位媒体标记 ``{{media:N}}``（N = ``media`` 列表下标）。
+
+    lib 把正文里的图片抽成 ``media`` 时，**原位置留这个标记**；渲染层
+    （bot 侧 ``helpers.replace_media_placeholders``）把它换成第 N 个媒体的
+    ``![](tg://photo?id=mN)`` 占位符 —— 图片于是渲染在**文章原位**，而不是
+    堆到消息末尾（用户报「图片怎么是尾部一堆？不是在文章里？」后定的协议）。
+
+    与 ``{{poll:N}}`` 同一套模式：lib 出数据（标记），渲染层出形态。
+    媒体下标对不上（列表被收窄/重排）时渲染层会**删掉标记**，标记绝不字面泄漏。
+
+    ⚠️ 必须用 **f-string**，不要 ``str.format`` —— 后者把 ``{{`` 当转义，
+    产出**单层** ``{media:0}``，渲染层匹配不到（实测踩过）。
+    """
+    return f"{{{{media:{index}}}}}"
+
+
 def image_ext_from_url(url: str, default: str = "jpg", exts: frozenset[str] = IMAGE_EXTS) -> str:
     """按 URL 取媒体真实扩展名，取不到用 ``default``。
 

@@ -265,6 +265,28 @@ def test_a_sub_reply_keeps_its_parents_pictures_as_context():
     assert topic.reply_media_count == 1, "父楼那张属于引用块"
 
 
+def test_context_floor_images_leave_no_marker_for_the_quote_block():
+    """上下文层的图**不留原位标记** —— 它走 `reply_media_count` 那条通道。
+
+    留着标记会有两个坏处：图出现**两次**（标记替换一次 + reply 段占位符一次），
+    而且标记会被 `format_quote_block` 的 ``<i>`` 包住、图片语法落在斜体里。
+    """
+    img = lambda name: f'<img class="code" src="//lain.bgm.tv/pic/photo/l/{name}.jpg"/>'  # noqa: E731
+    nested = _floor_html("21", "#2-1", "2026-10-2 12:00", img("sub"), sub=True)
+    parent = _floor_html("12", "#2", "2026-10-2 10:00", img("parent"), nested=nested)
+    topic = BangumiTopic._from_html(_ep_html(parent), "1", floor_id="21", kind="ep")
+
+    md = topic.markdown_content
+    # 本层那张（#2-1）留在原位，下标就是 media 列表里的位置
+    assert "{{media:0}}" in md, md
+    # 父楼那张：引用块里**没有**标记（图由 reply 媒体通道附进块内）
+    quote = "\n".join(_quoted(topic))
+    assert "{{media:" not in quote, f"引用块里不该留标记: {quote!r}"
+    assert topic.reply_media_count == 1, "父楼那张仍走引用块媒体通道"
+    # 纯文本兜底不留协议标记
+    assert "{{media:" not in topic.text_content
+
+
 # ── 统计 ───────────────────────────────────────────────────────────────
 
 def test_the_reply_count_comes_from_the_site():

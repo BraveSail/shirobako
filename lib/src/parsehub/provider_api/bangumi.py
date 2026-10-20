@@ -32,6 +32,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -42,7 +43,14 @@ from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
 from ..utils import http
-from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_datetime, to_int
+from ..utils.helpers import (
+    format_author_link,
+    format_quote_block,
+    media_placeholder,
+    profile_url,
+    to_datetime,
+    to_int,
+)
 
 BLOG_API = "https://bgm.tv/blog/{blog_id}"
 GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
@@ -175,10 +183,14 @@ class BangumiBlog:
         tags = [t.get_text(strip=True) for t in soup.select(".header .tags .badge_tag") if t.get_text(strip=True)]
 
         images = _extract_images(entry)
+        # 图片 URL → 下标: ``_simplify`` 把正文里的图换成 ``{{media:N}}`` 原位标记，
+        # 渲染层再换成媒体引用 —— 图出现在**文章原位**，而不是堆到消息末尾。
+        image_index = {img.url: index for index, img in enumerate(images)}
         # 纯文本在**清理之后**取（清理会补 alt 文本、去掉图与样式外壳）——
         # 反过来取会把 markdown 标记或图片 alt 混进去
-        _simplify(entry)
-        text_content = entry.get_text("\n", strip=True)
+        _simplify(entry, image_index)
+        # 纯文本兜底里不能留原位标记（那是 lib ↔ 渲染层的协议，不是给用户看的文字）
+        text_content = _MEDIA_PLACEHOLDER_RE.sub("", entry.get_text("\n", strip=True))
         markdown_content = _to_markdown(str(entry))
 
         return cls(
@@ -235,6 +247,11 @@ class BangumiBlog:
 
 # ------------------------------------------------------------------ 正文
 
+#: 原位媒体标记 ``{{media:N}}``（lib ↔ 渲染层的协议）—— 纯文本兜底里要删掉，
+#: 别把协议标记当正文交给用户。
+_MEDIA_PLACEHOLDER_RE = re.compile(r"\{\{media:(\d+)\}\}")
+
+
 def _extract_images(entry: Any) -> list[BangumiImage]:
     """正文里的**上传图**（表情不算）。判据看 **src 路径**，不能只看 class。
 
@@ -258,7 +275,7 @@ def _extract_images(entry: Any) -> list[BangumiImage]:
         images.append(BangumiImage(url=url))
     return images
 
-def _simplify(entry: Any) -> None:
+def _simplify(entry: Any, image_index: Mapping[str, int] | None = None) -> None:
     """把 bgm 特有的写法归一成标准标签，再交给 markdownify。
 
     分派依据是 **style**（`[u]/[s]/[mask]` 都是 span，只有 style 不同）：
@@ -268,6 +285,11 @@ def _simplify(entry: Any) -> None:
     - ``background-color`` → **马赛克** → 转成 Telegram 原生剧透 ``||…||``
     - ``font-weight:bold`` → ``<strong>``（编辑器出的写法，指南里没有）
     - ``color`` / ``font-size`` → 富文本没有颜色与字号 ⇒ **只保留文字**
+
+    :param image_index: 上传图 URL → 它在 ``media`` 列表里的下标。给了就在
+        **原位置**留 ``{{media:N}}``（渲染层换成媒体引用 ⇒ 图出现在文章里，
+        而不是堆到末尾 —— 用户报「没有图片原位」）。``None``、或某张图的 URL
+        不在表里时退回 ``decompose()``（图仍会以末尾附加媒体的形式出现）。
     """
     # 表情 → 它的 alt 文本（用户定案：转成文本）
     for img in entry.find_all("img"):
@@ -276,7 +298,11 @@ def _simplify(entry: Any) -> None:
         if "/img/smiles/" in src or "smile" in cls:
             img.replace_with(str(img.get("alt") or "").strip())
         else:
-            img.decompose()
+            index = image_index.get(_absolute_url(src)) if image_index else None
+            if index is None:
+                img.decompose()
+            else:
+                img.replace_with(media_placeholder(index))
 
     for span in entry.find_all("span"):
         style = str(span.get("style") or "").lower().replace(" ", "")
@@ -664,6 +690,14 @@ class BangumiTopic:
         images = [by_url[u] for u in dict.fromkeys([*current_urls, *context_urls]) if u in by_url]
         reply_media = len([u for u in dict.fromkeys(context_urls) if u in by_url])
 
+        # 上下文层的图**不留原位标记** —— 它走 `reply_media_count` 那条媒体通道
+        # （渲染层把占位符附进引用块内，`attach_quote_media` 的既有形态）。
+        # 两个理由：① 标记会被 `format_quote_block` 的 `<i>` 包住，图片语法落在
+        # 斜体里；② 留着标记的话图会出现**两次**（标记替换一次 + reply 段占位符
+        # 一次，后者不受原位消费的摘除影响）。
+        if context_quote:
+            context_quote = _MEDIA_PLACEHOLDER_RE.sub("", context_quote)
+
         # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间。
         # 章节页给**章节名**（带 ``/ep/<id>`` 链接）—— 用户看的是"哪部番的哪一集"，
         # 条目名已经在标题里了。
@@ -911,7 +945,9 @@ class BangumiTopic:
             # 图片要在 `_simplify` 之前取（它会 `decompose()` 掉图）
             image_urls = [i.url for i in _extract_images(body)]
             plain = body.get_text("\n", strip=True)
-            _simplify(body)
+            # 原位标记先用**本层内**下标（``_build`` 知道最终 media 顺序后，
+            # 会给上下文层的标记整体加偏移）
+            _simplify(body, {url: index for index, url in enumerate(image_urls)})
             markdown = _to_markdown(str(body))
 
         return BangumiFloor(
@@ -965,7 +1001,10 @@ class BangumiTopic:
     def _to_text(cls, context_name: str, context_quote: str, plain: str) -> str:
         """纯文本兜底（纯图话题那条路要用）。"""
         lines = [context_name] if context_name else []
-        lines.extend(re.sub(r"^>\s?", "", ln).strip() for ln in context_quote.splitlines())
+        # 引用块里的原位媒体标记是给渲染层的协议 —— 纯文本里要删掉
+        lines.extend(
+            _MEDIA_PLACEHOLDER_RE.sub("", re.sub(r"^>\s?", "", ln)).strip() for ln in context_quote.splitlines()
+        )
         if plain:
             lines.append(plain)
         return "\n".join(x for x in lines if x)

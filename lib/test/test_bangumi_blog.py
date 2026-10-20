@@ -111,12 +111,51 @@ def test_the_body_carries_the_text():
 
 # ---------------------------------------------------------------- 图片与表情
 
-def test_uploaded_images_become_media_and_leave_the_body():
-    """**核心**: 上传图抽出去当媒体，正文里**不留** img"""
+def test_uploaded_images_become_media_and_leave_a_marker_in_place():
+    """**核心**: 上传图抽出去当媒体，正文**原位置**留 ``{{media:N}}`` 标记。
+
+    渲染层把标记换成媒体引用 ⇒ 图出现在**文章原位**。只抽不留标记的话，
+    图会全堆到消息末尾（用户报「没有图片原位」）。
+    """
     blog = _blog("bangumi_blog_381120.html", "381120")
     assert len(blog.images) == 1
     assert blog.images[0].url == "https://lain.bgm.tv/pic/photo/l/8c/7f/950407_3Dg38.jpg"
     assert "lain.bgm.tv/pic/photo" not in blog.markdown_content
+    assert "{{media:0}}" in blog.markdown_content
+    # 纯文本兜底里不能留协议标记（那是 lib ↔ 渲染层的东西）
+    assert "{{media:" not in blog.text_content
+
+
+def test_an_image_marker_lands_at_the_original_position():
+    """标记夹在**原文那两段之间** —— 不是堆到正文末尾"""
+    blog = _parse(
+        '段一<br/>\n<br/>\r\n<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/><br/>\n<br/>\r\n段二'
+    )
+    before, after = blog.markdown_content.split("{{media:0}}")
+    assert "段一" in before, blog.markdown_content
+    assert "段二" in after, blog.markdown_content
+
+
+def test_two_images_get_increasing_indices_in_document_order():
+    """多张图的下标按文档顺序递增（与 ``images`` 列表一一对应）"""
+    blog = _parse(
+        '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>甲'
+        '<img class="code" src="//lain.bgm.tv/pic/photo/l/b.jpg"/>乙'
+    )
+    assert [i.url.split("/")[-1] for i in blog.images] == ["a.jpg", "b.jpg"]
+    assert blog.markdown_content.index("{{media:0}}") < blog.markdown_content.index("{{media:1}}")
+
+
+def test_simplify_without_an_index_still_drops_the_image():
+    """没给映射（老调用点）时退回删除 —— 绝不产出对不上下标的标记"""
+    from bs4 import BeautifulSoup
+
+    from parsehub.provider_api.bangumi import _simplify
+
+    soup = BeautifulSoup('<div><img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/></div>', "lxml")
+    node = soup.find("div")
+    _simplify(node)
+    assert "{{media:" not in str(node)
 
 
 def test_a_protocol_relative_image_gets_https():
