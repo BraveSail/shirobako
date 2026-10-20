@@ -225,6 +225,8 @@ class CacheParseResult(BaseModel):
     reply_media_count: int = 0
     #: 内容在源站的位置标记（如 linux.do 的楼层号 ``#16``）—— 渲染层接在作者行后
     position_label: str = ""
+    #: 内容所属**话题**的渲染片段（threads 的话题，已带链接）—— 渲染层接在作者行末尾
+    topic_label: str = ""
     #: 正文里每个**引用块的角色**（按出现顺序，``reply`` / ``quoted``）—— 渲染层靠它
     #: 把媒体归到正确的卡片里。
     #:

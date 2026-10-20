@@ -25,17 +25,18 @@ from ..base.base import BaseParser
 TOPIC_PAGE_URL = "https://www.threads.com/tag/{name}"
 
 
-def _topic_origin_line(topic: str) -> str:
-    """帖子话题 → **归属行**（标题与作者之间，与 bgm 的归属行同一位置）。
+def _topic_label(topic: str) -> str:
+    """帖子话题 → 接在**作者行末尾**的片段（``… @某人 > 話題``）。
 
-    形态 ``**<a href="话题页">話題名</a>**`` —— 与 bgm 归属行里的名称部分同形
-    （加粗 + 链接）。话题名要 ``html.escape``（平台文本可能带尖括号），
-    URL 段要 ``quote``（中文话题名必须编码）。
+    形态跟着 threads 自己的显示走（用户要求）：话题是**链接**，不加粗 ——
+    加粗留给"谁写的"（作者名），话题是附加信息，与 ``@handle`` 同级。
+    话题名要 ``html.escape``（平台文本可能带尖括号），URL 段要 ``quote``
+    （中文话题名必须编码）。
     """
     if not topic:
         return ""
     url = TOPIC_PAGE_URL.format(name=quote(topic))
-    return f'**<a href="{html.escape(url, quote=True)}">{html.escape(topic)}</a>**'
+    return f'<a href="{html.escape(url, quote=True)}">{html.escape(topic)}</a>'
 
 
 class ThreadsParser(BaseParser):
@@ -95,8 +96,8 @@ class ThreadsParser(BaseParser):
             # 引用块的角色（被回复帖在最前）—— 渲染层据此归位媒体, 不再靠位置
             quote_roles=roles,
             polls=polls,
-            # 帖子话题 → **归属行**（渲染层放在标题与作者之间，与 bgm 同一位置）
-            origin_line=_topic_origin_line(post.topic),
+            # 帖子话题 → **作者行末尾**的片段（``… @某人 > 話題``，跟着 threads 自己的显示走）
+            topic_label=_topic_label(post.topic),
         )
 
     @staticmethod

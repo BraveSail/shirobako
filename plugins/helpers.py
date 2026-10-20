@@ -901,6 +901,7 @@ def build_rich_markdown_by_str(
     platform: Platform | None = None,
     markdown_content: str = "",
     position_label: str = "",
+    topic_label: str = "",
     hashtags: Sequence[str] | None = None,
     quote_roles: Sequence[str] = (),
     origin_line: str = "",
@@ -936,6 +937,7 @@ def build_rich_markdown_by_str(
             platform,
             markdown_content,
             position_label,
+            topic_label,
             hashtags,
             quote_roles,
             origin_line,
@@ -972,6 +974,7 @@ class _RichFields:
         platform=None,
         markdown_content="",
         position_label="",
+        topic_label="",
         hashtags=None,
         quote_roles=(),
         origin_line="",
@@ -998,6 +1001,9 @@ class _RichFields:
         # 位置标记（楼层号）与标签实体 —— 同属"渲染要用的解析字段"，
         # 写死空值就是缓存命中时那两处格式消失。
         self.position_label = position_label or ""
+        # 话题片段（threads 的话题）—— 同属"渲染要用的解析字段"，写死空值
+        # 就是缓存命中时话题消失。
+        self.topic_label = topic_label or ""
         self.hashtags = list(hashtags or [])
         # 引用块角色（按出现顺序）—— 同属"渲染要用的解析字段"：漏了它缓存命中时
         # 渲染层只能退回按位置猜引用块的角色。
@@ -1591,6 +1597,12 @@ def format_author_line(parse_result: AnyParseResult) -> str:
     # 位置是附带信息。没有这个概念的平台为空串 → 输出与改动前逐字一致。
     position = str(getattr(parse_result, "position_label", "") or "")
     suffix = f" · {position}" if position else ""
+    # **话题**（threads）接在最后，用 `` > `` 分隔 —— 跟着平台自己的显示走
+    # （用户给的形态：``雪楓Yuki @snowmaple_official > 申請審判``）。话题片段已带链接，
+    # 不进粗体（粗体标的是"谁写的"）。没有话题的平台为空串 → 输出逐字不变。
+    topic = str(getattr(parse_result, "topic_label", "") or "")
+    if topic:
+        suffix = f"{suffix} > {topic}"
     if "</a>" in label:
         head, _, tail = label.partition("</a>")
         return f"**{head}</a>**{tail}{suffix}"

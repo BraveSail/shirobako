@@ -87,6 +87,7 @@ class ParseResult(ABC):  # noqa: B024
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
@@ -114,6 +115,10 @@ class ParseResult(ABC):  # noqa: B024
         :param position_label: 这段内容在**源站的位置标记**, 渲染层接在作者行后
             (如 linux.do 的楼层号 ``#4``)。平台没有位置概念的留空即可 ——
             通用层不认识楼层语义, ``#`` 由平台侧给。
+        :param topic_label: 这段内容**所属话题**的渲染片段 (已带链接的 HTML, 如
+            ``<a href="…">申請審判</a>``)。渲染层接在**作者行末尾** —— threads 的
+            话题就是这种形态 (跟着平台自己的显示走)。没有话题概念的平台留空,
+            输出与改动前逐字一致。
         :param reply_count: **回复数**（话题/帖子的回复条数）。平台拿不到时留空 ——
             渲染层"拿不到就不显示"，与浏览量/点赞同一条原则。
         :param origin_line: **归属行** —— "这条内容属于哪里" (如 bgm 的
@@ -150,6 +155,7 @@ class ParseResult(ABC):  # noqa: B024
         self.quoted_media_count = max(0, to_int(quoted_media_count) or 0)
         self.reply_media_count = max(0, to_int(reply_media_count) or 0)
         self.position_label = (position_label or "").strip()
+        self.topic_label = (topic_label or "").strip()
         """内容在源站的位置标记 (如 linux.do 的楼层号 ``#4``); 无此概念的平台为空串"""
         self.quote_roles: list[str] = [str(r).strip() for r in (quote_roles or []) if str(r).strip()]
         """正文里每个引用块的角色 (按出现顺序); 空列表 = 没声明, 渲染层退回位置推断"""
@@ -451,6 +457,7 @@ class VideoParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
@@ -473,6 +480,7 @@ class VideoParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            topic_label=topic_label,
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
@@ -502,6 +510,7 @@ class ImageParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
@@ -524,6 +533,7 @@ class ImageParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            topic_label=topic_label,
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
@@ -553,6 +563,7 @@ class MultimediaParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
@@ -574,6 +585,7 @@ class MultimediaParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            topic_label=topic_label,
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
@@ -609,6 +621,7 @@ class RichTextParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
@@ -636,6 +649,7 @@ class RichTextParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            topic_label=topic_label,
             quote_roles=quote_roles,
             origin_line=origin_line,
             reply_count=reply_count,
