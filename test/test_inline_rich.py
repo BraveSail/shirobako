@@ -338,3 +338,41 @@ def _config():
     from repo.settings import SettingsConfig
 
     return SettingsConfig()
+
+
+# ---------------------------------------------------------------- 解析失败的结果项
+
+def test_build_error_result_puts_the_reason_in_the_sent_message():
+    """结果列表里显示原因，**点选后发出去的那条也要带** ——
+
+    用户报：「发出去只有个解析失败，没有详细信息」——
+    以前 ``input_message_content`` 只放了标题，description 的 detail 没带过去。
+    """
+    from i18n import t_
+    from plugins.parse.inline import build_error_result
+
+    reason = "解析错误: 无法解析 YouTube 视频: LIVE_STREAM_OFFLINE: Premieres in 23 hours"
+    result = build_error_result(t_["zh-hans"], reason)
+
+    assert result.title == "解析失败"
+    assert "Premieres in 23 hours" in result.description
+    assert "Premieres in 23 hours" in result.input_message_content.message_text
+
+
+def test_build_error_result_without_a_reason_still_explains_itself():
+    from i18n import t_
+    from plugins.parse.inline import build_error_result
+
+    result = build_error_result(t_["zh-hans"], "")
+    assert "解析失败" in result.input_message_content.message_text
+    assert "稍后再试" in result.input_message_content.message_text
+
+
+def test_the_error_result_never_leaks_more_than_100_chars_of_the_exception():
+    """异常里常混着长技术细节 —— 截断到 100 字符，别把整段堆栈甩给用户"""
+    from i18n import t_
+    from plugins.parse.inline import build_error_result
+
+    result = build_error_result(t_["zh-hans"], "x" * 500)
+    assert len(result.description) <= 101, len(result.description)
+    assert result.description.endswith("…")

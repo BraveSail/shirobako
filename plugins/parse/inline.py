@@ -235,12 +235,17 @@ def build_error_result(_t: PreLocaleSelector, error: str = "") -> InlineQueryRes
     detail = " ".join(str(error or "").split())
     if len(detail) > 100:
         detail = detail[:100].rstrip() + "…"
+    title = _t("解析失败")
+    fallback = _t("稍后再试")
+    # 发出去的那条消息**也要带原因** —— 只写"解析失败"等于没给信息
+    # （用户报：「发出去只有个解析失败，没有详细信息」）。
+    body = f"{title}\n\n{detail}" if detail else f"{title}\n\n{fallback}"
     return InlineQueryResultArticle(
         id="parse-error",
-        title=_t("解析失败"),
+        title=title,
         description=detail or _t("稍后再试"),
         input_message_content=InputTextMessageContent(
-            _t("解析失败"), link_preview_options=LinkPreviewOptions(is_disabled=True)
+            body, link_preview_options=LinkPreviewOptions(is_disabled=True)
         ),
     )
 
