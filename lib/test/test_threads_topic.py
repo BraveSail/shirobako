@@ -57,11 +57,17 @@ def test_no_tag_header_means_no_topic():
 # ---------------------------------------------------------------- 片段形态
 
 def test_the_label_is_a_link_to_the_topic_page():
-    """话题是**链接**、不加粗（加粗留给作者名）—— 加粗会让人以为它是署名的一部分"""
+    """话题是**链接**、不加粗（加粗留给作者名）—— 加粗会让人以为它是署名的一部分。
+
+    话题页就是搜索页（用户给的链接）：``/search?q=<话题名>&serp_type=tags``。
+    话题名要 URL 编码；``&`` 在 HTML 属性里要写成 ``&amp;``。
+    """
     label = _topic_label("申請審判")
-    assert label == '<a href="https://www.threads.com/tag/%E7%94%B3%E8%AB%8B%E5%AF%A9%E5%88%A4">申請審判</a>'
+    assert label == (
+        '<a href="https://www.threads.com/search?q=%E7%94%B3%E8%AB%8B%E5%AF%A9%E5%88%A4&amp;serp_type=tags">申請審判</a>'
+    )
     assert not label.startswith("**")
-    assert TOPIC_PAGE_URL.format(name="x") == "https://www.threads.com/tag/x"
+    assert TOPIC_PAGE_URL.format(name="x") == "https://www.threads.com/search?q=x&serp_type=tags"
 
 
 def test_an_empty_topic_yields_no_label():

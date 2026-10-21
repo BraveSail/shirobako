@@ -21,8 +21,10 @@ from ...types import (
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
-#: 话题页地址模板 —— 实测 ``/tag/<URL 编码的话题名>`` 返回 200（``/tagged/…`` 是 404）。
-TOPIC_PAGE_URL = "https://www.threads.com/tag/{name}"
+#: 话题页地址模板 —— 实测**就是这个搜索页**（用户给的链接）：
+#: ``/search?q=<话题名>&serp_type=tags``。``/tag/<名>`` 虽然也返回 200，
+#: 但不是话题的规范入口（``/tagged/<名>`` 是 404）。
+TOPIC_PAGE_URL = "https://www.threads.com/search?q={name}&serp_type=tags"
 
 
 def _topic_label(topic: str) -> str:
