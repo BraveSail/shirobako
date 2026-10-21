@@ -193,7 +193,8 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     try:
         await _call_inline_parse(cli, inline_query)
     except Exception as e:
-        # 解析异常同样不能让客户端转圈: 给一条可读的结果
+        # 解析异常不能让客户端转圈，也不能**静默**（返回空列表 = 客户端显示"没有结果"，
+        # 用户看不出是坏了还是链接不支持）—— 给一条可点的错误结果项。
         logger.opt(exception=e).warning(f"内联解析失败: {e}")
         try:
             async with get_session() as session:
@@ -202,7 +203,12 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
                 )
         except Exception:  # noqa: BLE001 - 兜底路径不再抛错
             lang = ""
-        await answer_inline(inline_query, [], lang=lang)
+        await answer_inline(
+            inline_query,
+            [build_error_result(t_[lang], str(e))],
+            lang=lang,
+            cache_time=0,
+        )
 
 
 def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResult:
@@ -212,6 +218,29 @@ def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResult:
         description=_t("仅限白名单用户使用"),
         input_message_content=InputTextMessageContent(
             _t("无权限"), link_preview_options=LinkPreviewOptions(is_disabled=True)
+        ),
+    )
+
+
+def build_error_result(_t: PreLocaleSelector, error: str = "") -> InlineQueryResult:
+    """解析失败时返回的结果项 —— **不要** answer 空列表。
+
+    以前失败走 ``answer_inline(inline_query, [])``: 客户端只显示"没有结果",
+    用户完全看不出是坏了还是链接不支持（用户报：「inline 像这种出错有问题的
+    弹个 result，不要像现在静默」）。现在给一条可点的结果项，description 带
+    平台给的原始原因（如 ``Premieres in 23 hours``），选中后发一条同样的说明。
+
+    :param error: 异常文本，截断到 100 字符（``ParseError`` 里常混着技术细节）
+    """
+    detail = " ".join(str(error or "").split())
+    if len(detail) > 100:
+        detail = detail[:100].rstrip() + "…"
+    return InlineQueryResultArticle(
+        id="parse-error",
+        title=_t("解析失败"),
+        description=detail or _t("稍后再试"),
+        input_message_content=InputTextMessageContent(
+            _t("解析失败"), link_preview_options=LinkPreviewOptions(is_disabled=True)
         ),
     )
 

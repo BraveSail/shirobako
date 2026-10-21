@@ -16,6 +16,7 @@
 1d30c358e2a1: Domyślny tryb analizy
 1edff073d48e: Odpowiedzi
 1f3c920d087b: Przetwarzanie...
+2075ffbe4ae9: Spróbuj ponownie później
 224e2ccda861: Konfiguracja
 23d39ae9e4f8: 🖼 Pokaż {count} więcej zdjęć
 26ca20b161c3: Źródło
@@ -69,7 +70,7 @@
   **Adres źródłowy: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Ukryj tytuł
 4fb5f29ee802: Proszę dołączyć link lub odpowiedzieć na wiadomość
-5348dcac296c: Analiza nie powiodła się
+5348dcac296c: Nie udało się przeanalizować
 55374d7b243c: Komentarze
 569c1f28ab00: Pakowanie...
 5861d620c41d: Pobieranie... | {current}/{total}

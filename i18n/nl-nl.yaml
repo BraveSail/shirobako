@@ -17,6 +17,7 @@
 1d30c358e2a1: Standaard parseermodus
 1edff073d48e: Antwoorden
 1f3c920d087b: Bezig met verwerken...
+2075ffbe4ae9: Probeer het later opnieuw
 224e2ccda861: Configuratie
 23d39ae9e4f8: 🖼 Nog {count} afbeeldingen tonen
 26ca20b161c3: Bron
@@ -70,7 +71,7 @@
   **Open source adres: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Titel verbergen
 4fb5f29ee802: Voeg een link toe of beantwoord een bericht
-5348dcac296c: Parsen mislukt
+5348dcac296c: Parseren mislukt
 55374d7b243c: Opmerkingen
 569c1f28ab00: Bezig met inpakken...
 5861d620c41d: Bezig met downloaden... | {current}/{total}

@@ -333,3 +333,19 @@ def test_report_survives_a_manually_deleted_status_message():
     msg.edit_text.side_effect = RuntimeError("MESSAGE_ID_INVALID")
     reporter = _reporter(msg)
     asyncio.run(reporter.report("处 理 中..."))  # 不抛即通过
+
+
+def test_report_error_keeps_the_error_text():
+    """出错后**不能**再把消息编辑成一个点 —— 错误信息必须留着。
+
+    用户报：「出错最后编辑成一个点这个删了，保留错误信息」——
+    以前 report_error 起一个 15 秒的任务调 dismiss()，错误文本被 ``·`` 覆盖。
+    """
+    msg = _Msg()
+    reporter = _reporter(msg, config=_config(keep_error_log=False))
+    asyncio.run(reporter.report_error("解析", RuntimeError("boom")))
+
+    # 只编辑一次（错误文本本身）；没有任何"收尾成点"的第二次编辑
+    assert msg.edit_text.await_count == 1, "错误后不该再有 dismiss"
+    assert "boom" in msg.edit_text.await_args.args[0]
+    assert STATUS_DONE_TEXT not in msg.edit_text.await_args.args[0]

@@ -17,6 +17,7 @@
 1d30c358e2a1: Standard-Parsing-Modus
 1edff073d48e: Antworten
 1f3c920d087b: In Bearbeitung...
+2075ffbe4ae9: Später erneut versuchen
 224e2ccda861: Konfiguration
 23d39ae9e4f8: 🖼 {count} weitere Bilder anzeigen
 26ca20b161c3: Quelle
@@ -70,7 +71,7 @@
   **Open-Source-Adresse: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Titel ausblenden
 4fb5f29ee802: Bitte füge einen Link hinzu oder antworte auf eine Nachricht
-5348dcac296c: Analyse fehlgeschlagen
+5348dcac296c: Parsing fehlgeschlagen
 55374d7b243c: Kommentare
 569c1f28ab00: Verpacken...
 5861d620c41d: Herunterladen... | {current}/{total}

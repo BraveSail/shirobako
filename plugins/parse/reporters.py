@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Awaitable, Callable
 from time import monotonic
 from typing import Any
@@ -167,15 +166,9 @@ class MessageStatusReporter(StatusReporter):
             text,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
-        if self._config.keep_error_log:
-            return
-
-        async def fn() -> None:
-            await asyncio.sleep(15)
-            await self.dismiss()
-
-        loop = asyncio.get_running_loop()
-        loop.create_task(fn())
+        # 错误信息**永久保留** —— 以前这里起一个 15 秒的任务调 `dismiss()`, 把错误
+        # 编辑成 ``·``（STATUS_DONE_TEXT）: 用户刚看到"出错了"就变成一个点, 原因被
+        # 吞掉（用户明确要求删掉这个行为: "出错最后编辑成一个点这个删了，保留错误信息"）。
 
     @property
     def has_message(self) -> bool:
@@ -340,21 +333,8 @@ class InlineStatusReporter(StatusReporter):
         if bs.demo_mode:
             text += self._t("\n\n<b>问题反馈: @MisakaSisters</b>")
         await self._edit_inline_text(text=text)
-
-        if self._user_config.keep_error_log:
-            return
-
-        async def fn() -> None:
-            # 报错提示挂 15 秒后回到报错前那条**富文本** (直接编辑, 绕过判重)
-            await asyncio.sleep(15)
-            if self._last_markdown and self._mid:
-                try:
-                    await edit_inline_rich_message(self._cli, self._mid, markdown=self._last_markdown)
-                except Exception as e:  # noqa: BLE001 - 恢复失败无所谓
-                    logger.debug(f"恢复处理过程富文本失败 (已忽略): {type(e).__name__}: {e}")
-
-        loop = asyncio.get_running_loop()
-        loop.create_task(fn())
+        # 错误信息**永久保留** —— 以前这里 15 秒后把消息编辑回"报错前那条处理过程富文本"，
+        # 等于把失败原因覆盖掉（用户要求："保留错误信息"）。失败就该一直看得见原因。
 
     async def _edit_inline_text(self, **kwargs: Any) -> None:
         # 与 MessageStatusReporter._edit_text 同一个理由: 文本里带链接时 Telegram 会挂
