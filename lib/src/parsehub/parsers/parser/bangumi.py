@@ -10,7 +10,14 @@
 条目页（``/subject/<id>``）与小组首页（``/group/<slug>``）都不走这里。
 """
 
-from ...provider_api.bangumi import BangumiBlog, BangumiError, BangumiTopic
+import html
+
+from ...provider_api.bangumi import (
+    BangumiBlog,
+    BangumiError,
+    BangumiIndex,
+    BangumiTopic,
+)
 from ...types import ImageRef, ParseError, Platform, RichTextParseResult
 from ...utils.helpers import image_ext_from_url, profile_url
 from ..base.base import BaseParser
@@ -33,6 +40,7 @@ class BangumiParser(BaseParser):
     __match__ = (
         r"^(http(s)?://)?(bgm|bangumi)\.tv/"
         r"(blog/\d+"
+        r"|index/\d+"  # 用户编纂的目录/榜单
         r"|(group|subject)/topic/\d+"
         r"|rakuen/topic/(group|subject)/\d+"  # 「超展开」入口，与上面同话题
         r"|ep/\d+)"  # 章节讨论（一整集的吐槽箱）
@@ -40,6 +48,8 @@ class BangumiParser(BaseParser):
 
     async def _do_parse(self, raw_url: str) -> "BangumiParseResult":
         try:
+            if "/index/" in raw_url:
+                return await self._parse_index(raw_url)
             if "/ep/" in raw_url:
                 return await self._parse_topic(raw_url)
             if "/topic/" in raw_url:
@@ -69,6 +79,26 @@ class BangumiParser(BaseParser):
             author_url=profile_url(Platform.BANGUMI, user_id=blog.author_handle),
             published_at=blog.published_at,
             tags=blog.tags,
+        )
+
+    async def _parse_index(self, raw_url: str) -> "BangumiParseResult":
+        """bgm 的**目录**（``/index/<id>``）—— 用户编纂的榜单 / 列表。
+
+        形态：标题 + 简介 + 条目列表（名次 + 名称链接 + 角色 / 附加信息）。
+        条目可能上百个（实测 409）—— 正文交给渲染层的长文折叠统一收，
+        lib 不做截断（截断必须由渲染侧决定，见折叠阈值）。
+        """
+        index = await BangumiIndex.parse(
+            raw_url,
+            proxy=self.proxy,
+            cookie=self.cookie.get_value() if self.cookie else None,
+        )
+        return BangumiParseResult(
+            title=index.title,
+            markdown_content=_render_index_markdown(index),
+            author_name=index.author_name,
+            author_handle=index.author_handle,
+            author_url=profile_url(Platform.BANGUMI, user_id=index.author_handle),
         )
 
     async def _parse_topic(self, raw_url: str) -> "BangumiParseResult":
@@ -102,6 +132,59 @@ class BangumiParser(BaseParser):
             # 本层的楼层号（主楼是 ``#1``）—— 通用位置标记机制
             position_label=topic.floor_label,
         )
+
+
+#: 目录正文的总字符预算 —— 富文本单条上限 32768，留出标题 / 页脚 / 媒体的余量。
+#: 实测某目录（409 个人物 + 7.5K 字简介）原始长度 38262，**整条会被服务端拒掉**，
+#: 所以 lib 侧按预算收（末尾 ``…`` 表示还有条目没列出来）。
+_INDEX_CHAR_BUDGET = 30000
+#: 简介最多占的字符数 —— 目录说明可能很长（有的把整个榜单前 100 名也写进去），
+#: 不能让它一个人把条目列表挤没。
+_INDEX_SUMMARY_BUDGET = 12000
+
+
+def _render_index_markdown(index: BangumiIndex) -> str:
+    """目录 → markdown：简介 + 分隔线 + 条目列表（每行一条）。
+
+    每行形态：``**名次.** <a href="条目页">名称</a> · 角色 / 角色 · 附加信息``
+    （没有名次 / 角色 / 信息的字段自动省略 —— 目录类型不同，这些字段可能缺）。
+
+    ⚠️ 链接一律写 HTML ``<a>``：bgm 的正文会进富文本 markdown，而 markdown 链接
+    在引用块 / 折叠块里不解析（项目既有结论，与 ``_BgMarkdownConverter`` 同一理由）。
+
+    ⚠️ **按字符预算截断**：条目可能上百个，加上长简介会顶过富文本单条上限
+    （32768）—— 超了不是"发得长了点"，而是**整条消息被服务端拒掉**。
+    """
+    parts: list[str] = []
+    summary = index.summary_markdown.strip()
+    if summary:
+        if len(summary) > _INDEX_SUMMARY_BUDGET:
+            summary = summary[:_INDEX_SUMMARY_BUDGET].rstrip() + "\n\n…"
+        parts.append(summary)
+
+    used = len(summary)
+    lines: list[str] = []
+    for entry in index.entries:
+        bits: list[str] = []
+        if entry.rank:
+            bits.append(f"**{html.escape(entry.rank)}.**")
+        bits.append(f'<a href="{html.escape(entry.url, quote=True)}">{html.escape(entry.name)}</a>')
+        if entry.jobs:
+            bits.append(" / ".join(html.escape(job) for job in entry.jobs))
+        if entry.info:
+            bits.append(html.escape(entry.info))
+        line = " · ".join(bits)
+        if used + len(line) + 1 > _INDEX_CHAR_BUDGET:
+            lines.append("…")
+            break
+        lines.append(line)
+        used += len(line) + 1
+
+    if lines:
+        if parts:
+            parts.append("---")
+        parts.append("\n".join(lines))
+    return "\n\n".join(parts)
 
 
 def _refs(images: list) -> list[ImageRef]:

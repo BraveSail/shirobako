@@ -409,6 +409,140 @@ def _absolute_url(url: Any) -> str:
     return text
 
 
+#: 目录页地址（``/index/<id>``）—— 用户编纂的榜单/列表，官方 API 不覆盖
+INDEX_API = "https://bgm.tv/index/{index_id}"
+
+
+@dataclass
+class BangumiIndexEntry:
+    """目录里的一个条目（人物 ``person`` / 条目 ``subject``）。"""
+
+    name: str = ""
+    url: str = ""
+    #: ``person`` / ``subject`` —— 由条目节点 id 前缀（``item_person…``）决定
+    kind: str = ""
+    #: 角色标签（漫画家 / 制作人员 / 声优…）
+    jobs: list[str] = field(default_factory=list)
+    #: 附加信息（性别 / 生日 / 身高…），平台原文
+    info: str = ""
+    #: 榜单名次（``div.text`` 的原文，可能是 ``12（并列）``）
+    rank: str = ""
+
+
+@dataclass
+class BangumiIndex:
+    """bgm 的**目录**（``/index/<id>``）—— 用户编纂的榜单/列表。"""
+
+    index_id: str = ""
+    title: str = ""
+    author_name: str = ""
+    #: bgm 没有 @用户名：这里是 uid 或用户名 slug（两种形态都有，见 ``_USER_LINK_RE``）
+    author_handle: str = ""
+    author_avatar: str = ""
+    #: 目录简介（markdown）—— 页面上就是 ``.line_detail`` 那段说明
+    summary_markdown: str = ""
+    entries: list[BangumiIndexEntry] = field(default_factory=list)
+
+    @staticmethod
+    def get_id_by_url(url: str) -> str:
+        match = re.search(r"/index/(\d+)", url)
+        return match.group(1) if match else ""
+
+    @classmethod
+    async def parse(
+        cls,
+        url: str,
+        proxy: str | None = None,
+        cookie: dict[str, str] | None = None,
+    ) -> BangumiIndex:
+        index_id = cls.get_id_by_url(url)
+        if not index_id:
+            raise BangumiError(f"链接里没有目录 id: {url}")
+
+        api = INDEX_API.format(index_id=index_id)
+        try:
+            async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
+                response = await client.get(api)
+        except http.HTTPError as e:
+            raise BangumiError(f"请求 bgm.tv 失败: {e}") from e
+
+        if response.status_code == 404:
+            raise BangumiError(f"目录 {index_id} 不存在")
+        response.raise_for_status()
+
+        html = response.content.decode("utf-8", errors="replace")
+        return cls._from_html(html, index_id)
+
+    @classmethod
+    def _from_html(cls, html: str, index_id: str) -> BangumiIndex:
+        soup = BeautifulSoup(html, "lxml")
+
+        title_node = soup.select_one("h1")
+        if title_node is None:
+            if _ERROR_MARKER in html:
+                raise BangumiError(f"目录 {index_id} 不存在或不可见")
+            raise BangumiError(f"目录 {index_id} 页面结构不认识（bgm.tv 可能改版了）")
+        title = title_node.get_text(strip=True)
+
+        # 作者：简介块里的第一个 ``/user/`` 链接（页面上只有头像，没有名字文本）
+        author_handle = ""
+        author_avatar = ""
+        line = soup.select_one(".line_detail")
+        box = line.parent if line is not None else None
+        if box is not None:
+            link = box.select_one('a[href^="/user/"]')
+            if link is not None:
+                match = _USER_LINK_RE.search(str(link.get("href") or ""))
+                author_handle = match.group(1) if match else ""
+                avatar_node = link.select_one("img")
+                if avatar_node is not None:
+                    author_avatar = _absolute_url(avatar_node.get("src"))
+
+        # 简介：``.line_detail`` 里那段说明（含外链、换行）—— 复用正文转换器
+        summary = _to_markdown(str(line)).strip() if line is not None else ""
+
+        entries: list[BangumiIndexEntry] = []
+        # 条目的节点 id 是 ``item_person<数字>`` / ``item_subject<数字>``
+        for node in soup.select('[id^="item_person"], [id^="item_subject"]'):
+            head = node.select_one("h3 a")
+            if head is None:
+                continue
+            href = str(head.get("href") or "")
+            node_id = str(node.get("id") or "")
+            entries.append(
+                BangumiIndexEntry(
+                    name=head.get_text(strip=True),
+                    url=_site_url(href),
+                    kind="person" if node_id.startswith("item_person") else "subject",
+                    jobs=[b.get_text(strip=True) for b in node.select("span.badge_job") if b.get_text(strip=True)],
+                    info=node.select_one("span.tip").get_text(" ", strip=True) if node.select_one("span.tip") else "",
+                    rank=node.select_one("div.text").get_text(strip=True) if node.select_one("div.text") else "",
+                )
+            )
+
+        return cls(
+            index_id=index_id,
+            title=title,
+            author_handle=author_handle,
+            author_avatar=author_avatar,
+            summary_markdown=summary,
+            entries=entries,
+        )
+
+
+def _site_url(url: Any) -> str:
+    """bgm **站内相对路径** → 绝对地址（``/person/33229`` → ``https://bgm.tv/person/33229``）。
+
+    ``_absolute_url`` 只补协议相对（``//lain.bgm.tv/…``）那一种；条目链接是
+    站内绝对路径（``/person/…``），原样塞进 ``<a href>`` 会指向 Telegram 的域名，
+    点开是 404 —— 实测目录页踩到。
+    """
+    text = _absolute_url(url)
+    if text.startswith("/"):
+        return f"https://bgm.tv{text}"
+    return text
+
+
 #: 楼层号与时间在同一个 ``<small>`` 里：``#2 - 2026-10-7 00:24``
 _FLOOR_HEAD_RE = re.compile(r"^(#\S+)\s*[-–—]\s*(.*)$")
 #: 主楼是 ``.postTopic``，楼中楼是 ``.sub_reply_bg``（DOM 上**嵌在父楼内部**）
