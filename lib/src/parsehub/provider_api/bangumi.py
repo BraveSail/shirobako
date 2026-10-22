@@ -44,6 +44,7 @@ from markdownify import MarkdownConverter
 from ..types.platform import Platform
 from ..utils import http
 from ..utils.helpers import (
+    MEDIA_PLACEHOLDER_RE,
     format_author_link,
     format_quote_block,
     media_placeholder,
@@ -190,7 +191,7 @@ class BangumiBlog:
         # 反过来取会把 markdown 标记或图片 alt 混进去
         _simplify(entry, image_index)
         # 纯文本兜底里不能留原位标记（那是 lib ↔ 渲染层的协议，不是给用户看的文字）
-        text_content = _MEDIA_PLACEHOLDER_RE.sub("", entry.get_text("\n", strip=True))
+        text_content = MEDIA_PLACEHOLDER_RE.sub("", entry.get_text("\n", strip=True))
         markdown_content = _to_markdown(str(entry))
 
         return cls(
@@ -246,11 +247,6 @@ class BangumiBlog:
 
 
 # ------------------------------------------------------------------ 正文
-
-#: 原位媒体标记 ``{{media:N}}``（lib ↔ 渲染层的协议）—— 纯文本兜底里要删掉，
-#: 别把协议标记当正文交给用户。
-_MEDIA_PLACEHOLDER_RE = re.compile(r"\{\{media:(\d+)\}\}")
-
 
 def _extract_images(entry: Any) -> list[BangumiImage]:
     """正文里的**上传图**（表情不算）。判据看 **src 路径**，不能只看 class。
@@ -830,7 +826,7 @@ class BangumiTopic:
         # 斜体里；② 留着标记的话图会出现**两次**（标记替换一次 + reply 段占位符
         # 一次，后者不受原位消费的摘除影响）。
         if context_quote:
-            context_quote = _MEDIA_PLACEHOLDER_RE.sub("", context_quote)
+            context_quote = MEDIA_PLACEHOLDER_RE.sub("", context_quote)
 
         # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间。
         # 章节页给**章节名**（带 ``/ep/<id>`` 链接）—— 用户看的是"哪部番的哪一集"，
@@ -1137,7 +1133,7 @@ class BangumiTopic:
         lines = [context_name] if context_name else []
         # 引用块里的原位媒体标记是给渲染层的协议 —— 纯文本里要删掉
         lines.extend(
-            _MEDIA_PLACEHOLDER_RE.sub("", re.sub(r"^>\s?", "", ln)).strip() for ln in context_quote.splitlines()
+            MEDIA_PLACEHOLDER_RE.sub("", re.sub(r"^>\s?", "", ln)).strip() for ln in context_quote.splitlines()
         )
         if plain:
             lines.append(plain)

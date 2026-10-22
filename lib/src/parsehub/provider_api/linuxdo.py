@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,7 +26,14 @@ from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
 from ..utils import http
-from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_int
+from ..utils.helpers import (
+    MEDIA_PLACEHOLDER_RE,
+    format_author_link,
+    format_quote_block,
+    media_placeholder,
+    profile_url,
+    to_int,
+)
 
 TOPIC_API = "https://linux.do/t/topic/{topic_id}.json"
 #: 按 post id **精确**取指定楼层 —— 体积比楼层窗口小一个数量级 (实测单层 4.5KB vs 窗口 54KB)
@@ -313,12 +321,18 @@ class LinuxDoTopic:
         # 正文出现顺序一致)。图片与纯文本兜底也在这里接上 (见下)。
         context_quotes, context_images, context_polls = cls._context_quotes(posts, first)
         images = cls._extract_images(soup)
+        # 图片 URL → 下标: ``_strip_lightbox`` 把正文里的图换成 ``{{media:N}}`` 原位标记，
+        # 渲染层再换成媒体引用 —— 图出现在**文章原位**，而不是堆到消息末尾。
+        # （本层图排在 media 列表最前，所以本层下标就是最终下标；上下文层的图走
+        #  ``reply_media_count`` 通道、在它自己的 soup 里被 decompose，不进本表。）
+        image_index = {i.url: n for n, i in enumerate(images)}
         # ⚠️ 必须在取纯文本**之前**清 lightbox: 它的包裹里除了 img 还有一段**说明文字**
         # (``span.filename`` 文件名 + ``span.informations`` 的"分辨率 体积", 如 ``746×330 24.3 KB``)。
         # 纯图楼层(markdown 为空)拿 text_content 当正文, 晚清理这些元信息就会跟图一起显示
         # (用户报「正文多了个 image 分辨率体积」)。
-        cls._strip_lightbox(soup)
-        text_content = soup.get_text("\n", strip=True)
+        cls._strip_lightbox(soup, image_index)
+        # 纯文本兜底里不能留原位标记（那是 lib ↔ 渲染层的协议，不是给用户看的文字）
+        text_content = MEDIA_PLACEHOLDER_RE.sub("", soup.get_text("\n", strip=True))
         # 引用块先抽出来 (改写成占位符), 转完 markdown 再回填公共 helper 渲染的结果
         rendered_quotes = cls._extract_quotes(soup)
         # 本层投票: ``_simplify`` 原地把 ``div.poll`` 改写成占位符行, 结构化数据
@@ -495,15 +509,31 @@ class LinuxDoTopic:
         return rendered
 
     @staticmethod
-    def _strip_lightbox(soup: BeautifulSoup) -> None:
+    def _strip_lightbox(soup: BeautifulSoup, image_index: Mapping[str, int] | None = None) -> None:
         """去掉图片的 lightbox 包裹 —— 图会作为媒体单独发送, 正文里不再重复。
 
         清掉的是**整个包裹**: 除了 ``img``, 里面还有 ``div.meta`` 里的说明文字
         (``span.filename`` 是文件名, ``span.informations`` 是"分辨率 体积")。
         那些文字不是正文, 见 ``_from_payload`` 里为什么要在取纯文本前调用。
+
+        :param image_index: 图片 URL → 它在 ``media`` 列表里的下标。给了就在
+            **原位置**留 ``{{media:N}}``（渲染层换成媒体引用 ⇒ 图出现在文章里，
+            而不是堆到消息末尾 —— 用户报「图片原位怎么还是坏的」）。
+            ``None``、或该图不在表里时退回 ``decompose()``（老行为）。
         """
         for wrapper in soup.find_all("div", class_="lightbox-wrapper"):
-            wrapper.decompose()
+            index = None
+            if image_index is not None:
+                img = wrapper.find("img")
+                if img is not None:
+                    link = img.find_parent("a")
+                    src = str(img.get("src") or "")
+                    url = str((link.get("href") if link else "") or src) or src
+                    index = image_index.get(url)
+            if index is None:
+                wrapper.decompose()
+            else:
+                wrapper.replace_with(media_placeholder(index))
 
     @staticmethod
     def _simplify(

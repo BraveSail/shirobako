@@ -619,3 +619,30 @@ def test_the_lightbox_filename_stays_out_of_the_plain_text():
     """同一个坑的另一半: fixture 的 ``span.filename``（IMG_7961）也不该漏进纯文本"""
     topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
     assert "IMG_7961" not in topic.text_content, topic.text_content
+
+
+def test_the_image_leaves_a_marker_in_place():
+    """lightbox 的位置留 ``{{media:N}}`` —— 图出现在**文章原位**，不是堆到末尾。
+
+    用户报「图片原位怎么还是坏的」：linux.do 以前是直接 ``decompose()`` 掉整个
+    lightbox 包裹，图只从 media 通道发出去 ⇒ 全堆在消息末尾。
+    """
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert "{{media:0}}" in topic.markdown_content, topic.markdown_content
+    assert "lightbox" not in topic.markdown_content
+    # 纯文本兜底里不能留协议标记（那是 lib ↔ 渲染层的协议，不是给用户看的文字）
+    assert "{{media:" not in topic.text_content
+
+
+def test_strip_lightbox_without_an_index_still_drops_the_wrapper():
+    """没给映射（老调用点 / 上下文层）时退回删除 —— 绝不产出对不上下标的标记"""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(
+        '<p><div class="lightbox-wrapper"><a class="lightbox" href="https://x/a.jpg">'
+        '<img src="https://x/a.jpg" width="10" height="20"></a></div></p>',
+        "lxml",
+    )
+    LinuxDoTopic._strip_lightbox(soup)
+    assert "{{media:" not in str(soup)
+    assert "lightbox" not in str(soup)

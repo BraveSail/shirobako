@@ -40,6 +40,11 @@ def media_placeholder(index: int) -> str:
     return f"{{{{media:{index}}}}}"
 
 
+#: 原位媒体标记 ``{{media:N}}`` 的正则（lib ↔ 渲染层的协议）—— 纯文本兜底
+#: （``text_content`` / ``plain``）里要删掉，别把协议标记当正文交给用户。
+MEDIA_PLACEHOLDER_RE = re.compile(r"\{\{media:(\d+)\}\}")
+
+
 def image_ext_from_url(url: str, default: str = "jpg", exts: frozenset[str] = IMAGE_EXTS) -> str:
     """按 URL 取媒体真实扩展名，取不到用 ``default``。
 
