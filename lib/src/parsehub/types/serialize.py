@@ -54,10 +54,14 @@ class ResultRebuildUnavailable(RuntimeError):
 #:   虽然**格式没变**（还是 ``**``），但 v1 缓存里存的是**位置错了的标记** ——
 #:   不 bump 的话用户重发同一条链接会命中旧条目、看到一模一样的错误（观感等同“没修”）。
 #:
+#: - 3 = **正文图改为原位标记** ``{{media:N}}``（douyin 2026-10-16 / bgm 2026-10-19 /
+#:   linux.do 2026-10-21）：旧条目里没有标记 ⇒ 命中就是"图还堆在消息末尾"，
+#:   与没修一样（用户会报「图片原位怎么还是坏的」）。v1/v2 的 twitter 条目也一并作废。
+#:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
-#: **只对 twitter** 强制（其它平台正文格式没变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 2
-_CONTENT_VERSION_PLATFORMS = frozenset({"twitter"})
+#: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
+_CACHE_CONTENT_VERSION = 3
+_CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo"})
 
 
 #: 媒体类型标签 —— **序列化必须显式带上**, 否则重建时区分不了 (见模块 docstring)

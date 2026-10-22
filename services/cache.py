@@ -287,7 +287,11 @@ FOOTER_META_FIELDS_VERSION = 1
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 2
+CONTENT_VERSION = 3
+
+#: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
+#: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。
+_CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo"})
 
 
 class CacheMedia(BaseModel):
@@ -378,14 +382,18 @@ class PersistentCache:
             self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
             return None
 
-        if entry.parse_result.platform == "twitter" and entry.parse_result.content_version < CONTENT_VERSION:
-            # twitter 长文正文的格式/取值变过（richtext 粗体支持 2026-10-13；
-            # 粗体区间 UTF-16 换算修正 2026-10-15）:
-            # 旧条目里存的是没有 ``**``、或 **位置偏掉** 的正文，复用会让用户以为修复没生效。
-            # 只查 twitter —— 其它平台正文格式未变，让它们重解析只会白白重下媒体。
+        if (
+            entry.parse_result.platform in _CONTENT_VERSION_PLATFORMS
+            and entry.parse_result.content_version < CONTENT_VERSION
+        ):
+            # 这些平台的**正文格式**变过：
+            #   - twitter：长文 richtext 粗体（2026-10-13）、粗体区间 UTF-16 换算修正（2026-10-15）
+            #   - douyin / bgm / linux.do：正文图改为**原位标记** ``{{media:N}}``
+            # 旧条目里存的是没有标记（或标记位置错）的正文，复用会让用户以为修复没生效
+            # （"图还堆在末尾"）。只查这些平台 —— 其余平台格式未变，重解析只会白重下媒体。
             self.logger.debug(
-                f"twitter 旧格式正文 (content_version={entry.parse_result.content_version} "
-                f"< {CONTENT_VERSION}), 重新解析: key={url}"
+                f"{entry.parse_result.platform} 旧格式正文 "
+                f"(content_version={entry.parse_result.content_version} < {CONTENT_VERSION}), 重新解析: key={url}"
             )
             return None
 
