@@ -92,3 +92,29 @@ def test_new_entries_carry_the_version():
     payload = json.loads(entry.model_dump_json())
     payload["author_metadata_version"] = 1
     assert _get(payload) is not None
+
+
+def test_a_linuxdo_entry_with_an_old_body_is_refreshed():
+    """linux.do 正文图改原位标记后, 老条目必须重解析。
+
+    老条目里没有 ``{{media:N}}`` 标记 ⇒ 命中就是"图还堆在消息末尾", 与没修一样
+    （用户会报「图片原位怎么还是坏的」）。
+    """
+    assert _get(_entry_payload(platform="linuxdo", content_version=CONTENT_VERSION - 1)) is None
+
+
+def test_a_bangumi_entry_with_an_old_body_is_refreshed():
+    """bgm 同理（2026-10-19 起正文图走原位标记）"""
+    assert _get(_entry_payload(platform="bangumi", content_version=CONTENT_VERSION - 1)) is None
+
+
+def test_a_douyin_entry_with_an_old_body_is_refreshed():
+    """douyin 同理（2026-10-16 起长图文正文图走原位标记）"""
+    assert _get(_entry_payload(platform="douyin", content_version=CONTENT_VERSION - 1)) is None
+
+
+def test_platforms_whose_body_format_never_changed_keep_their_cache():
+    """格式没变过的平台不能被连坐作废 —— 重解析只会白重下媒体"""
+    for platform in ("youtube", "bilibili", "zhihu", "threads"):
+        entry = _get(_entry_payload(platform=platform, content_version=0))
+        assert entry is not None, platform
