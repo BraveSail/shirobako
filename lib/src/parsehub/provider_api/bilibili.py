@@ -1,5 +1,6 @@
 # mypy: disable-error-code=no-untyped-def
 import asyncio
+import json
 import re
 import time
 import urllib.parse
@@ -13,7 +14,7 @@ from typing import Any, Self, cast
 from loguru import logger
 
 from ..utils import http
-from ..utils.helpers import get_author_name, to_int
+from ..utils.helpers import get_author_name, media_placeholder, to_int
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
@@ -44,11 +45,22 @@ class BiliAPI:
         await self.aclose()
 
     async def get_dynamic_info(self, url: str, cookie: dict | None = None) -> "BiliDynamic":
-        """获取动态信息"""
+        """获取动态信息
+
+        opus（图文）走详情页: ``detail`` 接口对 opus **只回截断摘要**
+        （``summary.has_more = true`` + ``fold_action: 全文``，实测只给 4 段 103 字），
+        全文和图片顺序只在详情页的 ``__INITIAL_STATE__.detail.modules`` 里
+        （同一内容 165 段 / 2854 字 / 35 张图）。抓页面**替换**掉接口调用，
+        仍然是一次请求，不额外增加。
+        """
         match = re.search(r"\b\d{18,19}\b", url)
         if not match:
             raise ValueError(f"Invalid dynamic url: {url}")
         dyn_id = match.group(0)
+        if "/opus/" in url:
+            if opus_item := await self._get_opus_page_item(dyn_id, cookie):
+                return BiliDynamic.parse({"item": opus_item})
+            logger.debug("opus 详情页不可用, 回退 detail 接口: %s", url)
         params = {
             "timezone_offset": "-480",
             "id": dyn_id,
@@ -75,6 +87,33 @@ class BiliAPI:
                 case _:
                     raise Exception(f"获取动态信息失败: {mj}")
         return BiliDynamic.parse(cast(dict[str, Any], data))
+
+    #: opus 详情页里的内联状态（含全文段落）
+    _OPUS_PAGE = "https://www.bilibili.com/opus/{id}"
+    _INITIAL_STATE_RE = re.compile(r"window\.__INITIAL_STATE__\s*=\s*(\{.*?\});\s*\(function", re.S)
+
+    async def _get_opus_page_item(self, opus_id: str, cookie: dict | None) -> dict | None:
+        """opus 详情页 → 与 ``detail`` 接口 ``item`` 同构的 dict（拿全文 + 图片顺序）。
+
+        失败（无内联状态 / 结构变了 / 风控）返回 ``None``，调用方回退接口，
+        不会把一次正常解析变成硬失败。
+        """
+        headers = self.headers | {"referer": self._OPUS_PAGE.format(id=opus_id)}
+        response = await self._get_client().get(
+            self._OPUS_PAGE.format(id=opus_id),
+            headers=headers,
+            cookies=cookie,
+        )
+        response.raise_for_status()
+        if not (match := self._INITIAL_STATE_RE.search(response.text)):
+            return None
+        try:
+            # 页面内联的是 JS 字面量，含裸 undefined
+            state = json.loads(re.sub(r"\bundefined\b", "null", match.group(1)))
+        except ValueError:
+            logger.debug("opus 页 __INITIAL_STATE__ 解析失败: %s", opus_id)
+            return None
+        return BiliDynamic.item_from_opus_page(cast(dict[str, Any], state.get("detail") or {}))
 
     async def get_video_info(self, url: str, cookie: dict | None = None):
         """获取视频详细信息
@@ -442,9 +481,133 @@ class BiliDynamic:
         return cls(title=music["title"], images=cls._get_major_cover(music))
 
     @classmethod
+    def item_from_opus_page(cls, detail: dict) -> dict | None:
+        """把 opus 详情页的 ``detail`` 转成 ``detail`` 接口的 ``item`` 同构结构。
+
+        页面给的是 **modules 列表**（按 ``module_type`` 区分），接口给的是 **modules 字典**；
+        下游（作者/统计/转发/正文解析）都按接口形态取值，所以在这里统一。
+        正文段落**原样**放进 ``major.opus.summary.paragraphs``，并把 ``has_more`` 置 False
+        —— 页面给的就是全文（没有折叠）。
+        """
+        modules = {m.get("module_type"): m for m in (detail.get("modules") or []) if isinstance(m, dict)}
+        content = (modules.get("MODULE_TYPE_CONTENT") or {}).get("module_content") or {}
+        paragraphs = content.get("paragraphs") or []
+        if not paragraphs:
+            return None
+        author = (modules.get("MODULE_TYPE_AUTHOR") or {}).get("module_author") or {}
+        stat = (modules.get("MODULE_TYPE_STAT") or {}).get("module_stat") or {}
+        title = ((modules.get("MODULE_TYPE_TITLE") or {}).get("module_title") or {}).get("text") or ""
+        # 图片按**段落顺序**收集 —— 与 _render_opus_paragraphs 里生成的下标一一对应
+        pics: list[dict[str, Any]] = []
+        for para in paragraphs:
+            for pic in ((para.get("pic") or {}).get("pics") or []):
+                if pic.get("url"):
+                    pics.append(
+                        {
+                            "url": pic["url"],
+                            "width": to_int(pic.get("width")),
+                            "height": to_int(pic.get("height")),
+                            "live_url": pic.get("live_url") or None,
+                        }
+                    )
+        opus = {
+            "title": title,
+            "pics": pics,
+            "jump_url": f"//www.bilibili.com/opus/{detail.get('id_str') or ''}",
+            "summary": {
+                "text": "",
+                "has_more": False,
+                "rich_text_nodes": [],
+                "paragraphs": paragraphs,
+            },
+        }
+        return {
+            "id_str": detail.get("id_str"),
+            "type": "DYNAMIC_TYPE_DRAW",
+            "modules": {
+                "module_author": author,
+                "module_stat": stat,
+                "module_dynamic": {
+                    "major": {"type": "MAJOR_TYPE_OPUS", "opus": opus},
+                    "desc": None,
+                },
+            },
+        }
+
+    @staticmethod
+    def _opus_nodes_text(nodes: list[dict] | None) -> str:
+        """富文本节点 → 纯文本（word 节点取 ``words``，其它节点尽量取 ``text``）。"""
+        out: list[str] = []
+        for node in nodes or []:
+            if not isinstance(node, dict):
+                continue
+            word = node.get("word") or {}
+            text = word.get("words")
+            if text is None:
+                text = node.get("text")
+            if text:
+                out.append(str(text))
+        return "".join(out)
+
+    @classmethod
+    def _render_opus_paragraphs(cls, paragraphs: list[dict], images: list["BiliImage"]) -> str:
+        """opus 段落 → markdown。图片按段序追加到 ``images`` 并留 ``{{media:N}}`` 原位标记。
+
+        段落类型（B 站 opus）：1=文本、2=图片、8=标题；其余（列表/代码/引用/链接卡片）
+        按能取到的文本兜底，至少不丢内容。
+        """
+        blocks: list[str] = []
+        for para in paragraphs:
+            if not isinstance(para, dict):
+                continue
+            pic = para.get("pic") or {}
+            if pics := pic.get("pics"):
+                for item in pics:
+                    if not item.get("url"):
+                        continue
+                    images.append(
+                        BiliImage(
+                            url=item["url"],
+                            width=to_int(item.get("width")) or 0,
+                            height=to_int(item.get("height")) or 0,
+                            live_url=item.get("live_url") or None,
+                        )
+                    )
+                    blocks.append(media_placeholder(len(images) - 1))
+                continue
+            if heading := para.get("heading"):
+                text = cls._opus_nodes_text(heading.get("nodes"))
+                if text.strip():
+                    # 不能用 ``#`` 标题: 正文随后要过 hashtag_handler，行首的 ``#``
+                    # 会被当成 B 站话题边界（``#话题#``）链接化，把标题连同后面的正文
+                    # 一起吞进 <a> 里。加粗在正文和引用块里都安全。
+                    blocks.append(f"**{text.strip()}**")
+                continue
+            # 文本段落；列表/代码/引用等也尽量取 nodes 文本
+            text = cls._opus_nodes_text((para.get("text") or {}).get("nodes"))
+            if not text.strip():
+                for holder in ("list", "code", "blockquote", "link_card"):
+                    holder_data = para.get(holder) or {}
+                    if isinstance(holder_data, dict):
+                        text = cls._opus_nodes_text(holder_data.get("nodes"))
+                        if text.strip():
+                            break
+            if text.strip():
+                blocks.append(text.strip())
+        return "\n\n".join(blocks)
+
+    @classmethod
     def _parse_opus(cls, _: dict, major: dict) -> Self:
         opus = major.get("opus") or {}
-        images = None
+        summary = opus.get("summary") or {}
+        paragraphs = summary.get("paragraphs") or []
+        images: list[BiliImage] = []
+        # 有完整段落（详情页路径 / 未折叠的短动态）→ 按段渲染，图片原位；
+        # 否则退回接口的截断摘要（has_more=true，只有前几段纯文本 + 顶部图）
+        if paragraphs and not summary.get("has_more"):
+            if content := cls._render_opus_paragraphs(paragraphs, images):
+                return cls(title=opus.get("title") or "", content=content, images=images or None)
+        images = []
         if pics := opus.get("pics"):
             images = [
                 BiliImage(url=p["url"], live_url=p.get("live_url"), width=p.get("width"), height=p.get("height"))
@@ -452,8 +615,8 @@ class BiliDynamic:
             ]
         return cls(
             title=opus.get("title") or "",
-            content=(opus.get("summary") or {}).get("text") or "",
-            images=images,
+            content=summary.get("text") or "",
+            images=images or None,
         )
 
     @classmethod
