@@ -409,10 +409,14 @@ def test_image_only_opening_post_still_gets_a_quote_and_its_image():
     # 引用块在 (只有署名)
     assert "楼主" in topic.markdown_content
     assert topic.markdown_content.index("楼主") < topic.markdown_content.index("本层的话")
-    # 主楼的图被算进"引用块媒体"（块在正文前 ⇒ reply 那一档）, 不在正文媒体里
-    assert topic.reply_media_count == 1
+    # 主楼的图在**引用块内原位**（裸 img 也要换成标记），不再走"引用块媒体"尾部通道
+    assert topic.reply_media_count == 0
+    assert "{{media:0}}" in topic.markdown_content, topic.markdown_content
+    assert topic.markdown_content.index("{{media:0}}") > topic.markdown_content.index("楼主")
     assert len(topic.images) == 1
     assert topic.images[0].url == "https://cdn.ldstatic.com/op.png"
+    # 纯文本兜底里不能留协议标记
+    assert "{{media:" not in topic.text_content
 
 
 def test_topic_level_like_is_used_when_the_floor_has_none():

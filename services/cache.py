@@ -287,7 +287,7 @@ FOOTER_META_FIELDS_VERSION = 1
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 4
+CONTENT_VERSION = 5
 
 #: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
 #: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。

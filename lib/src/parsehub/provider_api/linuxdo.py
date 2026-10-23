@@ -319,12 +319,14 @@ class LinuxDoTopic:
         raw_polls = [p for p in (first.get("polls") or []) if isinstance(p, dict)]
         # 上下文引用块先算: 它们排在正文**最前**, 自带的投票先占占位符索引 (0..., 与
         # 正文出现顺序一致)。图片与纯文本兜底也在这里接上 (见下)。
-        context_quotes, context_images, context_polls = cls._context_quotes(posts, first)
         images = cls._extract_images(soup)
         # 图片 URL → 下标: ``_strip_lightbox`` 把正文里的图换成 ``{{media:N}}`` 原位标记，
         # 渲染层再换成媒体引用 —— 图出现在**文章原位**，而不是堆到消息末尾。
-        # （本层图排在 media 列表最前，所以本层下标就是最终下标；上下文层的图走
-        #  ``reply_media_count`` 通道、在它自己的 soup 里被 decompose，不进本表。）
+        # （本层图排在 media 列表最前，所以本层下标就是最终下标；上下文层的标记下标
+        #  从 ``len(images)`` 起 —— 见 ``_context_quotes(image_offset=...)``。）
+        context_quotes, context_images, context_polls = cls._context_quotes(
+            posts, first, image_offset=len(images)
+        )
         image_index = {i.url: n for n, i in enumerate(images)}
         # ⚠️ 必须在取纯文本**之前**清 lightbox: 它的包裹里除了 img 还有一段**说明文字**
         # (``span.filename`` 文件名 + ``span.informations`` 的"分辨率 体积", 如 ``746×330 24.3 KB``)。
@@ -345,17 +347,20 @@ class LinuxDoTopic:
 
         # 上下文引用块放正文**之前**, 从远到近: 主楼 → 被回复的楼层 → 当前楼层正文
         # (用户要求: 分享楼层时把主楼做成回复; 楼层互回时被回复的那层也要带上)
-        # 上下文层的图片接在 media 末尾 —— bot 侧按"引用块媒体"放进引用块内部
-        # （块在正文前 ⇒ reply 那一档）
-        reply_media_count = len(context_images)
+        # 上下文层的图已在本层块内留原位标记 ⇒ 不再走"引用块媒体"尾部通道
+        # （否则同一张图会出现两次：块内一次、块尾/消息尾一次）
+        reply_media_count = 0
         if context_images:
             images = [*images, *context_images]
         if context_quotes:
             # strip 每个块: format_quote_block 末尾自带空行, 直接 join 会堆出多余空行
             parts = [*[q.strip() for q in context_quotes], markdown_content.strip()]
             markdown_content = "\n\n".join(p for p in parts if p)
-            # 纯图楼层走 text_content 兜底, 上下文同样要带上
-            plain_parts = [*[cls._quote_to_plain(q) for q in context_quotes], text_content.strip()]
+            # 纯图楼层走 text_content 兜底, 上下文同样要带上（标记是协议, 不能给用户看）
+            plain_parts = [
+                *[MEDIA_PLACEHOLDER_RE.sub("", cls._quote_to_plain(q)) for q in context_quotes],
+                text_content.strip(),
+            ]
             text_content = "\n\n".join(p for p in plain_parts if p)
 
         tags = [str(t.get("name")) for t in (payload.get("tags") or []) if isinstance(t, dict) and t.get("name")]
@@ -395,8 +400,9 @@ class LinuxDoTopic:
             # (上下文引用块里的在前, 本层的在后)。渲染层按索引本地化。
             polls=polls,
             reply_media_count=reply_media_count,
-            # 上下文引用块排在正文**最前** ⇒ 角色 ``reply``（媒体走 reply 段）
-            quote_roles=["reply"] * len(context_quotes),
+            # 上下文引用块的媒体已改为块内原位标记 ⇒ 不再声明 reply 角色
+            # （声明了渲染层会去 reply 桶里找媒体，找不到就是静默降级）
+            quote_roles=[],
             # 只认平台自己的标记: 标签里的 NSFW
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
             # 当前这一层的楼层号 —— 分享楼层时用它标出"这是第几楼"
@@ -408,16 +414,18 @@ class LinuxDoTopic:
 
     @classmethod
     def _post_to_quote(
-        cls, post: dict[str, Any], poll_offset: int
+        cls, post: dict[str, Any], poll_offset: int, image_offset: int = 0
     ) -> tuple[str, list[LinuxDoImage], list[LinuxDoPoll]]:
         """把**另一层**的内容渲染成引用块 + 它自己的图片 + 它自己的投票。
 
-        返回 ``(引用块 markdown, 该层的图片, 该层的投票)``:
+        返回 ``(引用块 markdown, 该层的图片, 该层的投票)``：
 
-        - 引用块**不内联图片** —— 只给作者行与文字, 图片由调用方按"引用块媒体"
-          的通道单独带过去 (与 twitter 的被引用帖媒体同一机制)。
-        - **纯图楼层也要返回引用块**(只有作者行): 这层确实在回应它, 直接把整层丢掉
-          是**有损**的 —— 用户看不到"在回复谁"。
+        - **该层的图片留原位标记**（``{{media:N}}``，``N`` 从 ``image_offset`` 起）——
+          ``blockquote`` 是 ``blocks`` 形态、**能含图**（见 rich-rendering-pitfalls 的能力表），
+          所以图直接出现在这一层正文的对应位置，而不是堆到消息末尾
+          （用户报「这里面的图没在原位」）。
+        - **纯图楼层也要返回引用块**(只有作者行 + 标记行): 这层确实在回应它,
+          直接把整层丢掉是**有损**的 —— 用户看不到"在回复谁"。
         - 投票在引用块里放占位符行, 索引从 ``poll_offset`` 起 (上下文块在正文前 ⇒
           先占索引, 与「占位符出现顺序」一致)。
         """
@@ -432,14 +440,17 @@ class LinuxDoTopic:
             return "", [], []
 
         soup = BeautifulSoup(cooked, "lxml")
-        images = cls._extract_images(soup)  # 图片先取出来 (下面会清理掉)
+        images = cls._extract_images(soup)  # 图片先取出来 (下标按块内顺序分配)
+        image_index = {i.url: image_offset + n for n, i in enumerate(images)}
         # 先摘掉引用块与媒体外壳, 只要这一层自己的文字
         for aside in soup.find_all("aside", class_="quote"):
             aside.decompose()
         raw_polls = [p for p in (post.get("polls") or []) if isinstance(p, dict)]
+        # ⚠️ 必须在取纯文本**之前**把 lightbox 换成标记: 包裹里还有文件名/分辨率文字
+        cls._strip_lightbox(soup, image_index)
         polls = cls._simplify(soup, polls=raw_polls, offset=poll_offset)
         text = soup.get_text("\n", strip=True)
-        # 没文字也出引用块 (sign_only) —— 纯图楼层只有署名, 图片按引用块媒体接进块内
+        # 没文字也出引用块 (sign_only) —— 纯图楼层只有署名 + 标记行
         return format_quote_block(text, head, sign_only=True), images, polls
 
     @staticmethod
@@ -451,15 +462,16 @@ class LinuxDoTopic:
 
     @classmethod
     def _context_quotes(
-        cls, posts: list[dict[str, Any]], current: dict[str, Any]
+        cls, posts: list[dict[str, Any]], current: dict[str, Any], image_offset: int = 0
     ) -> tuple[list[str], list[LinuxDoImage], list[LinuxDoPoll]]:
         """当前楼层的上下文: 引用块 (**从远到近**) + 这些层的图片 + 这些层的投票。
 
         用户要求: 分享某一层时要把**主楼**也带上 (那一层常是在回应主楼/前文);
         楼层回复了别的楼层时, 被回复的那层也要带上。
 
-        被带上的那些层自己的图片也一并返回 —— 由调用方按"引用块媒体"通道发送
-        (纯图楼层只有图片, 不带就等于把主楼丢了)。
+        被带上的那些层自己的图片也一并返回 —— 但图**在这一层正文里留原位标记**
+        （``{{media:N}}``），调用方只需把图片按顺序并进 media 列表。``image_offset``
+        是本层图片的数量（media 顺序 = 本层 → 上下文层）。
 
         这些层自带的投票同样返回 —— 它们的占位符在引用块里 (正文**最前**) ⇒
         **先占索引**; 当前层的投票索引从它们之后继续 (与「占位符出现顺序」一致)。
@@ -480,7 +492,9 @@ class LinuxDoTopic:
                 targets.append(rp)
 
         for post in targets:
-            block, post_images, post_polls = cls._post_to_quote(post, poll_offset=len(polls))
+            block, post_images, post_polls = cls._post_to_quote(
+                post, poll_offset=len(polls), image_offset=image_offset + len(images)
+            )
             if block:
                 blocks.append(block)
             images.extend(post_images)
@@ -534,6 +548,21 @@ class LinuxDoTopic:
                 wrapper.decompose()
             else:
                 wrapper.replace_with(media_placeholder(index))
+        # 没有 lightbox 包裹的裸图（`<p><img src=…></p>`）同样要换成标记，
+        # 否则它留在正文里就是外链图片语法 —— 富文本不允许，渲染层只能整张剥掉。
+        if image_index is not None:
+            for img in soup.find_all("img"):
+                classes = img.get("class") or []
+                if "emoji" in classes or "avatar" in classes:
+                    continue
+                if img.find_parent("div", class_="lightbox-wrapper"):
+                    continue
+                link = img.find_parent("a")
+                src = str(img.get("src") or "")
+                url = str((link.get("href") if link else "") or src) or src
+                index = image_index.get(url)
+                if index is not None:
+                    img.replace_with(media_placeholder(index))
 
     @staticmethod
     def _simplify(

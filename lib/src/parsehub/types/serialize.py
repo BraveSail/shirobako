@@ -59,10 +59,12 @@ class ResultRebuildUnavailable(RuntimeError):
 #:   与没修一样（用户会报「图片原位怎么还是坏的」）。v1/v2 的 twitter 条目也一并作废。
 #: - 4 = bilibili opus 改用详情页全文 + 图片原位标记（2026-10-22）：旧条目是
 #:   ``detail`` 接口的截断摘要（``has_more=true``），正文短、图堆末尾。
+#: - 5 = linux.do 上下文楼层（主楼/被回复层）的图改为**块内原位标记**（2026-10-22）：
+#:   旧条目把图放在 ``reply_media_count`` 通道 ⇒ 图堆在消息末尾。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
 #: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 4
+_CACHE_CONTENT_VERSION = 5
 _CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo", "bilibili"})
 
 

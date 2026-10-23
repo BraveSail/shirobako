@@ -297,8 +297,10 @@ def test_the_floor_renders_with_the_opening_post(monkeypatch):
     assert "> " in markdown, f"没有主楼引用块:\n{markdown[:400]}"
     assert "· #1" in markdown, "引用块里没有主楼的楼层号"
     assert "KoaIa" in markdown, "引用块里不是主楼作者"
-    # 引用块的角色要声明出来（渲染层据此归位媒体，不再看位置）
-    assert topic.quote_roles == ["reply"], topic.quote_roles  # 上下文块在正文前
+    # 上下文层的媒体已改为**块内原位标记** ⇒ 不再声明 reply 角色
+    # （声明了渲染层会去 reply 桶找媒体，那里已经是空的）
+    assert topic.quote_roles == [], topic.quote_roles
+    assert topic.reply_media_count == 0
 
 
 def test_a_reply_renders_both_context_blocks(monkeypatch):
@@ -309,8 +311,8 @@ def test_a_reply_renders_both_context_blocks(monkeypatch):
 
     markdown = result.markdown_content
     assert "· #1" in markdown, "缺主楼引用块"
-    # 两个上下文块 ⇒ 两个 quoted 角色（按出现顺序）
-    assert result.quote_roles == ["reply", "reply"], result.quote_roles
+    # 两个上下文块；媒体走块内原位标记 ⇒ 不声明 reply 角色
+    assert result.quote_roles == [], result.quote_roles
     assert "· #26" in markdown, "缺被回复楼层的引用块"
     assert markdown.index("· #1") < markdown.index("· #26"), "顺序应该是「主楼 -> 被回复的层」"
 

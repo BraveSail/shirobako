@@ -252,6 +252,11 @@ _QUOTE_TABLE_ROW_RE = re.compile(r"^\|.*\|$")
 #: 残留的斜体标记会污染替换产物。
 _QUOTE_POLL_PLACEHOLDER_RE = re.compile(r"^\{\{poll:\d+\}\}$")
 
+#: 引用块里的 **媒体占位符行**（``{{media:N}}`` —— 被引用楼层自己的图）。
+#: 与 poll 同理**不能**包 ``<i>``: 渲染层要按整行替换成媒体引用, 图片语法落在斜体里
+#: 能不能解析没有保证（而且 ``![](…)`` 被 ``<i>`` 包住时连行内语法都不成立）。
+_QUOTE_MEDIA_PLACEHOLDER_RE = re.compile(r"^\{\{media:\d+\}\}$")
+
 
 def _quote_line(line: str) -> str:
     """引用块里的一行 —— 整行斜体, 但**行尾的硬换行标记要留在标签外面**。
@@ -273,6 +278,9 @@ def _quote_line(line: str) -> str:
     if not stripped:
         return ">"
     if _QUOTE_TABLE_ROW_RE.match(stripped) or _QUOTE_POLL_PLACEHOLDER_RE.match(stripped):
+        return f"> {stripped}"
+    if _QUOTE_MEDIA_PLACEHOLDER_RE.match(stripped):
+        # 独立成行给渲染层做整行替换；不包 <i>，也不补硬换行两空格
         return f"> {stripped}"
     trailing = line[len(stripped) :]  # 行尾空白（markdownify 的 br 给两空格）
     return f"> <i>{stripped}</i>{trailing}"
