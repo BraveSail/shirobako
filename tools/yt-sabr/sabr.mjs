@@ -19,7 +19,7 @@
  */
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { buildSabrFormat, EnabledTrackTypes } from 'googlevideo/utils';
-import { createWriteStream, readFileSync, mkdirSync, statSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const args = {};
@@ -201,6 +201,54 @@ try {
     streamError = e?.message || String(e);
     console.error(`[sabr] stream error: ${streamError}`);
   });
+
+  // ★ PO Token（attestation）—— 2026-10-22 起 YouTube 对 SABR 返回
+  // ``STREAM_PROTECTION_STATUS status=3``（"attestation required"），必须先注入
+  // 一个 content-bound 的 PO token 才能取流（见 ``gen-pot.mjs``）。
+  // 必须在 ``start()`` **之前**设置 —— 它是首帧请求体的一部分。
+  // 调用方没给就**就地生成**（~1–4s）；生成失败时打印原因并继续（让服务端的
+  // 真实错误暴露出来，而不是被一个笼统的"没 token"盖掉）。
+  let poToken = (input.poToken || '').trim();
+  // 跨进程缓存：同一 videoId 的 token 有效期 ~6h，重试/重发时不必再生成
+  const potCacheDir = '/tmp/yt-pot-cache';
+  const potCacheFile = join(potCacheDir, `${videoId}.json`);
+  if (!poToken) {
+    try {
+      if (existsSync(potCacheFile)) {
+        const cached = JSON.parse(readFileSync(potCacheFile, 'utf8'));
+        // 留 1 分钟余量，避免刚好过期
+        if (cached.poToken && new Date(cached.expiresAt).getTime() > Date.now() + 60_000) {
+          poToken = cached.poToken;
+          console.error(`[sabr] 复用缓存的 PO token (len=${poToken.length})`);
+        }
+      }
+    } catch {
+      /* 缓存坏了就当没有 */
+    }
+  }
+  if (!poToken) {
+    try {
+      const t0 = Date.now();
+      const { generatePoToken } = await import('./gen-pot.mjs');
+      const generated = await generatePoToken(videoId);
+      poToken = generated.poToken;
+      console.error(`[sabr] 自动生成 PO token (len=${poToken.length}, ${Date.now() - t0}ms)`);
+      try {
+        mkdirSync(potCacheDir, { recursive: true });
+        writeFileSync(potCacheFile, JSON.stringify(generated));
+      } catch {
+        /* 缓存写失败不影响取流 */
+      }
+    } catch (e) {
+      console.error(`[sabr] PO token 生成失败: ${e?.message || e}`);
+    }
+  }
+  if (poToken) {
+    stream.setPoToken(poToken);
+    console.error(`[sabr] 注入 PO token (len=${poToken.length})`);
+  } else {
+    console.error('[sabr] 没有可用 PO token —— 若服务端要求 attestation 会失败');
+  }
 
   // 显式 itag > codecPriority > 库默认
   let videoSpec = videoItag;
