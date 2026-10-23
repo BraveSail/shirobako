@@ -297,13 +297,10 @@ class YtbVideoParseResult(VideoParseResult):
         temp_dir.mkdir(parents=True, exist_ok=True)
         progress = self._byte_progress(callback, callback_args, callback_kwargs) if callback else None
 
-        # 预期总字节（用于进度）: 1080p 视频 + 音频的大致量级（取最高档 contentLength）
+        # SABR **不估算总字节**（不给 progress_total）: 素材里的 contentLength 是
+        # "最高档"的量级（实测 44MB），而实际选中档只有 20MB —— 报百分比会停在
+        # 51% 再跳到完成，比「不确定态」更糟。传 0 ⇒ 渲染层显示「下载中...」。
         expected = 0
-        for item in sabr.adaptive_formats:
-            length = int(item.get("contentLength") or 0)
-            if length > expected and (item.get("mimeType") or "").startswith(("video/", "audio/")):
-                expected = max(expected, length)
-        expected = expected or 60 * 1024 * 1024
 
         try:
             result = await fetch_sabr_streams(

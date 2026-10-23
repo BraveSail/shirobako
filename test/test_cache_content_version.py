@@ -115,6 +115,6 @@ def test_a_douyin_entry_with_an_old_body_is_refreshed():
 
 def test_platforms_whose_body_format_never_changed_keep_their_cache():
     """格式没变过的平台不能被连坐作废 —— 重解析只会白重下媒体"""
-    for platform in ("youtube", "bilibili", "zhihu", "threads"):
+    for platform in ("youtube", "zhihu", "pixiv", "facebook"):
         entry = _get(_entry_payload(platform=platform, content_version=0))
         assert entry is not None, platform

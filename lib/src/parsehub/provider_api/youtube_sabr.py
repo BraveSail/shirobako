@@ -190,17 +190,22 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     )
 
     async def _watch_progress() -> None:
-        """轮询产物大小回报进度（子进程结束时由外层取消）。"""
-        if not progress_callback or progress_total <= 0:
+        """轮询产物大小回报进度（子进程结束时由外层取消）。
+
+        ``progress_total`` 为 0 时**照样回调** —— 渲染层把它当「不确定态」（显示
+        "下载中..." 而不是 0%）。SABR 的数据在 googlevideo 内部缓冲、整段落地才写
+        文件，所以 current 在前几秒恒为 0，报百分比只会卡在 0%。
+        """
+        if not progress_callback:
             return
         try:
             while True:
                 await asyncio.sleep(2.0)
                 current = 0
-                for name in ("video.mp4", "audio.m4a"):
-                    candidate = output_dir / name
-                    if candidate.exists():
-                        current += candidate.stat().st_size
+                for candidate in output_dir.glob("video.*"):
+                    current += candidate.stat().st_size
+                for candidate in output_dir.glob("audio.*"):
+                    current += candidate.stat().st_size
                 await progress_callback(current, progress_total)
         except asyncio.CancelledError:
             return
@@ -245,7 +250,7 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     if result.video_bytes <= 0 or result.audio_bytes <= 0:
         raise SabrFetchError("SABR 产物为空（video/audio 字节为 0）")
 
-    if progress_callback and progress_total > 0:
+    if progress_callback:
         await progress_callback(result.video_bytes + result.audio_bytes, progress_total)
 
     logger.info(

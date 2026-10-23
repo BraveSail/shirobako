@@ -19,7 +19,7 @@
  */
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { buildSabrFormat, EnabledTrackTypes } from 'googlevideo/utils';
-import { createWriteStream, existsSync, readFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, openSync, writeSync, closeSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const args = {};
@@ -194,6 +194,18 @@ try {
     videoPlaybackUstreamerConfig,
     formats,
     clientInfo: { clientName: 1, clientVersion: '2.20261015.01.00' },
+    // ⚠️ 必须给 durationMs: 不给时库按 Infinity 跑 while 循环、一次长连接直到服务端结束,
+    // 数据在内存里攒完才 enqueue —— 外部看到的文件大小一直 0, 进度就是「0 直接跳 100」
+    // （用户报「SABR 下载好像没用进度」）。给了时长后按 4s 段循环, 每段落地即 enqueue。
+    durationMs:
+      Number(input.durationMs || 0) ||
+      (() => {
+        // 素材自带 approxDurationMs（SABR 格式一定有），取最大值即可
+        const ds = (adaptiveFormats || [])
+          .map((f) => Number(f.approxDurationMs || f.durationMs || 0))
+          .filter((n) => n > 0);
+        return ds.length ? Math.max(...ds) : undefined;
+      })(),
   });
 
   let streamError = null;
@@ -292,33 +304,52 @@ try {
   audioPath = join(outdir, `audio.${aExt}`);
   console.error(`[sabr] 产物: video.${vExt} (${vMime}) + audio.${aExt} (${aMime})`);
 
-  const vOut = createWriteStream(videoPath);
-  const aOut = createWriteStream(audioPath);
+  // ⚠️ **同步写**（不是 createWriteStream）—— Bun 的写流会把数据缓存在用户态，
+  // 文件大小要到 `end()` 才更新，于是进度轮询 8 秒都读到 0、最后一下跳到完成
+  // （用户报「SABR 下载好像没用进度，直接 0 到 100」）。同步写每块立即反映到
+  // 文件 size，进度才是真的；写盘比网络快，阻塞可接受。
+  const vFd = openSync(videoPath, 'w');
+  const aFd = openSync(audioPath, 'w');
 
-  const pump = async (s, out, add) => {
+  const writeAll = (fd, buf) => {
+    let off = 0;
+    while (off < buf.length) {
+      off += writeSync(fd, buf, off, buf.length - off);
+    }
+  };
+
+  const pump = async (s, fd, add) => {
     const r = s.getReader();
     for (;;) {
       const { done, value } = await r.read();
       if (done) break;
       add(value.length);
-      // ⚠️ **必须等 write 回调** —— 只调 out.write() 不等的话, 流还在缓冲区里就
-      // 走到 process.exit(0), 磁盘慢时静默丢数据（实测同一视频落盘 27MB/44MB 不定）。
-      await new Promise((resolve, reject) => {
-        out.write(value, (err) => (err ? reject(err) : resolve()));
-      });
+      writeAll(fd, value);
     }
   };
 
-  await Promise.all([
-    pump(videoStream, vOut, (n) => { vb += n; }),
-    pump(audioStream, aOut, (n) => { ab += n; }),
-  ]);
-
-  // 显式关流并等 flush（end 回调 = 数据真正落盘）
-  await Promise.all([
-    new Promise((resolve) => vOut.end(resolve)),
-    new Promise((resolve) => aOut.end(resolve)),
-  ]);
+  try {
+    await Promise.all([
+      pump(videoStream, vFd, (n) => {
+        vb += n;
+      }),
+      pump(audioStream, aFd, (n) => {
+        ab += n;
+      }),
+    ]);
+  } finally {
+    // 关 fd 前内核已把数据交给文件系统（write 是同步的），close 只为释放句柄
+    try {
+      closeSync(vFd);
+    } catch {
+      /* ignore */
+    }
+    try {
+      closeSync(aFd);
+    } catch {
+      /* ignore */
+    }
+  }
 
   // 落盘字节数必须与流内累计一致 —— 不一致说明写丢了（宁可失败也不要截断的产物）
   const vWritten = statSync(videoPath).size;

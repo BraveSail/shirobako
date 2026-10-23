@@ -28,7 +28,10 @@ def resolve_media_info(processed: ProcessedMedia, file_path: str) -> tuple[int, 
 def progress(current: int, total: int, unit: ProgressUnit, _t: PreLocaleSelector) -> str | None:
     if unit == "bytes":
         if total <= 0:
-            return None
+            # 总字节未知（SABR 长连接、chunked 响应）—— 给「不确定态」而不是 0%。
+            # SABR 的 data 在 googlevideo 内部缓冲、整段落地才写文件，报百分比只会
+            # 停在 0%（用户报「SABR 下载好像没用进度，直接 0 到 100」）。
+            return str(_t("下 载 中..."))
 
         text = _t(f"下 载 中... | {current * 100 / total:.0f}%")
         if round(current * 100 / total, 1) % 25 == 0:
