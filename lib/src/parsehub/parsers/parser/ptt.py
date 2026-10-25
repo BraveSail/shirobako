@@ -44,11 +44,16 @@ class PttParser(BaseParser):
         if article.body:
             parts.append(article.body)
         if article.pushes:
-            lines = ["---", "**推文**"]
+            # 每条推文**各自一个引用块**（用户明确要求「每条回复每个引用」）。
+            # 行间留空行，服务端才会切成独立的 blockquote —— 连续 > 行会被合并成
+            # 一个大框，那就不是"每条一个引用"了。
+            lines = ["---"]
             for push in article.pushes:
                 tag = push.tag or "→"
-                lines.append(f"{tag} {push.user}: {push.content}")
-            parts.append("\n".join(lines))
+                content = f"{tag} {push.user}: {push.content}".rstrip()
+                lines.append(f"> {content}")
+                lines.append("")
+            parts.append("\n".join(lines).rstrip())
         return "\n\n".join(parts)
 
 

@@ -1,5 +1,6 @@
 """PTT 文章解析（fixture 取自真实页面，见 fixtures/ptt_article.html）。"""
 
+import re
 from pathlib import Path
 
 from parsehub.parsers.parser.ptt import PttParser
@@ -33,6 +34,8 @@ def test_images_are_marked_in_place():
     assert a.body.count(f"{{{{media:{a.images.index(first)}}}}}") >= 1
     assert "{{media:0}}" in a.body
     assert "{{media:1}}" in a.body
+    # 图片链接不能先转成 [url](url) 再替换 —— 那会渲染成空链接 []()
+    assert not re.search(r"\[[^\]]*media[^\]]*\]\(", a.body)
 
 
 def test_signature_is_dropped():
@@ -56,8 +59,8 @@ def test_pushes_are_parsed():
 def test_render_keeps_ptt_push_style():
     """渲染保留 PTT 原生形态：``推 user: 内容``"""
     md = PttParser._render(_article())
-    assert "**推文**" in md
-    assert "推 gsock: 6" in md
+    # **每条推文各自一个引用块**（行间空行 → 服务端切成独立 blockquote）
+    assert "> 推 gsock: 6\n\n> 推 lolicon" in md
     # 正文里的图片标记要留着（渲染层替换成媒体引用）
     assert "{{media:0}}" in md
 

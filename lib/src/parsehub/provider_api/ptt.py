@@ -161,16 +161,17 @@ class PttAPI:
             )
 
         # ── 正文：main 里除 metaline / push / 签名之外的文本 ──
-        body = cls._extract_body(main)
-        article.images, body_with_markers = cls._replace_images(body)
-        article.body = body_with_markers
+        article.body, article.images = cls._extract_body(main)
         return article
 
     @staticmethod
-    def _extract_body(main: Any) -> str:
+    def _extract_body(main: Any) -> tuple[str, list[str]]:
         """把正文拆出来：删掉 metaline / push / 签名，保留 ``<a>`` 的链接文字。
 
-        用 ``decompose`` 会连 ``<a>`` 一起删，所以这里先复制一份 soup 再操作。
+        返回 ``(正文, 图片列表)``。图片处理**必须在这里做**（而不是事后对整段文本
+        再跑一次正则）：``<a href="…jpeg">…jpeg</a>`` 先被转成 ``[url](url)`` 再被
+        替换，就会得到 ``[{{media:0}}]({{media:0}})`` —— 渲染出来是一个空链接
+        ``[]()``（用户实测报过）。图片链接直接换成标记，不生成链接语法。
         """
         work = BeautifulSoup(str(main), "lxml")
         node = work.find("div", id="main-content") or work
@@ -181,37 +182,38 @@ class PttAPI:
             if _SIGNATURE_RE.search(span.get_text(" ", strip=True)):
                 span.decompose()
 
+        images: list[str] = []
+
+        def _marker(url: str) -> str:
+            if url not in images:
+                images.append(url)
+            return media_placeholder(images.index(url))
+
+        def _inline(text: str) -> str:
+            """纯文本里的图片 URL 也换成标记。"""
+            return _IMAGE_URL_RE.sub(lambda m: _marker(m.group(0)), text)
+
         lines: list[str] = []
         for element in node.children:
-            text = element.get_text("\n", strip=False) if hasattr(element, "get_text") else str(element)
-            if not text:
-                continue
-            # 链接：把 <a> 换成 markdown，其它标签按纯文本保留
-            if getattr(element, "name", None) == "a":
+            name = getattr(element, "name", None)
+            if name == "a":
                 href = element.get("href") or ""
-                label = element.get_text(" ", strip=False).strip() or href
-                text = f"[{label}]({href})" if href else label
-            lines.append(text)
+                label = element.get_text(" ", strip=False).strip()
+                if href and _IMAGE_URL_RE.fullmatch(href):
+                    # 图片链接：只留标记，不生成 [文字](url)
+                    lines.append(_marker(href))
+                elif href:
+                    lines.append(f"[{_inline(label) or href}]({href})")
+                elif label:
+                    lines.append(_inline(label))
+                continue
+            text = element.get_text("\n", strip=False) if hasattr(element, "get_text") else str(element)
+            if text:
+                lines.append(_inline(text))
         body = "\n".join(lines)
         # 去掉签名行与多余空行
         body = _SIGNATURE_RE.sub("", body)
         body = re.sub(r"\n{3,}", "\n\n", body)
-        return body.strip()
-
-    @staticmethod
-    def _replace_images(body: str) -> tuple[list[str], str]:
-        """正文里的图片 URL → ``{{media:N}}``（原位），返回 (图片列表, 新正文)。"""
-        images: list[str] = []
-
-        def _sub(match: re.Match[str]) -> str:
-            url = match.group(0)
-            # 同一个 URL 只收一次（PTT 正文里链接与文字可能重复出现）
-            if url in images:
-                return media_placeholder(images.index(url))
-            images.append(url)
-            return media_placeholder(len(images) - 1)
-
-        return images, _IMAGE_URL_RE.sub(_sub, body)
-
+        return body.strip(), images
 
 __all__ = ["PttAPI", "PttArticle", "PttPush", "USER_AGENT"]
