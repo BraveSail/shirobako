@@ -1901,6 +1901,12 @@ def escape_telegram_markdown(text: str) -> str:
     for pattern in _TG_PROTECT_PATTERNS:
         masked = pattern.sub(_stash, masked)
 
+    # 行首 4+ 空格在 Markdown 里是**缩进代码块** —— 平台原文常用空格做居中排版
+    # （实测 X 的动画预告：``      TVアニメ『あかね噺』`` 整行渲染成代码块，用户报
+    # 「为什么是代码块」）。换成等量全角空格：视觉上仍是缩进，但不再触发代码块。
+    # 保护块（我们自己的 ``` 围栏）已在上面挖走，不受影响。
+    masked = re.sub(r"(?m)^( {4,})", lambda m: "\u3000" * len(m.group(1)), masked)
+
     escaped = "".join(f"\\{ch}" if ch in _TG_RESERVED else ch for ch in masked)
 
     # 填回保护块 —— **必须逆序**: 后保护的块里可能嵌着先保护的占位符

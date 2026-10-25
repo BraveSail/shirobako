@@ -14,11 +14,69 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import time
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from curl_cffi.const import CurlOpt
 from curl_cffi.requests import AsyncSession, Cookies, Headers
 from curl_cffi.requests import exceptions as _curl_errors
+
+# ── 原始响应落盘（排查用）────────────────────────────────────────────────
+#: 为什么要有: 每次排查平台问题都要重新请求一遍（还可能触发限流），用户明确要求
+#: 「原始响应落盘」。这里在**唯一的 HTTP 入口**统一 dump，改一处覆盖所有平台。
+#:
+#: 开关: env ``PARSEHUB_DUMP_RAW=0`` 关闭；目录 env ``PARSEHUB_RAW_DIR``
+#:       （默认 ``data/debug/raw``，容器里就是 bind mount 的 ``/app/data/debug/raw``）。
+#: 只落**文本类**响应（json/html/text/xml），图片/视频等二进制一律跳过。
+_RAW_DUMP_ENABLED = os.environ.get("PARSEHUB_DUMP_RAW", "1").strip().lower() not in ("0", "false", "no", "off")
+_RAW_DUMP_DIR = Path(os.environ.get("PARSEHUB_RAW_DIR") or "data/debug/raw")
+_RAW_DUMP_MAX_BYTES = 4 * 1024 * 1024
+_RAW_DUMP_KEEP = 500
+_TEXTUAL_CTYPES = ("json", "html", "text", "xml", "javascript")
+
+
+def _prune_raw_dumps(directory: Path, keep: int = _RAW_DUMP_KEEP) -> None:
+    """只保留最近 ``keep`` 个原始响应（按 mtime），避免长期运行把磁盘吃满。"""
+    try:
+        files = sorted(
+            (p for p in directory.rglob("*") if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in files[keep:]:
+            stale.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001 - 清理失败绝不能影响主流程
+        pass
+
+
+def dump_raw_response(method: str, url: str, response: Any) -> None:
+    """把一次 HTTP 响应体落盘（文本类限定）。
+
+    **失败静默** —— 排查设施绝不能改变请求本身的成败。
+    """
+    if not _RAW_DUMP_ENABLED:
+        return
+    try:
+        content_type = str((getattr(response, "headers", {}) or {}).get("content-type") or "").lower()
+        if not any(kind in content_type for kind in _TEXTUAL_CTYPES):
+            return
+        body = getattr(response, "content", b"") or b""
+        if not body or len(body) > _RAW_DUMP_MAX_BYTES:
+            return
+        host = urlparse(str(url)).netloc or "unknown"
+        digest = hashlib.sha1(str(url).encode("utf-8")).hexdigest()[:10]
+        ext = "json" if "json" in content_type else ("html" if "html" in content_type else "txt")
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = _RAW_DUMP_DIR / host / f"{stamp}_{method.lower()}_{digest}.{ext}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+        _prune_raw_dumps(_RAW_DUMP_DIR)
+    except Exception:  # noqa: BLE001
+        pass
 
 #: 浏览器指纹 —— 集中一处，升级只改这里（curl_cffi 0.16 支持到 chrome150）
 IMPERSONATE = "chrome150"
@@ -167,10 +225,16 @@ class AsyncClient(AsyncSession):
         await super().__aexit__(*args)
 
     async def request(self, method: str, url: str, **kwargs: Any):  # type: ignore[override]
-        """请求级也接受 ``follow_redirects``（httpx 的写法），翻译成 curl_cffi 的 ``allow_redirects``。"""
+        """请求级也接受 ``follow_redirects``（httpx 的写法），翻译成 curl_cffi 的 ``allow_redirects``。
+
+        并顺手把**原始响应**落盘（排查用；见 :func:`dump_raw_response`）。
+        只落文本类、写盘失败静默 —— 不影响请求本身。
+        """
         if "follow_redirects" in kwargs:
             kwargs["allow_redirects"] = kwargs.pop("follow_redirects")
-        return await super().request(method=method, url=url, **kwargs)
+        response = await super().request(method=method, url=url, **kwargs)
+        dump_raw_response(method, str(url), response)
+        return response
 
 
 def new_client(**kwargs: Any) -> AsyncClient:

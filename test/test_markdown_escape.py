@@ -68,3 +68,15 @@ def test_hashtag_anchor_keeps_its_inner_text_intact():
     """<a> 里的可见文字（#tag）不能被转义，否则服务端不认锚点"""
     anchor = '<a href="https://x.com/hashtag/T">#T</a>'
     assert esc(anchor) == anchor
+
+
+def test_leading_indent_is_not_a_code_block():
+    """行首 4+ 空格是 Markdown 缩进代码块 —— 换成全角空格（保留视觉缩进）
+
+    实测 X 的一条动画预告：``      TVアニメ『あかね噺』`` 整行被渲染成代码块。
+    """
+    out = esc("━━━\n\n      TVアニメ『あかね噺』\n  第２期キービジュアル 公開")
+    assert "\u3000\u3000\u3000\u3000\u3000\u3000TVアニメ" in out
+    assert not out.startswith("    ")  # 不再有半角缩进
+    # 少于 4 个空格的行不动
+    assert "\u3000\u3000第２期" not in out
