@@ -11,6 +11,15 @@ from ...types import ImageRef, Platform, RichTextParseResult
 from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
+#: 富文本正文上限（服务端限制），推文截断预算按它算
+_TOTAL_BUDGET = 31_000
+#: 推文段至少保留这么多字符（正文特别长时不要一条都不给）
+_PUSH_MIN_BUDGET = 3_000
+#: 单条推文的**渲染开销**（源 ~20 字符 → 服务端 ``<blockquote>…</blockquote>`` 约 50）
+_PUSH_RENDER_COST = 50
+#: 推文条数硬上限（再多的部分只给提示）
+_MAX_PUSHES = 400
+
 
 class PttParser(BaseParser):
     __platform__ = Platform.PTT
@@ -30,6 +39,8 @@ class PttParser(BaseParser):
                 for url in article.images
             ],
             published_at=article.published_at,
+            # 页脚的统计位: PTT 没有浏览/点赞，但推文数有意义（"N 条推文"）
+            reply_count=len(article.pushes) or None,
             tags=[article.board] if article.board else None,
         )
 
@@ -47,11 +58,27 @@ class PttParser(BaseParser):
             # 每条推文**各自一个引用块**（用户明确要求「每条回复每个引用」）。
             # 行间留空行，服务端才会切成独立的 blockquote —— 连续 > 行会被合并成
             # 一个大框，那就不是"每条一个引用"了。
-            lines = ["---"]
+            #
+            # ⚠️ 必须按预算截断: 这条帖子有 655 条推文，每条一个框渲染后 39K 字符，
+            # 超过富文本 32768 上限（整条会被服务端拒掉）。预算 = 总量减正文，
+            # 末尾注明还剩多少条。
+            budget = max(_PUSH_MIN_BUDGET, _TOTAL_BUDGET - len(article.body))
+            max_pushes = min(_MAX_PUSHES, budget // _PUSH_RENDER_COST)
+            lines: list[str] = []
+            used = 0
+            shown = 0
             for push in article.pushes:
                 tag = push.tag or "→"
-                content = f"{tag} {push.user}: {push.content}".rstrip()
-                lines.append(f"> {content}")
+                line = f"> {tag} {push.user}: {push.content}".rstrip()
+                if shown >= max_pushes or (shown and used + len(line) + 2 > budget):
+                    break
+                lines.append(line)
+                lines.append("")
+                used += len(line) + 2
+                shown += 1
+            remaining = len(article.pushes) - shown
+            if remaining > 0:
+                lines.append(f"> …還有 {remaining} 條推文未顯示")
                 lines.append("")
             parts.append("\n".join(lines).rstrip())
         return "\n\n".join(parts)

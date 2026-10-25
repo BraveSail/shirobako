@@ -61,6 +61,8 @@ def test_render_keeps_ptt_push_style():
     md = PttParser._render(_article())
     # **每条推文各自一个引用块**（行间空行 → 服务端切成独立 blockquote）
     assert "> 推 gsock: 6\n\n> 推 lolicon" in md
+    # 截断提示只在超出预算时出现（fixture 只有 3 条，不该有）
+    assert "未顯示" not in md
     # 正文里的图片标记要留着（渲染层替换成媒体引用）
     assert "{{media:0}}" in md
 
