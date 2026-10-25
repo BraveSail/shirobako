@@ -1830,6 +1830,87 @@ def convert_markdown_quote(
     return _QUOTE_BLOCK_RE.sub(_replace, text)
 
 
+#: Telegram 富文本（MarkdownV2 同族）里**必须转义**的保留字符 —— 官方文档原话:
+#: "characters ``_ * [ ] ( ) ~ ` > # + - = | { } . !`` must be escaped with the
+#: preceding character ``\``"（另有 "1..126 任意字符都可用 \ 转义"，一般用不到）。
+#: 我们**不能无脑全转** —— 其中 ``* _ ` > [ ] ( )`` 正是本项目自己生成语法用的
+#: （粗体 / 引用 / 代码 / 链接），全转会把标题、引用、链接一起打坏。
+_TG_RESERVED = frozenset("_*[]()~`>#+-=|{}.!")
+
+#: 需要**原样保留**的语法块（我们生成的，不转义）。
+#: 顺序有意义：先保护 HTML 标签 / 代码块 / 占位符，再保护行内语法。
+_TG_PROTECT_PATTERNS = (
+    # 我们自己的占位符（渲染层后面要替换）
+    re.compile(r"\{\{(?:media|poll):\d+\}\}"),
+    # 整条 <a …>…</a>（**连内部文本一起保护** —— hashtag 链接的可见文字是 ``#tag``，
+    # 只保护标签会把里面的 # 转义掉，服务端就不认这个锚点了）
+    re.compile(r"<a\b[^>]*>.*?</a>", re.S),
+    # 其余 HTML 标签（<i> / <b> / <code> / <details> / <summary> …）
+    re.compile(r"</?[a-zA-Z][^>]*>"),
+    # 裸 URL（正文里的 ``https://x.com/a_b__c`` —— 转义 _ 会把链接打断）
+    re.compile(r"https?://[^\s\)\]<>\"']+"),
+    # 围栏代码块（跨行，先于行内代码）
+    re.compile(r"```.*?```", re.S),
+    # 行内代码
+    re.compile(r"`[^`\n]+`"),
+    # 图片 / 链接（含 tg:// 媒体引用）
+    re.compile(r"!?\[[^\]\n]*\]\([^)\n]*\)"),
+    # 粗斜体 / 加粗 / 下划线 / 斜体（成对；长的先匹配）
+    re.compile(r"\*\*\*[^*\n]+\*\*\*"),
+    re.compile(r"\*\*[^*\n]+\*\*"),
+    re.compile(r"(?<!\w)__[^_\n]+__(?!\w)"),
+    re.compile(r"(?<!\w)_[^_\n]+_(?!\w)"),
+    # 行首引用（> / >>）
+    re.compile(r"^>+ ?", re.M),
+    # 行首标题
+    re.compile(r"^#{1,6} ", re.M),
+    # 分隔线（独占一行）
+    re.compile(r"^-{3,}$", re.M),
+    # 表格行（以 | 开头/结尾；**排除 ||spoiler||** —— 第二个字符是竖线的不是表格）
+    re.compile(r"^(?!\|\|)\|.*\|$", re.M),
+)
+
+
+def escape_telegram_markdown(text: str) -> str:
+    """把**平台原文**里的 Telegram 保留字符转义，但不破坏我们自己生成的语法。
+
+    背景（2026-10-22）：X 的一条动画预告正文就是 ``||◤ 先行カット＆あらすじ公開 ◢||``，
+    Telegram 把 ``||`` 当 spoiler 语法 ⇒ 整行被打码，用户报「为什么识别打码」。
+    这跟 ``possibly_sensitive`` 无关（那条是 ``False``），纯粹是**原文字面量撞上渲染语法**。
+
+    做法：先用 :data:`_TG_PROTECT_PATTERNS` 把「我们生成的语法块」挖出来占位，
+    再对**剩余文本**按官方清单逐字符转义，最后把占位填回去。这样：
+
+    - 平台原文里的 ``||`` / ``~~`` / ``{`` / ``}`` / ``+`` / ``=`` / ``.`` / ``!``
+      等等永远不会被误当语法；
+    - 我们自己拼的 ``**粗体**`` / ``> 引用`` / ``[链接](url)`` / ```` ```代码``` ````
+      / ``{{media:0}}`` 原样保留。
+
+    转义只加一个反斜杠 —— Telegram 会把它还原成字面字符（官方文档保证 1..126 都可转义）。
+    """
+    if not text:
+        return text
+    protected: list[str] = []
+
+    def _stash(match: re.Match[str]) -> str:
+        protected.append(match.group(0))
+        # 用不含保留字符的占位符（\x00 起，正文里不会出现）
+        return f"\x00{len(protected) - 1}\x00"
+
+    masked = text
+    for pattern in _TG_PROTECT_PATTERNS:
+        masked = pattern.sub(_stash, masked)
+
+    escaped = "".join(f"\\{ch}" if ch in _TG_RESERVED else ch for ch in masked)
+
+    # 填回保护块 —— **必须逆序**: 后保护的块里可能嵌着先保护的占位符
+    # （``[链接](https://…/a_b)``: URL 先被保护，整条链接再被保护），
+    # 正序填会把内层占位符当成字面量留在结果里。
+    for idx in reversed(range(len(protected))):
+        escaped = escaped.replace(f"\x00{idx}\x00", protected[idx])
+    return escaped
+
+
 def format_text(
     text: str,
     *,
@@ -1855,6 +1936,12 @@ def format_text(
     """
     # 分隔线先规范化: 原文里紧贴上一行的 '---' 在服务端不会被认成分隔线
     text = _normalize_hr(text.strip())
+    # ⚠️ 平台原文里的保留字符（``|`` → spoiler、``~`` → 删除线、``_`` → 斜体 …）会被
+    # Telegram 当语法解析 —— 实测 X 的一条动画预告正文就是
+    # ``||◤ 先行カット＆あらすじ公開 ◢||``，整行被打码，用户报「为什么识别打码」
+    # （``possibly_sensitive`` 其实是 False）。统一走 escape_telegram_markdown：
+    # 保护我们自己生成的语法块，其余按官方保留字符清单转义。
+    text = escape_telegram_markdown(text)
     if max_length is not None and len(text) > max_length:
         text = text[: max_length - 100] + "......"
 
