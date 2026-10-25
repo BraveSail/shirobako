@@ -56,12 +56,15 @@ class PttParser(BaseParser):
             parts.append(article.body)
         if article.pushes:
             # 每条推文**各自一个引用块**（用户明确要求「每条回复每个引用」）。
-            # 行间留空行，服务端才会切成独立的 blockquote —— 连续 > 行会被合并成
-            # 一个大框，那就不是"每条一个引用"了。
+            # 行间留空行，服务端才会切成独立的 blockquote。
             #
-            # ⚠️ 必须按预算截断: 这条帖子有 655 条推文，每条一个框渲染后 39K 字符，
-            # 超过富文本 32768 上限（整条会被服务端拒掉）。预算 = 总量减正文，
-            # 末尾注明还剩多少条。
+            # ⚠️ **整段必须再包一层 <details> 收起**：几百条引用会让消息非常高，
+            # Telegram **客户端**会对超长消息自动折叠（"显示更多"），而那层折叠
+            # **会把末尾的页脚一起盖住**（用户报「页脚在显示更多里面」）。
+            # 这与我们自己的「展开全文」是两回事：那是 <details>（我们可控），
+            # 「显示更多」是客户端行为（不可控，只能让消息变矮）。
+            #
+            # 条数也有上限: 富文本正文 32768 字符上限，每条引用渲染约 50 字符。
             budget = max(_PUSH_MIN_BUDGET, _TOTAL_BUDGET - len(article.body))
             max_pushes = min(_MAX_PUSHES, budget // _PUSH_RENDER_COST)
             lines: list[str] = []
@@ -79,8 +82,8 @@ class PttParser(BaseParser):
             remaining = len(article.pushes) - shown
             if remaining > 0:
                 lines.append(f"> …還有 {remaining} 條推文未顯示")
-                lines.append("")
-            parts.append("\n".join(lines).rstrip())
+            summary = f"推文（{len(article.pushes)} 條）"
+            parts.append(f"<details><summary>{summary}</summary>\n\n" + "\n".join(lines).rstrip() + "\n\n</details>")
         return "\n\n".join(parts)
 
 

@@ -32,7 +32,6 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from ..utils import http
-from ..utils.helpers import media_placeholder
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -184,14 +183,9 @@ class PttAPI:
 
         images: list[str] = []
 
-        def _marker(url: str) -> str:
-            if url not in images:
-                images.append(url)
-            return media_placeholder(images.index(url))
-
         def _inline(text: str) -> str:
-            """纯文本里的图片 URL 也换成标记。"""
-            return _IMAGE_URL_RE.sub(lambda m: _marker(m.group(0)), text)
+            """纯文本原样保留 —— 图片 URL 就是普通的链接文本。"""
+            return text
 
         lines: list[str] = []
         for element in node.children:
@@ -200,8 +194,9 @@ class PttAPI:
                 href = element.get("href") or ""
                 label = element.get_text(" ", strip=False).strip()
                 if href and _IMAGE_URL_RE.fullmatch(href):
-                    # 图片链接：只留标记，不生成 [文字](url)
-                    lines.append(_marker(href))
+                    # PTT 的图片是**纯文本链接**，用户定：直接放链接、不抽成 media
+                    # （抽了反而要额外请求下载，PTT 也没有图注/尺寸信息）。
+                    lines.append(href)
                 elif href:
                     lines.append(f"[{_inline(label) or href}]({href})")
                 elif label:

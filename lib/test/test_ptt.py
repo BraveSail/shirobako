@@ -1,6 +1,5 @@
 """PTT 文章解析（fixture 取自真实页面，见 fixtures/ptt_article.html）。"""
 
-import re
 from pathlib import Path
 
 from parsehub.parsers.parser.ptt import PttParser
@@ -24,18 +23,18 @@ def test_metaline_fields():
     assert a.published_at.utcoffset().total_seconds() == 8 * 3600
 
 
-def test_images_are_marked_in_place():
-    """正文里的图片 URL 换成 {{media:N}}，下标与 images 顺序一致"""
+def test_image_urls_stay_plain_links():
+    """PTT 的图片是纯文本链接 —— 直接留在正文里，**不抽成 media**
+
+    （用户定：这种直接放链接就行。抽成媒体反而多一次下载，PTT 也没有图注。）
+    """
     a = _article()
-    assert len(a.images) == 2
-    assert a.images[0].endswith(".jpeg")
-    first = a.images[0]
-    # 同一张图出现两次 → 复用同一下标
-    assert a.body.count(f"{{{{media:{a.images.index(first)}}}}}") >= 1
-    assert "{{media:0}}" in a.body
-    assert "{{media:1}}" in a.body
-    # 图片链接不能先转成 [url](url) 再替换 —— 那会渲染成空链接 []()
-    assert not re.search(r"\[[^\]]*media[^\]]*\]\(", a.body)
+    assert a.images == []
+    assert "{{media:" not in a.body
+    assert "https://i.imgur.com/Oo9D6mx.jpeg" in a.body
+    assert "https://i.imgur.com/tQm2XSB.jpeg" in a.body
+    # 没被包成 markdown 链接（正文里别处的外链仍是 [url](url)，那是正常的）
+    assert "](https://i.imgur.com/" not in a.body
 
 
 def test_signature_is_dropped():
@@ -61,10 +60,12 @@ def test_render_keeps_ptt_push_style():
     md = PttParser._render(_article())
     # **每条推文各自一个引用块**（行间空行 → 服务端切成独立 blockquote）
     assert "> 推 gsock: 6\n\n> 推 lolicon" in md
+    # 整段推文收在 <details> 里: 否则几百条引用会把消息撑得很高，
+    # 客户端自动折叠（"显示更多"）会把末尾页脚盖住
+    assert "<details><summary>推文（3 條）</summary>" in md
+    assert md.rstrip().endswith("</details>")
     # 截断提示只在超出预算时出现（fixture 只有 3 条，不该有）
     assert "未顯示" not in md
-    # 正文里的图片标记要留着（渲染层替换成媒体引用）
-    assert "{{media:0}}" in md
 
 
 def test_parser_matches_ptt_urls():

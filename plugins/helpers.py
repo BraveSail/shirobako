@@ -20,6 +20,28 @@ from repo.settings import SettingsConfig
 
 logger = logger.bind(name="Helpers")
 
+#: 客户端"显示更多"折叠的**可见**字符阈值。
+#: Telegram 官方文档没写这个行为；实测（社区测量 + 我们 PTT 真机复现）可见正文
+#: 到 ~7350 字符、约 19 个块就折起来，下一整块会被整体藏掉 —— 真正的阈值在
+#: 7500~9000 之间，大表格/代码块不会被切断而是整块隐藏。留出余量取 6800。
+#: 注意它折的是**可见部分**: 收起的 <details> 只占一行 summary，所以把长内容折进
+#: details 就能让页脚留在可见区 —— 这正是「不要让显示更多盖住页脚」的实现手段。
+SHOW_MORE_VISIBLE_LIMIT = 6800
+
+_DETAILS_RE = re.compile(r"<details[^>]*>.*?</details>", re.S)
+_SUMMARY_RE = re.compile(r"<summary>(.*?)</summary>", re.S)
+
+
+def visible_length(markdown: str) -> int:
+    """估算客户端实际"看得见"的字符数: 收起的 ``<details>`` 只算 summary 那行。"""
+
+    def _shrink(match: re.Match[str]) -> str:
+        summary = _SUMMARY_RE.search(match.group(0))
+        return summary.group(1) if summary else ""
+
+    return len(_DETAILS_RE.sub(_shrink, markdown))
+
+
 COMMANDS = {
     "start": t_("开始"),
     "jx": t_("解析并预览内容"),
@@ -571,6 +593,22 @@ def replace_translatable_fragments(text: str, lang: str = "") -> str:
     return _TRANSLATABLE_FRAGMENT_RE.sub(lambda m: _translate_fragment(m.group(1), lang), text)
 
 
+def fold_for_show_more(body: str, summary: str = "") -> str:
+    """可见部分超过客户端"显示更多"阈值时，把整段内容再折一层 ``<details>``。
+
+    Telegram 客户端对**可见**字符超过约 7500 的长富文本会自动折叠（"显示更多"），
+    那层折叠**会把末尾页脚一起盖住**（PTT 400 条推文时真机复现）。各平台正文/
+    引用/评论通常已各自折进 ``<details>``，这里做兜底: 仍然超阈值就整体再折一层，
+    页脚永远落在折叠之外。
+
+    嵌套 ``<details>`` 是允许的（服务端上限 16 层），所以不必先拆已有折叠。
+    """
+    if visible_length(body) <= SHOW_MORE_VISIBLE_LIMIT:
+        return body
+    label = summary or "展开全文"
+    return f"<details><summary>{label}</summary>\n\n{body}\n\n</details>"
+
+
 def build_rich_markdown(
     parse_result: AnyParseResult,
     *,
@@ -817,6 +855,7 @@ def build_rich_markdown(
         href = html.escape(parse_result.raw_url, quote=True)
         footer_parts.append(f'<a href="{href}">{html.escape(label)}</a>')
 
+    body = fold_for_show_more(body, fold_summary)
     if not footer_parts:
         return body
     footer = f"<footer>{_METADATA_SEPARATOR.join(footer_parts)}</footer>"
