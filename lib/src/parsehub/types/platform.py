@@ -16,6 +16,7 @@ class Platform(Enum):
     PIPIX = ("pipix", "皮皮虾")
     LINUXDO = ("linuxdo", "linux.do")
     PIXIV = ("pixiv", "Pixiv")
+    PTT = ("ptt", "PTT")
     THREADS = ("threads", "Threads")
     TIEBA = ("tieba", "贴吧")
     TWITTER = ("twitter", "Twitter")

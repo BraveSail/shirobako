@@ -517,6 +517,8 @@ def test_all_registered_platforms_have_author_coverage():
             Platform.YOUTUBE,
             Platform.SNAPCHAT,
             Platform.LINUXDO,
+            # PTT 的作者解析在 test_ptt.py::test_metaline_fields（无转发，不在 FORWARD_CASES）
+            Platform.PTT,
         }
     )
     assert platforms == {p.__platform__ for p in ParseHub().parsers}
