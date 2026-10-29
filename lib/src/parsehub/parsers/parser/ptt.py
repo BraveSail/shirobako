@@ -25,6 +25,9 @@ class PttParser(BaseParser):
     __platform__ = Platform.PTT
     __supported_type__ = ["图文"]
     __match__ = r"^(https?://)?(www\.)?ptt\.cc/bbs/.+\.html"
+    #: 正文里的 ``<img>`` 图被抽成 media、原位留 ``{{media:N}}`` —— 必须真的下载，
+    #: 否则富文本渲染路径跳过下载，占位符没有对应媒体就被删掉（图静默消失）。
+    requires_media_download = True
 
     async def _do_parse(self, raw_url: str) -> RichTextParseResult:
         article = await PttAPI(proxy=self.proxy).fetch(raw_url)

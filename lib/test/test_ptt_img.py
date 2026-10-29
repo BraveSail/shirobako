@@ -23,6 +23,14 @@ def test_bare_link_for_the_same_image_is_not_duplicated():
     assert a.body.count("{{media:0}}") == 1
 
 
+def test_media_download_is_required():
+    """抽成 media 的图**必须**让流水线真下载 —— 否则富文本路径跳过下载，
+    占位符没有对应媒体会被渲染层删掉（用户实测「还是没图」）。"""
+    from parsehub.parsers.parser.ptt import PttParser
+
+    assert PttParser.requires_media_download is True
+
+
 def test_body_text_survives_and_signature_is_gone():
     """图片之后的正文与签名处理都正常"""
     a = PttAPI.parse_html(IMG_FIXTURE.read_text(encoding="utf-8"))
