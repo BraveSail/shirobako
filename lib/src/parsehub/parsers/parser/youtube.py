@@ -62,6 +62,10 @@ from ...utils.downloader import download
 from ...utils.helpers import SecretCookie, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
+#: 直播从**当前时刻**抓多久（秒）。直播的流没有时长, 取流靠墙钟停, 这里定义目标时长；
+#: 实际产物在 mux 时用 ``-t`` 精确裁到这个长度（readahead 会多给几秒）。
+_LIVE_CAPTURE_SECONDS = 30
+
 
 class YtbParse(BaseParser):
     __platform__ = Platform.YOUTUBE
@@ -324,7 +328,13 @@ class YtbVideoParseResult(VideoParseResult):
             # 输出容器 = 工具实际选中的视频容器（webm/mp4）
             out_ext = result.video_path.suffix.lstrip(".").lower() or "mp4"
             output_path = output_dir / f"{self.name}.{out_ext}"
-            await self._mux(result.video_path, result.audio_path, output_path)
+            # 直播按墙钟停, readahead 会多给几秒 → 精确裁到目标时长
+            await self._mux(
+                result.video_path,
+                result.audio_path,
+                output_path,
+                max_seconds=float(_LIVE_CAPTURE_SECONDS) if self.info.is_live else 0,
+            )
         except SabrFetchError as e:
             raise DownloadError(f"SABR 取流失败: {e}") from e
         finally:
@@ -415,11 +425,15 @@ class YtbVideoParseResult(VideoParseResult):
         return _progress
 
     @staticmethod
-    async def _mux(video_path: Path, audio_path: Path, output_path: Path) -> None:
+    async def _mux(video_path: Path, audio_path: Path, output_path: Path, *, max_seconds: float = 0) -> None:
         """ffmpeg ``-c copy`` 合并（不转码, 秒级完成）。失败明确报错, 不产出空文件。
 
         ``-movflags +faststart`` 只对 mp4/mov 有效 —— webm 输出加上它 ffmpeg 会报错，
         所以按输出扩展名决定要不要带。
+
+        :param max_seconds: >0 时用 ``-t`` **精确截断**到这个时长。直播取流是按墙钟停的,
+            服务端的 readahead 会多给几秒（实测 30s 目标拿到 40s 内容）, 这里裁齐。
+            关键帧对齐由 ``-c copy`` 决定, 误差在一个 GOP 内（可接受）。
         """
         cmd = [
             "ffmpeg",
@@ -432,6 +446,8 @@ class YtbVideoParseResult(VideoParseResult):
             "-c",
             "copy",
         ]
+        if max_seconds > 0:
+            cmd += ["-t", f"{max_seconds:.3f}"]
         if output_path.suffix.lower() in (".mp4", ".m4v", ".mov"):
             cmd += ["-movflags", "+faststart"]
         cmd += ["-y", str(output_path)]
