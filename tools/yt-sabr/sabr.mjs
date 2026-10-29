@@ -185,35 +185,15 @@ const fetchWithCookie = (url, options = {}) => {
   return fetch(url, { ...options, headers });
 };
 
+//: 直播默认抓多久 —— 从**当前时刻（直播边缘）**往前抓这么多秒。
+//: 12s ≈ 1080p 10MB 上下，够看清内容又不至于让用户等太久。
+const LIVE_DEFAULT_SECONDS = 30;
+
 let vb = 0, ab = 0;
+//: 直播是我们主动停的 —— abort 会走 error 通道，要区分「预期收尾」和「真失败」
+let liveStopped = false;
 
 try {
-  const stream = new SabrStream({
-    fetch: fetchWithCookie,
-    serverAbrStreamingUrl,
-    videoPlaybackUstreamerConfig,
-    formats,
-    clientInfo: { clientName: 1, clientVersion: '2.20261015.01.00' },
-    // ⚠️ 必须给 durationMs: 不给时库按 Infinity 跑 while 循环、一次长连接直到服务端结束,
-    // 数据在内存里攒完才 enqueue —— 外部看到的文件大小一直 0, 进度就是「0 直接跳 100」
-    // （用户报「SABR 下载好像没用进度」）。给了时长后按 4s 段循环, 每段落地即 enqueue。
-    durationMs:
-      Number(input.durationMs || 0) ||
-      (() => {
-        // 素材自带 approxDurationMs（SABR 格式一定有），取最大值即可
-        const ds = (adaptiveFormats || [])
-          .map((f) => Number(f.approxDurationMs || f.durationMs || 0))
-          .filter((n) => n > 0);
-        return ds.length ? Math.max(...ds) : undefined;
-      })(),
-  });
-
-  let streamError = null;
-  stream.on('error', (e) => {
-    streamError = e?.message || String(e);
-    console.error(`[sabr] stream error: ${streamError}`);
-  });
-
   // ★ PO Token（attestation）—— 2026-10-22 起 YouTube 对 SABR 返回
   // ``STREAM_PROTECTION_STATUS status=3``（"attestation required"），必须先注入
   // 一个 content-bound 的 PO token 才能取流（见 ``gen-pot.mjs``）。
@@ -255,12 +235,37 @@ try {
       console.error(`[sabr] PO token 生成失败: ${e?.message || e}`);
     }
   }
-  if (poToken) {
-    stream.setPoToken(poToken);
-    console.error(`[sabr] 注入 PO token (len=${poToken.length})`);
-  } else {
-    console.error('[sabr] 没有可用 PO token —— 若服务端要求 attestation 会失败');
-  }
+  console.error(
+    poToken ? `[sabr] PO token 已注入 config (len=${poToken.length})` : '[sabr] 没有可用 PO token'
+  );
+
+  // ★ googlevideo 5.x: ``fetchFunction``（旧版是 ``fetch``）；PO token 走 config
+  // 而不是 setPoToken()；``durationMs`` / ``startTimeMs`` 是 **start() 的参数**。
+  const stream = new SabrStream({
+    // ⚠️ 5.x 的 ``SabrStreamConfig`` **必填 videoId** —— 心跳请求和 broadcast 校验都用它。
+    // 4.x 不需要所以以前没传；缺了之后直播（isBroadcast）一条数据都取不到，且不报错，
+    // 只是流一直空着。
+    videoId,
+    fetchFunction: fetchWithCookie,
+    serverAbrStreamingUrl,
+    videoPlaybackUstreamerConfig,
+    formats,
+    clientInfo: { clientName: 1, clientVersion: '2.20261015.01.00' },
+    poToken: poToken || undefined,
+  });
+
+  let streamError = null;
+  stream.on('error', (e) => {
+    const msg = e?.message || String(e);
+    // 直播到点是**我们自己 abort** 的: 库会以 'Stream aborted' 走 error 通道,
+    // 那是正常收尾, 不是失败（否则每次直播都会被判成下载失败）。
+    if (liveStopped && /abort/i.test(msg)) {
+      console.error(`[sabr] 直播已停止（预期）: ${msg}`);
+      return;
+    }
+    streamError = msg;
+    console.error(`[sabr] stream error: ${streamError}`);
+  });
 
   // 显式 itag > codecPriority > 库默认
   let videoSpec = videoItag;
@@ -281,16 +286,57 @@ try {
     }
   }
 
+  // ⚠️ **必须给 durationMs**: 不给时库按 Infinity 跑（直播/长视频），要下多久没有上限。
+  // 直播是特例: 它的 ``mediaHeader.contentLength`` 恒为 0、段长也是 0，4.1.1 会把每段
+  // 当成"长度不符"整段丢弃 —— 所以 5.x 才有 ``isBroadcast`` / ``startTimeMs`` /
+  // 心跳 这一整套。直播按 ``input.liveSeconds`` 从**直播边缘**往前抓。
+  //
+  // 素材自带 approxDurationMs（点播的 SABR 格式一般有），取最大值即可。
+  const contentDurationMs =
+    Number(input.durationMs || 0) ||
+    (() => {
+      const ds = (adaptiveFormats || [])
+        .map((f) => Number(f.approxDurationMs || f.durationMs || 0))
+        .filter((n) => n > 0);
+      return ds.length ? Math.max(...ds) : 0;
+    })();
+  // ★ **直播不能用 durationMs 当停止条件**。直播的 ``playerTimeMs`` 从**直播边缘**
+  // 开始（实测 headTimeMs ≈ 5.6e6 且持续增长），库里 ``while (playerTimeMs < durationMs)``
+  // 在 durationMs=10000 时**第一个循环就不成立**、或永远成立 —— 两种都不是我们要的。
+  // 正确做法: 不管时长，抓到**内容时长够 liveSeconds** 就 ``abort()``。
+  // 内容时长用库暴露的 ``videoEndTimeMs``（已下载到的媒体时间）来量。
+  const liveSeconds = Number(input.liveSeconds || 0) || LIVE_DEFAULT_SECONDS;
+  const isLive = !!input.isLive;
+  const liveTargetMs = isLive && liveSeconds > 0 ? liveSeconds * 1000 : 0;
+  const durationMs = isLive ? undefined : contentDurationMs || undefined;
+  if (isLive) {
+    console.error(
+      `[sabr] 直播: 从当前时刻（直播边缘）起抓 ${liveSeconds || '∞'} 秒 — 墙钟计时, ${(Number(input.liveGraceSeconds ?? 6))}s readahead 余量`
+    );
+  }
+
+  // ★ 5.x 的选流参数: ``videoFormat`` / ``audioFormat``（itag 或 SabrFormat 对象）
+  // 或 ``videoPreferences`` {quality, container, preferredVideoCodec}。
+  // 旧版的顶层 ``videoQuality`` 已经不存在了。
   const { videoStream, audioStream, selectedFormats } = await stream.start({
-    videoQuality: input.videoQuality || '1080p',
+    videoFormat: videoSpec || undefined,
+    audioFormat: audioSpec || undefined,
+    // ⚠️ 5.x 强制要求 **video 和 audio 两侧都**给出 spec 或 preferences
+    // （``selectFormats`` 里 assert 两个都要有），只给视频侧会直接报
+    // "Expected both video and audio format or preferences to be provided"。
+    videoPreferences: videoSpec
+      ? undefined
+      : { quality: input.videoQuality || '1080p' },
+    // 不写 quality: 直播的音轨只有 MEDIUM（itag 140），指定 HIGH 会一条都匹配不到。
+    // 只给编码偏好，让库在可用音轨里挑。
+    audioPreferences: audioSpec ? undefined : { preferredAudioCodec: 'aac' },
     enabledTrackTypes: EnabledTrackTypes.VIDEO_AND_AUDIO,
     maxRetries: 3,
     stallDetectionMs: 30000,
-    // 显式格式（itag 或对象都行）优先；都没有才让库按容器偏好选
-    videoFormat: videoSpec,
-    audioFormat: audioSpec,
-    preferMP4: !videoSpec && input.preferMp4 !== false,
-    preferWebM: !videoSpec && !!input.preferWebM,
+    durationMs,
+    // 直播: **不传** startTimeMs —— 5.x 自己用 LIVE_EDGE_SENTINEL_MS 从直播边缘开始；
+    // 传 0 会从"最开始"抓，直播没有最开始（会一直等）。抓够 liveSeconds 就停。
+    isPostLiveDvr: !!input.isPostLiveDvr,
   });
 
   console.error(`[sabr] selected video=${selectedFormats.videoFormat?.itag} audio=${selectedFormats.audioFormat?.itag}`);
@@ -320,13 +366,56 @@ try {
 
   const pump = async (s, fd, add) => {
     const r = s.getReader();
+    let first = true;
     for (;;) {
-      const { done, value } = await r.read();
+      let chunk;
+      try {
+        chunk = await r.read();
+      } catch (e) {
+        // 直播到点我们 abort() 时，库用 controller.error() 关闭流 —— read() 会 reject
+        // "Stream aborted"。这是**预期收尾**，不是下载失败；已写盘的字节完整保留。
+        if (liveStopped) break;
+        throw e;
+      }
+      const { done, value } = chunk;
       if (done) break;
+      if (first) {
+        first = false;
+        console.error(`[sabr] 收到首个数据块: ${value.length} 字节`);
+      }
       add(value.length);
       writeAll(fd, value);
     }
   };
+
+  // ★ 直播怎么停 —— **墙钟 + grace，然后 abort()**。
+  //
+  // 三个候选判据实测下来只有墙钟可用:
+  //   - ``durationMs``（点播的停止条件）对直播无效: 库比较的是 ``playerTimeMs``，直播从
+  //     **直播边缘**开始（实测 headTimeMs ≈ 5.8e6 且持续增长），比值永远不成立；
+  //   - ``videoEndTimeMs`` 由 ``endTimeTicks/endTimescale`` 算，直播这两个字段是空的
+  //     → **恒为 0**（下载了 20MB 仍是 0）；
+  //   - ``liveMetadataUpdate.headTimeMs`` 是**批量跳变**的（实测 3 秒墙钟跳了 10 秒），
+  //     拿它计时会提前停，抓到的内容少一半。
+  //
+  // 直播是实时的: 墙钟 N 秒 ≈ 内容 N 秒。多留 ``liveGraceSeconds``（默认 6s）让服务端
+  // 的 readahead 把段补齐；abort() 之后**已写盘的字节保留**（实测 16s → 9.1MB 视频
+  // + 348KB 音频）。abort 太早才会是 0 字节 —— 那时数据还在库的缓冲区里没 enqueue。
+  let liveWatcher = null;
+  if (isLive && liveSeconds > 0) {
+    const budgetMs = (liveSeconds + Number(input.liveGraceSeconds ?? 6)) * 1000;
+    const t0 = Date.now();
+    liveWatcher = setInterval(() => {
+      const elapsed = Date.now() - t0;
+      if (elapsed >= budgetMs) {
+        console.error(`[sabr] 直播: ${(elapsed / 1000).toFixed(1)}s 到点 (v=${vb} a=${ab}) → 停止`);
+        liveStopped = true;
+        clearInterval(liveWatcher);
+        liveWatcher = null;
+        Promise.resolve(stream.abort()).catch(() => {});
+      }
+    }, 500);
+  }
 
   try {
     await Promise.all([
@@ -338,6 +427,7 @@ try {
       }),
     ]);
   } finally {
+    if (liveWatcher) clearInterval(liveWatcher);
     // 关 fd 前内核已把数据交给文件系统（write 是同步的），close 只为释放句柄
     try {
       closeSync(vFd);

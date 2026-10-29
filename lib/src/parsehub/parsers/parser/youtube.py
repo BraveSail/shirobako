@@ -317,6 +317,9 @@ class YtbVideoParseResult(VideoParseResult):
                 user_agent=self.info.user_agent,
                 progress_callback=progress,
                 progress_total=expected,
+                # 直播: 流里没有时长，必须由工具按墙钟计时（默认 30 秒）
+                is_live=self.info.is_live,
+                live_seconds=0,
             )
             # 输出容器 = 工具实际选中的视频容器（webm/mp4）
             out_ext = result.video_path.suffix.lstrip(".").lower() or "mp4"

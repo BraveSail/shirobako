@@ -234,6 +234,12 @@ class YoutubeVideo:
     """SABR 素材（``serverAbrStreamingUrl`` 等）。**高清流没有明文 url 时**由
     ``fetch_video`` 填入 —— 取流 / 下载改走 ``provider_api/youtube_sabr.py`` 的
     bun 工具（LuanRT/googlevideo）。为 ``None`` 表示本视频用明文流即可。"""
+    is_live: bool = False
+    """是否**正在直播**（``videoDetails.isLive`` / ``liveStreamingDetails.isLiveNow``）。
+
+    直播的流没有 ``contentLength`` / ``approxDurationMs``，SABR 拿不到时长就按
+    ``Infinity`` 跑长连接，而直播的服务端**永不结束** —— 会一直挂着直到流水线
+    超时（用户报「卡在下载中」）。所以解析阶段就要识别并明确拒绝下载。"""
 
     @property
     def author_url(self) -> str:
@@ -445,7 +451,29 @@ def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> Youtub
         duration=to_int(details.get("lengthSeconds")) or 0,
         view_count=to_int(details.get("viewCount")),
         streams=streams,
+        is_live=_is_live(data),
     )
+
+
+def _is_live(data: dict[str, Any]) -> bool:
+    """这条是不是**正在直播**（纯函数，只看 player 响应）。
+
+    三个来源任一为真即算（实测这条只有一个命中，不同 client/版本给的字段不一样）：
+
+    - ``videoDetails.isLive`` / ``isLiveContent``
+    - ``microformat.playerMicroformatRenderer.liveBroadcastDetails.isLiveNow``
+    - ``lengthSeconds == 0`` 且存在 ``liveStreamingDetails``（下播后转成普通录播，
+      此时 lengthSeconds > 0，不算直播）
+    """
+    details = data.get("videoDetails") or {}
+    if details.get("isLive") is True:
+        return True
+    if details.get("isLiveContent") is True and to_int(details.get("lengthSeconds")) in (0, None):
+        return True
+    renderer = (data.get("microformat") or {}).get("playerMicroformatRenderer") or {}
+    if (renderer.get("liveBroadcastDetails") or {}).get("isLiveNow") is True:
+        return True
+    return bool(renderer.get("liveBroadcastDetails")) and to_int(details.get("lengthSeconds")) in (0, None)
 
 
 def extract_sabr_source(data: dict[str, Any]) -> SabrSource | None:
