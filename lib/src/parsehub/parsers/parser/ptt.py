@@ -21,17 +21,25 @@ _PUSH_RENDER_COST = 50
 _MAX_PUSHES = 400
 
 
+class PttRichTextParseResult(RichTextParseResult):
+    """PTT 文章。
+
+    ``<img>`` 图被抽成 media、原位留 ``{{media:N}}``，因此
+    ``requires_media_download`` 必须为 True —— 否则流水线走「富文本跳过下载」，
+    占位符没有对应媒体就被渲染层删掉，图静默消失（用户实测「还是没图」）。
+    """
+
+    requires_media_download = True
+
+
 class PttParser(BaseParser):
     __platform__ = Platform.PTT
     __supported_type__ = ["图文"]
     __match__ = r"^(https?://)?(www\.)?ptt\.cc/bbs/.+\.html"
-    #: 正文里的 ``<img>`` 图被抽成 media、原位留 ``{{media:N}}`` —— 必须真的下载，
-    #: 否则富文本渲染路径跳过下载，占位符没有对应媒体就被删掉（图静默消失）。
-    requires_media_download = True
 
-    async def _do_parse(self, raw_url: str) -> RichTextParseResult:
+    async def _do_parse(self, raw_url: str) -> PttRichTextParseResult:
         article = await PttAPI(proxy=self.proxy).fetch(raw_url)
-        return RichTextParseResult(
+        return PttRichTextParseResult(
             title=article.title,
             markdown_content=self._render(article),
             author_name=article.author_name,

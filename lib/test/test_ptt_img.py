@@ -26,9 +26,10 @@ def test_bare_link_for_the_same_image_is_not_duplicated():
 def test_media_download_is_required():
     """抽成 media 的图**必须**让流水线真下载 —— 否则富文本路径跳过下载，
     占位符没有对应媒体会被渲染层删掉（用户实测「还是没图」）。"""
-    from parsehub.parsers.parser.ptt import PttParser
+    from parsehub.parsers.parser.ptt import PttRichTextParseResult
 
-    assert PttParser.requires_media_download is True
+    # 属性在 **result 类**上，不在 parser 上（base 不会把 parser 的属性搬过去）
+    assert PttRichTextParseResult.requires_media_download is True
 
 
 def test_body_text_survives_and_signature_is_gone():
