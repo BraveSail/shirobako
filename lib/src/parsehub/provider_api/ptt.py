@@ -32,6 +32,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from ..utils import http
+from ..utils.helpers import media_placeholder
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -167,10 +168,16 @@ class PttAPI:
     def _extract_body(main: Any) -> tuple[str, list[str]]:
         """把正文拆出来：删掉 metaline / push / 签名，保留 ``<a>`` 的链接文字。
 
-        返回 ``(正文, 图片列表)``。图片处理**必须在这里做**（而不是事后对整段文本
-        再跑一次正则）：``<a href="…jpeg">…jpeg</a>`` 先被转成 ``[url](url)`` 再被
-        替换，就会得到 ``[{{media:0}}]({{media:0}})`` —— 渲染出来是一个空链接
-        ``[]()``（用户实测报过）。图片链接直接换成标记，不生成链接语法。
+        返回 ``(正文, 图片列表)``。两种"图"要分开对待：
+
+        - ``<a href="…jpg">…jpg</a>`` —— PTT 的**纯文本链接**，用户定：直接放链接
+          （不抽成 media，省一次下载；PTT 也没有图注/尺寸）。
+        - ``<img src="…">`` —— 真正的图片标签，抽成 media 并在**原位**留
+          ``{{media:N}}``。这类图在 ``div.richcontent`` 里，且常与上面那条裸链接
+          **指向同一张图**（PTT 发图时的固定形态），所以重复的那条链接要跳过。
+
+        ⚠️ ``div.richcontent`` 必须**先解包**：``get_text()`` 拿不到 ``<img>`` 的
+        文本，不解包整张图会静默消失（实测：`M.1793266681` 解析出来 images 为空）。
         """
         work = BeautifulSoup(str(main), "lxml")
         node = work.find("div", id="main-content") or work
@@ -180,8 +187,25 @@ class PttAPI:
         for span in node.find_all("span", class_="f2"):
             if _SIGNATURE_RE.search(span.get_text(" ", strip=True)):
                 span.decompose()
+        # 只是 <img> 的包装层 —— 解包后 img 成为直接子节点，才能被下面的循环看到
+        for wrapper in node.find_all("div", class_="richcontent"):
+            wrapper.unwrap()
 
         images: list[str] = []
+
+        def _marker(url: str) -> str:
+            if url not in images:
+                images.append(url)
+            return media_placeholder(images.index(url))
+
+        # 预扫描: 有 <img> 的 URL。正文里指向同一张图的裸链接不再重复输出，
+        # 否则同一张图既留一行链接、又渲染一张图。
+        img_urls = {
+            (img.get("src") or "").strip()
+            for img in node.find_all("img")
+            if not set(img.get("class") or ()) & {"emoji", "avatar"}
+        }
+        img_urls.discard("")
 
         def _inline(text: str) -> str:
             """纯文本原样保留 —— 图片 URL 就是普通的链接文本。"""
@@ -190,9 +214,17 @@ class PttAPI:
         lines: list[str] = []
         for element in node.children:
             name = getattr(element, "name", None)
+            if name == "img":
+                src = (element.get("src") or "").strip()
+                if src and not set(element.get("class") or ()) & {"emoji", "avatar"}:
+                    lines.append(_marker(src))
+                continue
             if name == "a":
                 href = element.get("href") or ""
                 label = element.get_text(" ", strip=False).strip()
+                if href in img_urls:
+                    # 这张图下面紧跟 <img>，由 media 表示，别再来一条重复链接
+                    continue
                 if href and _IMAGE_URL_RE.fullmatch(href):
                     # PTT 的图片是**纯文本链接**，用户定：直接放链接、不抽成 media
                     # （抽了反而要额外请求下载，PTT 也没有图注/尺寸信息）。
@@ -208,6 +240,8 @@ class PttAPI:
         body = "\n".join(lines)
         # 去掉签名行与多余空行
         body = _SIGNATURE_RE.sub("", body)
+        body = re.sub(r"\n{3,}", "\n\n", body)
+        body = re.sub(r"^\s*--\s*$", "", body, flags=re.M)
         body = re.sub(r"\n{3,}", "\n\n", body)
         return body.strip(), images
 
