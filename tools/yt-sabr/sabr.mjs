@@ -20,6 +20,7 @@
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { buildSabrFormat, EnabledTrackTypes } from 'googlevideo/utils';
 import { existsSync, readFileSync, mkdirSync, openSync, writeSync, closeSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 const args = {};
@@ -203,7 +204,10 @@ try {
   let poToken = (input.poToken || '').trim();
   // 跨进程缓存：同一 videoId 的 token 有效期 ~6h，重试/重发时不必再生成
   const potCacheDir = '/tmp/yt-pot-cache';
-  const potCacheFile = join(potCacheDir, `${videoId}.json`);
+  // 缓存按 **videoId + cookie 身份** 分文件：匿名时代生成的 token 与现在登录态的
+// visitor 不同，复用它们必被拒（attestation rejected）。用 cookie 的哈希做后缀。
+  const cookieTag = cookie ? createHash('sha256').update(cookie).digest('hex').slice(0, 8) : 'anon';
+  const potCacheFile = join(potCacheDir, `${videoId}.${cookieTag}.json`);
   if (!poToken) {
     try {
       if (existsSync(potCacheFile)) {
@@ -222,7 +226,9 @@ try {
     try {
       const t0 = Date.now();
       const { generatePoToken } = await import('./gen-pot.mjs');
-      const generated = await generatePoToken(videoId);
+      // 必须把取流用的 cookie 传进去 —— PO token 绑定 visitor 身份，
+      // 匿名生成的 token 拿到带 cookie 的请求上会被判 attestation rejected。
+      const generated = await generatePoToken(videoId, cookie);
       poToken = generated.poToken;
       console.error(`[sabr] 自动生成 PO token (len=${poToken.length}, ${Date.now() - t0}ms)`);
       try {

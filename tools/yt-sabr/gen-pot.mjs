@@ -46,11 +46,25 @@ function setupDom() {
   }
 }
 
-/** 从 YouTube 首页拿自洽的 (ytcfg, bgChallenge) —— 缺 EVENT_ID 的 challenge 会被 att/get 拒。 */
-async function fetchChallenge() {
-  const resp = await fetch('https://www.youtube.com', {
-    headers: { accept: '*/*', 'accept-language': 'en-US,en;q=0.7', 'user-agent': UA },
-  });
+/**
+ * 从 YouTube 首页拿自洽的 (ytcfg, bgChallenge) —— 缺 EVENT_ID 的 challenge 会被 att/get 拒。
+ *
+ * ★★ **必须带与取流相同的 cookie**（2026-11-01 实测）。
+ *
+ * PO token 是 *content-bound + 会话绑定* 的：它绑定生成时的 visitor 身份。以前这里拉
+ * 首页不带 cookie，YouTube 就发一个新的匿名 visitor：
+ *
+ *     匿名首页      VISITOR_INFO1_LIVE = 6aWrTWLBmJA   （随机新访客）
+ *     带 cookie 首页 VISITOR_INFO1_LIVE = wrBdjVp-Ff8  （账号会话）
+ *
+ * 于是 token 绑在 A 身份、SABR 请求用 B 身份，服务端判
+ * ``Stream protection attestation rejected``（错误信息完全不提 cookie，极易误判成
+ * "token 生成坏了"）。带上 cookie 后两边 visitor 一致，token 才被接受。
+ */
+async function fetchChallenge(cookie) {
+  const headers = { accept: '*/*', 'accept-language': 'en-US,en;q=0.7', 'user-agent': UA };
+  if (cookie) headers.cookie = cookie;
+  const resp = await fetch('https://www.youtube.com', { headers });
   const html = await resp.text();
 
   const ytcfg = html.match(/ytcfg\.set\(({.+?})\);/s);
@@ -69,9 +83,9 @@ async function fetchChallenge() {
   return bgChallenge;
 }
 
-export async function generatePoToken(videoId) {
+export async function generatePoToken(videoId, cookie = '') {
   setupDom();
-  const bg = await fetchChallenge();
+  const bg = await fetchChallenge(cookie);
 
   const interpreterUrl = bg.interpreterUrl.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue;
   const interpreterJs = await (await fetch(`https:${interpreterUrl}`)).text();
@@ -108,13 +122,14 @@ export async function generatePoToken(videoId) {
 if (import.meta.main) {
   const videoId = (process.argv[2] || '').trim();
   if (!videoId) {
-    console.error('用法: bun gen-pot.mjs <videoId>');
+    console.error('用法: bun gen-pot.mjs <videoId> [cookie]');
     process.exit(2);
   }
+  const cookie = (process.argv[3] || '').trim();
 
   try {
     const t0 = Date.now();
-    const result = await generatePoToken(videoId);
+    const result = await generatePoToken(videoId, cookie);
     console.error(`[gen-pot] ${videoId} 生成完成 (${Date.now() - t0}ms, len=${result.poToken.length})`);
     console.log(JSON.stringify(result));
   } catch (e) {
