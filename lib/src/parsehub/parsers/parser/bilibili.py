@@ -39,9 +39,11 @@ class BiliParse(BaseParser):
     __match__ = r"^(http(s)?://)?((((w){3}.|(m).|(t).)?bilibili\.com)/(video|opus|\b\d{18,19}\b)|b23.tv|bili2233.cn).*"
     __reserved_parameters__ = ["p", "comment_root_id"]
     __redirect_keywords__ = ["b23.tv", "bili2233.cn"]
-    #: 解析完才清掉的参数（``comment_root_id`` 只在解析阶段需要 —— 它决定解析哪条评论，
-    #: 但输出链接不需要带它；放这里就能在 ``clean_all=True`` 时被剥掉）
-    __after_clean_parameters__ = ["comment_root_id"]
+    #: 解析完才清掉的参数。``comment_root_id`` **不能**放这里：它决定的不是
+    #: 「解析哪条评论」（那只影响本次解析），而是**来源链接该指向哪里** ——
+    #: 清掉之后来源 URL 变成 ``…/video/BV1#reply<rpid>``，锚点还在但参数没了，
+    #: 点进去落在视频开头而不是那条评论（用户报「来源的 URL 是错位的」）。
+    __after_clean_parameters__: list[str] = []
 
     @staticmethod
     def _to_refs(images: list[BiliImage] | None) -> list[LivePhotoRef | ImageRef]:
@@ -134,10 +136,24 @@ class BiliParse(BaseParser):
 
     @staticmethod
     def _comment_rpid(url: str) -> str:
-        """从评论链接里取 ``comment_root_id``（没有就不是评论链接）。"""
+        """从评论链接里取评论 id。
+
+        两种形态都要认（B 站客户端分享时可能只带其中一种）：
+
+        - ``?comment_root_id=<rpid>`` —— 网页「评论」按钮复制出来的完整链接
+        - ``#reply<rpid>`` —— 分享/复制地址栏得到的锚点形态
+
+        只认 hash 时容易漏：用户贴的 ``…/video/BV1#reply318640242161`` 没有查询参数，
+        以前 ``_comment_rpid`` 返回空 ⇒ 整条链接按普通视频解析，评论静默消失。
+        """
         query = parse_qs(urlparse(url).query)
         rpid = (query.get("comment_root_id") or [""])[0].strip()
-        return rpid if rpid.isdigit() else ""
+        if rpid.isdigit():
+            return rpid
+        # 锚点形态：``#reply<数字>``
+        fragment = urlparse(url).fragment or ""
+        match = re.fullmatch(r"reply(\d+)", fragment.strip())
+        return match.group(1) if match else ""
 
     @staticmethod
     def _media_marker(placeholders: Sequence[str]) -> str:
@@ -360,8 +376,14 @@ class BiliParse(BaseParser):
             u = urlparse(raw_url)
             # ``comment_root_id`` 的保留由 ``__reserved_parameters__`` 负责（父类白名单），
             # 这里只做原有的一件事：``p=1`` 是默认分P，去掉。
-            q = urlencode([(k, v) for k, v in parse_qsl(u.query) if (k, v) != ("p", "1")])
-            return u._replace(query=q).geturl()
+            pairs = [(k, v) for k, v in parse_qsl(u.query) if (k, v) != ("p", "1")]
+            # 只有 ``#reply<rpid>`` 锚点的分享链接：父类不认识锚点，参数表是空的 →
+            # 补上 ``comment_root_id``，让**来源 URL 也能定位到那条评论**（否则点来源
+            # 落在视频开头，用户报「来源的 URL 是错位的」）。
+            if not any(k == "comment_root_id" for k, _ in pairs):
+                if rpid := BiliParse._comment_rpid(raw_url):
+                    pairs.insert(0, ("comment_root_id", rpid))
+            return u._replace(query=urlencode(pairs)).geturl()
 
     @staticmethod
     async def is_dynamic(url: str) -> str | None:

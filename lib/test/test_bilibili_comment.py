@@ -49,6 +49,46 @@ def test_comment_rpid_is_read_from_url():
     assert BiliParse._comment_rpid(COMMENT_URL) == "318640242161"
 
 
+def test_comment_rpid_reads_hash_form():
+    """``#reply<rpid>`` 锚点形态也要认（B 站分享可能只带锚点、没有查询参数）。
+
+    只认 ``comment_root_id`` 时，用户贴的 hash 链接会被当成普通视频，评论静默消失。
+    """
+    assert (
+        BiliParse._comment_rpid("https://www.bilibili.com/video/BV1oxxY69Es4#reply318640242161")
+        == "318640242161"
+    )
+    # 不是 reply 锚点的不算
+    assert BiliParse._comment_rpid("https://www.bilibili.com/video/BV1#share") == ""
+
+
+def test_get_raw_url_upgrades_hash_only_link():
+    """只有锚点的链接要补上 ``comment_root_id``，来源 URL 才能定位到那条评论。"""
+    raw = asyncio.run(
+        BiliParse().get_raw_url("https://www.bilibili.com/video/BV1oxxY69Es4#reply318640242161")
+    )
+    assert "comment_root_id=318640242161" in raw
+    assert raw.endswith("#reply318640242161")
+
+
+def test_source_url_keeps_comment_root_id():
+    """来源 URL 必须保留 ``comment_root_id``，否则点进去落在视频开头（用户报"来源错位"）。"""
+    raw = asyncio.run(BiliParse().get_raw_url(COMMENT_URL))
+    assert "comment_root_id=318640242161" in raw
+
+
+def test_source_url_drops_share_tracking_but_keeps_comment():
+    """分享带来的跟踪参数要清掉，评论定位参数必须留。"""
+    url = (
+        "https://www.bilibili.com/video/BV1oxxY69Es4"
+        "?comment_on=1&comment_root_id=318640242161&share_tag=s_i#reply318640242161"
+    )
+    raw = asyncio.run(BiliParse().get_raw_url(url))
+    assert "comment_root_id=318640242161" in raw
+    assert "share_tag" not in raw
+    assert "comment_on" not in raw
+
+
 def test_comment_rpid_ignores_non_comment_urls():
     """普通视频链接没有这个参数 —— 不能误判成评论链接。"""
     assert BiliParse._comment_rpid("https://www.bilibili.com/video/BV1oxxY69Es4") == ""
