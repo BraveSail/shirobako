@@ -430,6 +430,10 @@ class BiliDynamic:
     #: **类型与边界由 B 站判定**, 拿来链接化就不必用正则猜（正则在 ``C# 与 #tag#``
     #: 这种成对 ``#`` 的场景会匹配出 ``# 与 #``）。
     topics: list[dict[str, str]] | None = None
+    #: ``images`` **开头**有几张是板头图（banner，``opus.pics``）。
+    #: 板头图与正文段落里的图同在 ``images`` 里，但语义不同 —— 渲染层要把这几张
+    #: 提到标题上方并用分割线与标题隔开，所以数目必须单独记下来。
+    banner_count: int = 0
 
     @property
     def video_url(self) -> str:
@@ -612,22 +616,27 @@ class BiliDynamic:
         author = (modules.get("MODULE_TYPE_AUTHOR") or {}).get("module_author") or {}
         stat = (modules.get("MODULE_TYPE_STAT") or {}).get("module_stat") or {}
         title = ((modules.get("MODULE_TYPE_TITLE") or {}).get("module_title") or {}).get("text") or ""
-        # 图片按**段落顺序**收集 —— 与 _render_opus_paragraphs 里生成的下标一一对应
-        pics: list[dict[str, Any]] = []
-        for para in paragraphs:
-            for pic in ((para.get("pic") or {}).get("pics") or []):
-                if pic.get("url"):
-                    pics.append(
-                        {
-                            "url": pic["url"],
-                            "width": to_int(pic.get("width")),
-                            "height": to_int(pic.get("height")),
-                            "live_url": pic.get("live_url") or None,
-                        }
-                    )
+        # 板头图（banner）在 ``module_top.display.album.pics`` —— 它是**独立于正文段落**
+        # 的封面/头图。以前这里只放正文段落里的图，banner 整张丢失（用户报「api 里没有
+        # banner 图？」——有的，只是这条路径从没读过 ``module_top``）。
+        banner_pics: list[dict[str, Any]] = []
+        module_top = (modules.get("MODULE_TYPE_TOP") or {}).get("module_top") or {}
+        for pic in (((module_top.get("display") or {}).get("album") or {}).get("pics") or []):
+            if pic.get("url"):
+                banner_pics.append(
+                    {
+                        "url": pic["url"],
+                        "width": to_int(pic.get("width")) or 0,
+                        "height": to_int(pic.get("height")) or 0,
+                        "live_url": pic.get("live_url") or None,
+                    }
+                )
         opus = {
             "title": title,
-            "pics": pics,
+            # ``pics`` 只放**板头图**（与接口语义一致：接口的 ``opus.pics`` 只有 banner）。
+            # 正文段落的图留在 ``paragraphs`` 里，由 ``_render_opus_paragraphs`` 原位渲染 ——
+            # 两边混在一起会把正文图当成 banner、也会让它们重复出现。
+            "pics": banner_pics,
             "jump_url": f"//www.bilibili.com/opus/{detail.get('id_str') or ''}",
             "summary": {
                 "text": "",
@@ -716,14 +725,33 @@ class BiliDynamic:
         opus = major.get("opus") or {}
         summary = opus.get("summary") or {}
         paragraphs = summary.get("paragraphs") or []
-        images: list[BiliImage] = []
+        # 板头图（banner）：``opus.pics`` 是**独立于正文段落**的封面/头图，
+        # 详情页路径放在 ``module_top.display.album.pics``（同一张，两处都有）。
+        # 以前走详情页分支时直接 return，从没读过它 —— 用户报「板头图片可以放到
+        # 标题上面用分割线隔开」，前提是它得先被收进来。
+        banner = [
+            BiliImage(
+                url=p["url"],
+                live_url=p.get("live_url"),
+                width=p.get("width"),
+                height=p.get("height"),
+            )
+            for p in (opus.get("pics") or [])
+            if p.get("url")
+        ]
+        images: list[BiliImage] = list(banner)
         # 有完整段落（详情页路径 / 未折叠的短动态）→ 按段渲染，图片原位；
         # 否则退回接口的截断摘要（has_more=true，只有前几段纯文本 + 顶部图）
         if paragraphs and not summary.get("has_more"):
             if content := cls._render_opus_paragraphs(paragraphs, images):
-                return cls(title=opus.get("title") or "", content=content, images=images or None)
-        images = []
-        if pics := opus.get("pics"):
+                return cls(
+                    title=opus.get("title") or "",
+                    content=content,
+                    images=images or None,
+                    banner_count=len(banner),
+                )
+        if not banner and (pics := opus.get("pics")):
+            # 详情页路径没拿到 banner 时用接口那份（残留兜底：老响应/字段改名）
             images = [
                 BiliImage(url=p["url"], live_url=p.get("live_url"), width=p.get("width"), height=p.get("height"))
                 for p in pics

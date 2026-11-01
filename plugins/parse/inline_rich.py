@@ -383,6 +383,8 @@ def rich_cache_entry(
             platform=getattr(getattr(parse_result, "platform", None), "id", "") or "",
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            # 板头图数量: 不存的话缓存命中时 banner 掉回正文中间（与现场解析不一致）
+            banner_media_count=getattr(parse_result, "banner_media_count", 0) or 0,
             # 正文格式版本（twitter 的 richtext 粗体 / 区间换算修正让正文形态或取值变了,
             # 见 CacheParseResult 与 services.cache.CONTENT_VERSION）：
             # 写**当前版本**让这次之后写入的条目不再被判为旧格式。
@@ -453,6 +455,8 @@ def build_cached_rich_content(
         # 投票数据（``{{poll:N}}`` 的渲染源）—— 老缓存没有这个字段时为 [],
         # 渲染层不替换占位符（老缓存里本来也没有占位符）
         polls=entry.parse_result.polls,
+        # 板头图数量: 漏传就是缓存命中时 banner 掉回正文中间
+        banner_media_count=entry.parse_result.banner_media_count,
         author_name=entry.parse_result.author_name,
         author_handle=entry.parse_result.author_handle,
         author_url=entry.parse_result.author_url,

@@ -60,8 +60,16 @@ def test_page_modules_are_folded_into_the_api_item_shape():
     summary = major["opus"]["summary"]
     assert summary["has_more"] is False
     assert len(summary["paragraphs"]) == 5
-    # 图片按段序收集（两处 pic 段落）
-    assert [p["url"] for p in major["opus"]["pics"]] == ["https://x/1.png", "https://x/2.png"]
+    # ``pics`` 只放**板头图**（module_top.display.album.pics），不放正文段落里的图 ——
+    # 正文图留在 paragraphs 里由 _render_opus_paragraphs 原位渲染。
+    # 这个 fixture 没有 module_top，所以 pics 为空；正文图仍在段落里（下面钉住）。
+    assert major["opus"]["pics"] == []
+    body_pics = [
+        pic["url"]
+        for para in summary["paragraphs"]
+        for pic in ((para.get("pic") or {}).get("pics") or [])
+    ]
+    assert body_pics == ["https://x/1.png", "https://x/2.png"]
 
 
 def test_page_without_paragraphs_returns_none():

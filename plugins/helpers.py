@@ -684,6 +684,15 @@ def build_rich_markdown(
     # 分两组: 标题/作者是"这是什么"的元信息, 留在折叠外; 其余(正文/引用块/标签/媒体)
     # 都是内容 —— 手动遮住时整组进 details (含图, 用户明确要求"所有东西都遮")。
     meta_parts: list[str] = []
+    # 置顶图（板头/banner）：提到**标题上方**，用分割线与标题隔开（用户要求）。
+    # 媒体在 ``media`` 列表**开头**，数量由 ``banner_media_count`` 给出 —— 与
+    # ``quoted_media_count`` 从尾部切正好对称。
+    banner_parts: list[str] = []
+    banner_count = max(0, getattr(parse_result, "banner_media_count", 0) or 0)
+    if banner_count and media_placeholders:
+        banner_marks = list(media_placeholders[:banner_count])
+        media_placeholders = list(media_placeholders[banner_count:])
+        banner_parts.extend(wrap_collage(banner_marks))
     if title and not config.hide_title:
         # **一级标题** (`#`, size 1 —— 这个 API 里 1 最大、6 最小)。
         # 以前用的是 `###`(size 3), 结果帖子标题比正文里的一级小节还小
@@ -822,9 +831,18 @@ def build_rich_markdown(
         # 且不留预览 (留了就等于没遮)。只保留标题/作者在外面, 否则看不出这是什么内容。
         inner = "\n\n".join(visible)
         folded = f"<details><summary>{spoiler_summary}</summary>\n\n{inner}\n\n</details>"
-        body = "\n\n".join([*[p for p in meta_parts if p], *_meta_divider(meta_parts, parts), folded])
+        body = "\n\n".join(
+            [*banner_parts, *[p for p in meta_parts if p], *_meta_divider(meta_parts, parts), folded]
+        )
     else:
-        body = "\n\n".join(part for part in [*meta_parts, *_meta_divider(meta_parts, parts), *parts] if part)
+        # 板头图在最顶，与标题之间一道分割线（用户要求「标题上面用分割线隔开」）。
+        # 没有标题时不留分割线，避免出现一条线下面直接接正文的怪形态。
+        divider = ["---"] if (banner_parts and meta_parts) else []
+        body = "\n\n".join(
+            part
+            for part in [*banner_parts, *divider, *meta_parts, *_meta_divider(meta_parts, parts), *parts]
+            if part
+        )
 
     footer_parts: list[str] = []
     # 处理过程的进度放页尾第一段: 与最终结果的"时间 · 统计"同一个位置, 主体不动
@@ -946,6 +964,7 @@ def build_rich_markdown_by_str(
     origin_line: str = "",
     reply_count: int | None = None,
     polls: Sequence | None = None,
+    banner_media_count: int = 0,
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
@@ -982,6 +1001,7 @@ def build_rich_markdown_by_str(
             origin_line,
             reply_count,
             polls,
+            banner_media_count,
         ),
         config=config,
         lang=lang,
@@ -1019,6 +1039,7 @@ class _RichFields:
         origin_line="",
         reply_count=None,
         polls=None,
+        banner_media_count=0,
     ):
         self.title = title or ""
         self.content = content or ""
@@ -1055,6 +1076,9 @@ class _RichFields:
         # 或缓存里的 dict（``_render_poll`` 两种都吃）。老缓存没有这个字段 ⇒ 空 ⇒
         # 不替换占位符（新链接重解析才会带 polls）。
         self.polls = list(polls or [])
+        # 置顶图（板头/banner）在 media 开头有几张 —— 漏了它缓存命中时 banner
+        # 会掉回正文中间（与现场解析不一致）。
+        self.banner_media_count = max(0, int(banner_media_count or 0))
 
 
 def rich_content(parse_result: AnyParseResult) -> str:

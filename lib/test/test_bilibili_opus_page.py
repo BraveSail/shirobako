@@ -13,11 +13,18 @@ from parsehub.provider_api.bilibili import BiliDynamic
 DYN_ID = "1265762239826100230"
 
 
-def _page_detail(*, paragraphs: list[dict] | None = None) -> dict:
+def _page_detail(*, paragraphs: list[dict] | None = None, banner: str = "") -> dict:
     """详情页 ``__INITIAL_STATE__.detail`` 的最小形态。"""
-    return {
-        "id_str": DYN_ID,
-        "modules": [
+    modules: list[dict] = []
+    if banner:
+        modules.append(
+            {
+                "module_type": "MODULE_TYPE_TOP",
+                "module_top": {"display": {"album": {"pics": [{"url": banner}]}}},
+            }
+        )
+    modules.extend(
+        [
             {"module_type": "MODULE_TYPE_TITLE", "module_title": {"text": "周榜"}},
             {
                 "module_type": "MODULE_TYPE_AUTHOR",
@@ -28,8 +35,9 @@ def _page_detail(*, paragraphs: list[dict] | None = None) -> dict:
                 "module_content": {"paragraphs": paragraphs if paragraphs is not None else []},
             },
             {"module_type": "MODULE_TYPE_STAT", "module_stat": {"like": {"count": 7}}},
-        ],
-    }
+        ]
+    )
+    return {"id_str": DYN_ID, "modules": modules}
 
 
 def _para(text: str = "", pics: list[dict] | None = None) -> dict:
@@ -50,21 +58,32 @@ def test_opus_page_item_keeps_all_paragraphs():
     assert len(got) == 16
 
 
-def test_opus_page_item_collects_pictures_in_paragraph_order():
-    """图片按段落顺序收集，与 ``_render_opus_paragraphs`` 生成的下标一一对应。"""
-    paras = [
-        _para("文字段"),
-        _para(pics=[{"url": "https://i0.hdslb.com/a.jpg", "width": 10, "height": 20}]),
-        _para("再来一段"),
-        _para(pics=[{"url": "https://i0.hdslb.com/b.jpg", "width": 30, "height": 40}]),
-    ]
-    item = BiliDynamic.item_from_opus_page(_page_detail(paragraphs=paras))
+def test_opus_page_item_keeps_banner_out_of_body_paragraphs():
+    """``opus.pics`` 只放**板头图**（module_top），正文段落的图留在 paragraphs 里。
+
+    两者混放会让正文图被当成 banner、并在正文里重复出现（实测：4 张正文图被
+    数成 banner，media 从 4 张涨到 8 张）。
+    """
+    detail = _page_detail(
+        paragraphs=[
+            _para("文字"),
+            _para(pics=[{"url": "https://i0.hdslb.com/body.jpg", "width": 1, "height": 1}]),
+        ],
+        banner="https://i0.hdslb.com/banner.jpg",
+    )
+
+    item = BiliDynamic.item_from_opus_page(detail)
     assert item is not None
     pics = item["modules"]["module_dynamic"]["major"]["opus"]["pics"]
-    assert [p["url"] for p in pics] == [
-        "https://i0.hdslb.com/a.jpg",
-        "https://i0.hdslb.com/b.jpg",
+    assert [p["url"] for p in pics] == ["https://i0.hdslb.com/banner.jpg"]
+    # 正文图仍在段落里，没被搬进 pics
+    paras = item["modules"]["module_dynamic"]["major"]["opus"]["summary"]["paragraphs"]
+    body_pics = [
+        pic["url"]
+        for para in paras
+        for pic in ((para.get("pic") or {}).get("pics") or [])
     ]
+    assert body_pics == ["https://i0.hdslb.com/body.jpg"]
 
 
 def test_opus_page_item_returns_none_without_paragraphs():

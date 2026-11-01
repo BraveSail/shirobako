@@ -223,6 +223,8 @@ class CacheParseResult(BaseModel):
     #: (两者都在各自的引用块内部渲染)
     quoted_media_count: int = 0
     reply_media_count: int = 0
+    #: ``media`` **开头**有几个是置顶图（板头/banner）—— 渲染层提到标题上方并用分割线隔开
+    banner_media_count: int = 0
     #: 内容在源站的位置标记（如 linux.do 的楼层号 ``#16``）—— 渲染层接在作者行后
     position_label: str = ""
     #: 内容所属**话题**的渲染片段（threads 的话题，已带链接）—— 渲染层接在作者行末尾
@@ -288,10 +290,12 @@ FOOTER_META_FIELDS_VERSION = 1
 #:   ``<tg-collage>``（2026-11-01）：旧条目是反的 ⇒ 命中就是「显示逻辑反了 / 图片顺排」。
 #: - 7 = bilibili ``t.bilibili.com/<id>`` 图文动态也走详情页拿全文（2026-11-01）：
 #:   旧条目是截断摘要 ⇒ 命中就是「这个怎么不全」（222 字/1 图 vs 510 字/4 图）。
+#: - 8 = bilibili 动态的板头图（banner）提到标题上方（2026-11-01）：旧条目没有
+#:   ``banner_media_count`` ⇒ banner 缺失或混在正文里。
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 7
+CONTENT_VERSION = 8
 
 #: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
 #: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。

@@ -86,6 +86,7 @@ class ParseResult(ABC):  # noqa: B024
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        banner_media_count: int = 0,
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
@@ -154,6 +155,8 @@ class ParseResult(ABC):  # noqa: B024
         """正文里的标签名 (不含 ``#``), 来自平台实体; 空列表表示拿不到 (渲染层退回正则)"""
         self.quoted_media_count = max(0, to_int(quoted_media_count) or 0)
         self.reply_media_count = max(0, to_int(reply_media_count) or 0)
+        self.banner_media_count = max(0, to_int(banner_media_count) or 0)
+        """``media`` **开头**有几个是置顶图 (板头/banner); 渲染层提到标题上方并用分割线隔开"""
         self.position_label = (position_label or "").strip()
         self.topic_label = (topic_label or "").strip()
         """内容在源站的位置标记 (如 linux.do 的楼层号 ``#4``); 无此概念的平台为空串"""
@@ -456,6 +459,7 @@ class VideoParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        banner_media_count: int = 0,
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
@@ -479,6 +483,7 @@ class VideoParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            banner_media_count=banner_media_count,
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
@@ -509,6 +514,7 @@ class ImageParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        banner_media_count: int = 0,
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
@@ -532,6 +538,7 @@ class ImageParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            banner_media_count=banner_media_count,
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
@@ -562,6 +569,7 @@ class MultimediaParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        banner_media_count: int = 0,
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
@@ -584,6 +592,7 @@ class MultimediaParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            banner_media_count=banner_media_count,
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
@@ -620,6 +629,7 @@ class RichTextParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        banner_media_count: int = 0,
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
@@ -648,6 +658,7 @@ class RichTextParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            banner_media_count=banner_media_count,
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,

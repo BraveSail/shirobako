@@ -67,10 +67,12 @@ class ResultRebuildUnavailable(RuntimeError):
 #: - 7 = bilibili ``t.bilibili.com/<id>`` 图文动态也走详情页拿全文（2026-11-01）：
 #:   旧条目是 ``detail`` 接口的截断摘要（``has_more=true``，222 字/1 图 vs 全文
 #:   510 字/4 图）⇒ 命中就是用户报的「这个怎么不全」。
+#: - 8 = bilibili 图文动态的板头图（banner）提到标题上方（2026-11-01）：旧条目没有
+#:   ``banner_media_count`` ⇒ banner 要么缺失要么混在正文里，与现场解析不一致。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
 #: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 7
+_CACHE_CONTENT_VERSION = 8
 _CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo", "bilibili"})
 
 
@@ -136,6 +138,7 @@ def _constructor_param(cls: type) -> str | None:
 _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
     "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
+    "banner_media_count",
     "position_label", "topic_label", "quote_roles", "origin_line", "reply_count", "polls", "content",
     "video", "photo", "media",
     "markdown_content",
@@ -334,6 +337,7 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "hashtags": data.get("hashtags") or [],
         "quoted_media_count": data.get("quoted_media_count", 0),
         "reply_media_count": data.get("reply_media_count", 0),
+        "banner_media_count": data.get("banner_media_count", 0),
         "position_label": data.get("position_label", ""),
         "topic_label": data.get("topic_label", ""),
         "quote_roles": data.get("quote_roles") or [],

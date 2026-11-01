@@ -338,6 +338,8 @@ class BiliParse(BaseParser):
                 published_at=dynamic.published_at,
                 like_count=dynamic.like_count,
                 quoted_media_count=quoted_media_count,
+                # 板头图在 photos 开头这几张 —— 渲染层提到标题上方并加分割线
+                banner_media_count=dynamic.banner_count,
                 # 引用块的角色（被转发的原动态在末尾）—— 渲染层据此归位媒体
                 quote_roles=["quoted"] if has_forward_quote else [],
             )
