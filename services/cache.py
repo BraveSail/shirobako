@@ -284,10 +284,12 @@ FOOTER_META_FIELDS_VERSION = 1
 #:   UTF-16 code unit 偏移，取值时按 code point 切 ⇒ 区间前有 emoji 时标记整体左移。
 #:   注意这一版**正文格式没变**（仍是 ``**``），但 v1 缓存里存的是**位置错了的标记** ——
 #:   不 bump 的话用户重发同一条链接会命中旧条目、看到一模一样的偏移（观感等同"没修"）。
+#: - 6 = bilibili 评论链接改成「评论是正文、视频是引用卡片」，评论配图包成
+#:   ``<tg-collage>``（2026-11-01）：旧条目是反的 ⇒ 命中就是「显示逻辑反了 / 图片顺排」。
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 5
+CONTENT_VERSION = 6
 
 #: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
 #: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。
