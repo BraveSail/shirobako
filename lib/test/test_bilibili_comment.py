@@ -211,3 +211,86 @@ def test_video_card_without_title_still_renders_cover():
 
     card = BiliParse._render_video_card(FakeVideo(), "https://www.bilibili.com/video/BV1")
     assert "{{media:0}}" in card
+
+
+def test_video_sits_at_the_end_of_media_so_the_quote_slice_gets_it():
+    """视频必须排媒体列表**末尾**：渲染层按 reply_media_count 从**尾部**切。
+
+    视频放开头时，切出来的"引用媒体"是最末那张评论图 —— 用户报「有一张评论图
+    跑到视频引用里去了」。这里用假 API 跑通整个 _parse_with_comment，钉住顺序。
+    """
+    target = BiliReply.parse(
+        _reply(
+            NESTED_RPID, PARENT_RPID,
+            content={
+                "message": "目标评论",
+                "pictures": [
+                    {"img_src": f"https://i0.hdslb.com/{i}.jpg", "img_width": 1, "img_height": 1}
+                    for i in range(2)
+                ],
+            },
+        )
+    )
+    parent = BiliReply.parse(_reply(PARENT_RPID, "0", root="0"))
+
+    class FakeVideoResult:
+        title = "视频标题"
+        content = ""
+        author_name = "UP主"
+        author_url = "https://space.bilibili.com/1"
+        published_at = None
+        like_count = None
+        media = object()          # 占位，下面替换成真 VideoRef
+        reply_media_count = 0
+        quoted_media_count = 0
+        quote_roles = None
+
+    class FakeVideoRef:
+        duration = 16
+        thumb_url = "https://i0.hdslb.com/cover.jpg"
+
+        def __init__(self):
+            self.url = "https://cdn/x.mp4"
+
+    result = FakeVideoResult()
+    result.media = FakeVideoRef()
+
+    class FakeAPI:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get_video_info(self, *_a, **_k):
+            return {"data": {"View": {"aid": 1}}}
+
+        async def get_reply_chain(self, *_a, **_k):
+            return [parent, target]
+
+    parser = BiliParse()
+
+    async def fake_bili_api_parse(_url):
+        return result
+
+    async def run():
+        parser.bili_api_parse = fake_bili_api_parse  # type: ignore[method-assign]
+        import parsehub.parsers.parser.bilibili as mod
+
+        orig = mod.BiliAPI
+        mod.BiliAPI = lambda **_k: FakeAPI()  # type: ignore[assignment]
+        try:
+            return await parser._parse_with_comment("https://www.bilibili.com/video/BV1", NESTED_RPID)
+        finally:
+            mod.BiliAPI = orig  # type: ignore[assignment]
+
+    out = asyncio.run(run())
+    media = list(out.media)
+    # 顺序：评论图在前，视频在末尾
+    assert isinstance(media[-1], FakeVideoRef), (
+        "视频必须是最后一个媒体，否则 reply 切片会切到评论图"
+    )
+    assert all(not isinstance(m, FakeVideoRef) for m in media[:-1])
+    assert out.reply_media_count == 1
+    # 卡片占位符指向视频的索引
+    assert f"{{{{media:{len(media) - 1}}}}}" in out.content

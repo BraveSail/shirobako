@@ -212,15 +212,18 @@ class BiliParse(BaseParser):
             list(base.media) if isinstance(base.media, (list, tuple)) else [base.media]
         ) if getattr(base, "media", None) is not None else []
 
-        # 媒体顺序必须与两个通道对齐：[视频封面…][评论图…]。
-        # 视频卡片走 reply 通道（在正文之前），评论图走正文的 media 通道。
-        media_items: list[Any] = list(video_media)
+        # 媒体顺序必须是 [评论图…][视频] —— 渲染层按 ``reply_media_count`` 从
+        # **末尾**往前切，切片从尾部起算。视频放开头的话，切出来的"引用媒体"会
+        # 变成最后一张评论图（实测：一张评论图跑到视频卡片里去了）。
+        media_items: list[Any] = []
         for reply in chain:
             media_items.extend(BiliParse._to_refs(reply.images))
+        video_start = len(media_items)
+        media_items.extend(video_media)
 
-        # 正文 = 评论（被回复的那条在前，目标在后），图按顺序原位
+        # 正文 = 评论（被回复的那条在前，目标在后），图按顺序原位（索引从 0 起）
         blocks: list[str] = []
-        offset = len(video_media)
+        offset = 0
         for reply in chain:
             if reply is target:
                 continue  # 目标评论是正文本身，不放进引用块
@@ -245,9 +248,11 @@ class BiliParse(BaseParser):
 
         content = "\n\n".join(c for c in body_chunks if c)
 
-        # 视频引用卡片：用 reply 通道（正文之前 + 取 reply 媒体段）
+        # 视频引用卡片：用 reply 通道（正文之前 + 从末尾切 reply 媒体段）
         page_url = raw_url.split("?")[0].split("#")[0]
-        card = BiliParse._render_video_card(base, page_url, placeholder="{{media:0}}")
+        card = BiliParse._render_video_card(
+            base, page_url, placeholder=f"{{{{media:{video_start}}}}}"
+        )
         base.content = f"{card}\n\n{content}" if card and content else (card or content)
         base.title = ""
         base.author_name = target.author_name
@@ -258,7 +263,7 @@ class BiliParse(BaseParser):
             base.published_at = to_datetime(target.published_at)
         base.like_count = target.like_count
         base.media = media_items  # type: ignore[assignment]
-        # 视频卡片占 1 张（封面走 reply 段），其余是评论正文里的图
+        # 视频在**末尾**（渲染层从尾部切 reply 段），所以 reply 段就是最后这几个
         base.reply_media_count = len(video_media)
         base.quoted_media_count = 0
         base.quote_roles = ["reply"]
