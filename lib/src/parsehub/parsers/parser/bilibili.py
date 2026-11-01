@@ -28,6 +28,7 @@ from ...utils.helpers import (
     get_author_name,
     image_ext_from_url,
     profile_url,
+    to_datetime,
 )
 from ..base.base import BaseParser
 
@@ -155,14 +156,40 @@ class BiliParse(BaseParser):
             body = f"{body}\n\n{placeholder}" if body else placeholder
         return format_quote_block(body, author, sign_only=True)
 
+    @staticmethod
+    def _render_video_card(
+        base: Any, page_url: str, placeholder: str = "{{media:0}}"
+    ) -> str:
+        """把视频渲染成引用卡片（**封面 + 标题链接 + UP 主**）。
+
+        用户点的是评论、不是视频，所以视频是**被引用的对象**，排在正文前。
+        封面必须走媒体占位符 —— 引用卡片里的图要靠 ``reply_media_count`` 通道
+        供给，不能只写远端 URL（富文本的引用块只认已上传的媒体）。
+
+        标题链到**视频页**（``page_url``）而不是封面图 —— 拿 ``thumb_url`` 当 href
+        会让点标题去开 jpg。
+        """
+        title = (getattr(base, "title", "") or "").strip()
+        title_line = f'<a href="{page_url}">{title}</a>' if title and page_url else title
+        body = f"{title_line}\n\n{placeholder}" if title_line else placeholder
+        author = format_author_link(
+            getattr(base, "author_name", "") or "",
+            "",
+            getattr(base, "author_url", "") or "",
+        )
+        return format_quote_block(body, author, sign_only=True)
+
     async def _parse_with_comment(
         self, raw_url: str, rpid: str
     ) -> BiliVideoParseResult | ImageParseResult:
-        """解析「视频 + 指定评论」链接。
+        """解析「评论」链接：**评论是正文**，视频是它引用的对象（引用卡片）。
 
-        视频走原有完整解析（用户明确要求不要只给评论）；评论取**回复关系最多两层**：
-        目标评论 + 它回复的那条。两条评论都渲染成引用块，评论图走
-        ``quoted_media_count`` 通道（渲染层据此把它们归到引用块里，而不是正文）。
+        用户发的链接指向某条评论，所以主体是那条评论 —— 视频只作为「这条评论
+        评的是哪个视频」的上下文，渲染成引用卡片放在正文之前（``quote_roles``
+        的 ``reply`` 通道，媒体取 ``reply_media_count`` 段）。
+
+        评论取**回复关系最多两层**：目标评论 + 它回复的那条（后者排在前面，
+        因为它是被回复的那一方）。
         """
         base = await self.bili_api_parse(raw_url)
 
@@ -179,33 +206,62 @@ class BiliParse(BaseParser):
         if not chain:
             return base
 
-        # 评论图必须挂到 **media 列表末尾** —— 渲染层是用 ``quoted_media_count``
-        # 从 ``to_list(parse_result.media)`` 的**尾部**切片得到引用卡片的，
-        # 视频结果没有 ``photo`` 字段（``VideoParseResult`` 只有单个 ``media``），
-        # 往 photo 上挂会静默丢失（实测：quoted_media_count=6 但一张图都没发出去）。
-        media_items: list[Any] = (
+        # 目标评论是主体 —— 作者/时间/点赞都换成它的，视频退居引用卡片。
+        target = chain[-1]
+        video_media: list[Any] = (
             list(base.media) if isinstance(base.media, (list, tuple)) else [base.media]
         ) if getattr(base, "media", None) is not None else []
-        media_base = len(media_items)
+
+        # 媒体顺序必须与两个通道对齐：[视频封面…][评论图…]。
+        # 视频卡片走 reply 通道（在正文之前），评论图走正文的 media 通道。
+        media_items: list[Any] = list(video_media)
         for reply in chain:
             media_items.extend(BiliParse._to_refs(reply.images))
 
+        # 正文 = 评论（被回复的那条在前，目标在后），图按顺序原位
         blocks: list[str] = []
-        offset = media_base
+        offset = len(video_media)
         for reply in chain:
+            if reply is target:
+                continue  # 目标评论是正文本身，不放进引用块
             blocks.append(
                 BiliParse._render_reply(reply, placeholder=f"{{{{media:{offset}}}}}")
             )
             offset += len(reply.images or [])
 
-        quote = "\n\n".join(b for b in blocks if b)
-        existing = getattr(base, "content", "") or ""
-        new_content = f"{existing}\n\n{quote}" if existing else quote
+        # 目标评论的正文（含它自己的图）
+        body_chunks: list[str] = []
+        target_offset = offset
+        if replies := blocks:
+            body_chunks.extend(replies)
+        target_body = target.content or ""
+        if target.images:
+            imgs = "\n\n".join(
+                f"{{{{media:{target_offset + i}}}}}" for i in range(len(target.images))
+            )
+            target_body = f"{target_body}\n\n{imgs}" if target_body else imgs
+        if target_body:
+            body_chunks.append(target_body)
 
-        # 原地改结果对象：类型不变（仍是视频），只补正文与引用媒体。
-        base.content = new_content
+        content = "\n\n".join(c for c in body_chunks if c)
+
+        # 视频引用卡片：用 reply 通道（正文之前 + 取 reply 媒体段）
+        page_url = raw_url.split("?")[0].split("#")[0]
+        card = BiliParse._render_video_card(base, page_url, placeholder="{{media:0}}")
+        base.content = f"{card}\n\n{content}" if card and content else (card or content)
+        base.title = ""
+        base.author_name = target.author_name
+        base.author_url = profile_url(
+            Platform.BILIBILI, user_id=str(target.author_mid or "")
+        )
+        if target.published_at is not None:
+            base.published_at = to_datetime(target.published_at)
+        base.like_count = target.like_count
         base.media = media_items  # type: ignore[assignment]
-        base.quoted_media_count = len(media_items) - media_base
+        # 视频卡片占 1 张（封面走 reply 段），其余是评论正文里的图
+        base.reply_media_count = len(video_media)
+        base.quoted_media_count = 0
+        base.quote_roles = ["reply"]
         return base
 
     async def _do_parse(self, raw_url: str) -> BiliVideoParseResult | ImageParseResult:

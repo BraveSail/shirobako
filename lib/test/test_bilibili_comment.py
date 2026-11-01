@@ -1,12 +1,15 @@
-"""bilibili 评论链接: 解析视频 + 目标评论及其被回复的评论（最多两层）。
+"""bilibili 评论链接: 评论是正文，视频是它引用的对象（引用卡片）。
 
 链接形如 ``…/video/BVxxx?comment_on=1&comment_root_id=<rpid>#reply<rpid>``。
-两个关键点被测试钉死：
+三个关键点被测试钉死：
 
 1. ``get_raw_url`` 必须**保留** ``comment_root_id`` —— 父类的白名单会剥掉未知参数，
    剥掉之后 ``_do_parse`` 看不到它，评论分支永远走不到（症状是视频正常、评论静默消失）。
 2. 回复链最多 **2 个节点**（本人 + 被回复者），不翻楼中楼列表 —— ``root.replies``
    是平铺的一页（可能 18 条，混着直接回复顶层和回复楼中楼的），不是回复关系。
+3. **主次不能反**：用户发的链接指向一条评论，所以作者/点赞换成评论者的、视频退居
+   引用卡片（``quote_roles=['reply']``，排在正文前，走 ``reply_media_count`` 通道）。
+   早期实现把视频当主体、评论当引用块，用户当场指出"显示逻辑反了"。
 """
 
 import asyncio
@@ -179,3 +182,32 @@ def test_reply_chain_tolerates_deleted_comment():
 
     chain = asyncio.run(api.get_reply_chain("117528055514733", NESTED_RPID))
     assert [r.rpid for r in chain] == [NESTED_RPID]
+
+
+def test_video_card_links_to_video_page_not_cover():
+    """引用卡片的标题要链到视频页；链到封面 jpg 会让点标题去开一张图。"""
+
+    class FakeVideo:
+        title = "没错，re0的小碎步二原是我们画的"
+        author_name = "璟炎文化"
+        author_url = "https://space.bilibili.com/3546624783551347"
+
+    card = BiliParse._render_video_card(
+        FakeVideo(), "https://www.bilibili.com/video/BV1oxxY69Es4"
+    )
+    assert 'href="https://www.bilibili.com/video/BV1oxxY69Es4"' in card
+    assert ".jpg" not in card
+    assert "{{media:0}}" in card      # 封面的媒体占位符在卡片里
+    assert "璟炎文化" in card          # UP 主署名
+
+
+def test_video_card_without_title_still_renders_cover():
+    """无标题的视频（少见）也要能出卡片，不能因为标题空就整块丢掉。"""
+
+    class FakeVideo:
+        title = ""
+        author_name = "某人"
+        author_url = ""
+
+    card = BiliParse._render_video_card(FakeVideo(), "https://www.bilibili.com/video/BV1")
+    assert "{{media:0}}" in card
