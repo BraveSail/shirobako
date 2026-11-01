@@ -64,7 +64,15 @@ from ..base.base import BaseParser
 
 #: 直播从**当前时刻**抓多久（秒）。直播的流没有时长, 取流靠墙钟停, 这里定义目标时长；
 #: 实际产物在 mux 时用 ``-t`` 精确裁到这个长度（readahead 会多给几秒）。
-_LIVE_CAPTURE_SECONDS = 30
+#:
+#: **15 秒是被 inline 的编辑窗口逼出来的上限，不是随便挑的**（2026-11-01 实测）：
+#:   - 30s 目标 → 墙钟 36s（30 + 6s readahead），加上上传超过 42s
+#:   - 15s 目标 → 墙钟 20s，加上传约 25s，稳进窗口
+#:   - 10s 目标 → 墙钟 14s
+#: Telegram 的 inline 消息只在选中后约 30-42 秒内可编辑，超时就是
+#: ``400 MESSAGE_ID_INVALID``（`messages.EditInlineBotMessage`）—— 用户看到的是
+#: "直播坏了"，实际是切片太长把编辑窗口耗光了。
+_LIVE_CAPTURE_SECONDS = 15
 
 
 class YtbParse(BaseParser):

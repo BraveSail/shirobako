@@ -473,8 +473,29 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
-            logger.error(f"inline 富文本编辑失败: {e}")
-            await reporter.report_error(_t("上传"), e)
+            # ``MESSAGE_ID_INVALID`` on an inline edit means Telegram no longer accepts
+            # that handle. **It is NOT a timeout**: measured on 2026-11-01, an inline
+            # message selected 43s earlier edited fine, and handles from two hours
+            # before still answered OK through Bot API — so there is no ~30-42s edit
+            # window (that was a wrong guess). What actually kills the handle is the
+            # message being replaced/deleted underneath us; re-querying during the
+            # download is the usual way that happens.
+            #
+            # Do NOT send a fresh message as a fallback: a failed edit leaves the
+            # original intact, so sending another one would leave the user with TWO
+            # messages — the text-only original plus a media copy. The original
+            # already carries the full text, so only the media is missing.
+            if "MESSAGE_ID_INVALID" in str(e):
+                logger.warning(
+                    "[InlineParse] inline 句柄已失效（消息被替换/删除，非超时），媒体未能补入: %s", e
+                )
+                await reporter.report_error(
+                    _t("上传"),
+                    RuntimeError(_t("所选消息已被替换或删除，媒体未能附上；内容已缓存，重新选择即可秒回")),
+                )
+            else:
+                logger.error(f"inline 富文本编辑失败: {e}")
+                await reporter.report_error(_t("上传"), e)
         finally:
             logger.debug("inline 富文本任务完成")
 
