@@ -286,10 +286,12 @@ FOOTER_META_FIELDS_VERSION = 1
 #:   不 bump 的话用户重发同一条链接会命中旧条目、看到一模一样的偏移（观感等同"没修"）。
 #: - 6 = bilibili 评论链接改成「评论是正文、视频是引用卡片」，评论配图包成
 #:   ``<tg-collage>``（2026-11-01）：旧条目是反的 ⇒ 命中就是「显示逻辑反了 / 图片顺排」。
+#: - 7 = bilibili ``t.bilibili.com/<id>`` 图文动态也走详情页拿全文（2026-11-01）：
+#:   旧条目是截断摘要 ⇒ 命中就是「这个怎么不全」（222 字/1 图 vs 510 字/4 图）。
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 6
+CONTENT_VERSION = 7
 
 #: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
 #: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。

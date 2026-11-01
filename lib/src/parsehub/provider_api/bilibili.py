@@ -57,10 +57,16 @@ class BiliAPI:
         if not match:
             raise ValueError(f"Invalid dynamic url: {url}")
         dyn_id = match.group(0)
-        if "/opus/" in url:
-            if opus_item := await self._get_opus_page_item(dyn_id, cookie):
-                return BiliDynamic.parse({"item": opus_item})
-            logger.debug("opus 详情页不可用, 回退 detail 接口: %s", url)
+        # opus 图文优先走**详情页**（接口只给截断摘要）。
+        #
+        # 判据不能只看 URL 里有没有 ``/opus/``：``t.bilibili.com/<id>`` 这种动态链接
+        # 同样是图文、同样被接口截断（实测 1265762239826100230：接口 222 字/1 图，
+        # 详情页 510 字/4 图），以前它被当成普通动态走接口，用户报「这个怎么不全」。
+        # 所以先试着取详情页，取不到再回退接口 —— 多一次请求只在图文场景发生，
+        # 且函数内部失败返回 None，不会把解析变成硬失败。
+        if opus_item := await self._get_opus_page_item(dyn_id, cookie):
+            return BiliDynamic.parse({"item": opus_item})
+        logger.debug("opus 详情页不可用, 回退 detail 接口: %s", url)
         params = {
             "timezone_offset": "-480",
             "id": dyn_id,
