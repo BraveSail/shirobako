@@ -135,6 +135,57 @@ class BiliAPI:
             response.raise_for_status()
         return response.json()
 
+    async def get_reply_chain(
+        self, aid: int | str, rpid: str, cookie: dict | None = None, *, max_nodes: int = 2
+    ) -> list["BiliReply"]:
+        """取一条评论及其**被回复的评论**（最多 ``max_nodes`` 个节点，默认 2）。
+
+        B 站 / 网上的常见误解是"楼中楼列表就是回复关系" —— 不是。``root.replies``
+        是一页**平铺**的楼中楼（可能 18 条，混着直接回复顶层和回复楼中楼的），
+        用户要的是**回复关系**：这条评论 + 它回复的那条。
+
+        链路靠 ``parent`` 往上追：``reply/detail?root=<rpid>`` 会返回这条评论本身
+        （``data.root``），但**不含**它的父评论（实测：拿楼中楼 rpid 打，返回的
+        ``root.replies`` 是空的，``parent`` 那条不在里面）。所以往上追要再打一次，
+        用 ``root=<parent_rpid>``。为守住"一次请求"精神，只对**用户明确指向的那条
+        评论**做链，且最多 ``max_nodes`` 个节点（默认 2 = 本人 + 被回复者），
+        不翻楼中楼列表。
+
+        :returns: 从**被回复的评论到目标评论**的顺序（渲染时被回复者在上、目标在下）。
+        """
+        chain: list[BiliReply] = []
+        current = str(rpid)
+        seen: set[str] = set()
+        for _ in range(max_nodes):
+            if not current or current == "0" or current in seen:
+                break
+            seen.add(current)
+            response = await self._get_client().get(
+                "https://api.bilibili.com/x/v2/reply/detail",
+                params={"type": 1, "oid": aid, "root": current},
+                cookies=cookie,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("code") != 0:
+                # 评论被删/不可见时别把整条解析拖垮 —— 链断了就停在这里
+                logger.debug("评论链中断 rpid=%s: %s", current, payload.get("message"))
+                break
+            root = (payload.get("data") or {}).get("root") or {}
+            if not root:
+                break
+            reply = BiliReply.parse(root)
+            chain.append(reply)
+            # 往上走的三种情形：
+            #   parent == "0"      → 这条就是顶层评论，链到底了
+            #   parent == root     → 父评论就是本楼顶层评论，下一步去取它
+            #   其他               → 父评论是楼中楼里的某条，直接取它
+            if reply.parent in ("", "0"):
+                break
+            current = reply.root if reply.parent == reply.root else reply.parent
+        chain.reverse()
+        return chain
+
     async def get_video_playurl(self, url, cid, b3, b4, is_high_quality=True) -> dict:
         bvid = self.get_bvid(url)
         params = {
@@ -292,6 +343,64 @@ class BiliImage:
     width: int = 0
     height: int = 0
     live_url: str | None = None
+
+
+@dataclass(kw_only=True)
+class BiliReply:
+    """一条 B 站评论。
+
+    ``parent`` 指向**被回复的那条评论**的 rpid（顶层评论为 0），``root`` 指向
+    整个楼层的顶层评论 rpid。回复链就靠 ``parent`` 往上追 —— 用户要求
+    **最多三层**（本人 → 父 → 祖父），更长的链在第三层截断。
+    """
+
+    rpid: str = ""
+    parent: str = "0"
+    root: str = "0"
+    #: 楼层号（顶层评论才有意义）
+    floor: int = 0
+    content: str = ""
+    author_name: str = ""
+    author_mid: int | str | None = None
+    #: 发布时间的 unix 时间戳
+    published_at: int | None = None
+    like_count: int | None = None
+    #: IP 属地（``reply_control.location``，形如 ``IP属地：日本``）
+    location: str = ""
+    #: 正文里带的图（评论配图）
+    images: list[BiliImage] | None = None
+    #: 该评论下的回复数
+    reply_count: int = 0
+
+    @classmethod
+    def parse(cls, data: dict) -> Self:
+        member = data.get("member") or {}
+        content = data.get("content") or {}
+        ctrl = data.get("reply_control") or {}
+        pictures = content.get("pictures") or []
+        images = [
+            BiliImage(
+                url=str(pic.get("img_src") or "").replace("http://", "https://"),
+                width=to_int(pic.get("img_width")) or 0,
+                height=to_int(pic.get("img_height")) or 0,
+            )
+            for pic in pictures
+            if pic.get("img_src")
+        ]
+        return cls(
+            rpid=str(data.get("rpid_str") or data.get("rpid") or ""),
+            parent=str(data.get("parent_str") or data.get("parent") or "0"),
+            root=str(data.get("root_str") or data.get("root") or "0"),
+            floor=to_int(data.get("floor")) or 0,
+            content=(content.get("message") or "").strip(),
+            author_name=member.get("uname") or "",
+            author_mid=member.get("mid"),
+            published_at=to_int(data.get("ctime")),
+            like_count=to_int(data.get("like")),
+            location=(ctrl.get("location") or "").replace("IP属地：", "").strip(),
+            images=images or None,
+            reply_count=to_int(data.get("rcount")) or 0,
+        )
 
 
 @dataclass(kw_only=True)

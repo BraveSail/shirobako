@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse
 
 from loguru import logger
 
-from ...provider_api.bilibili import BiliAPI, BiliDynamic, BiliImage
+from ...provider_api.bilibili import BiliAPI, BiliDynamic, BiliImage, BiliReply
 from ...types import (
     DownloadResult,
     ImageParseResult,
@@ -36,8 +36,11 @@ class BiliParse(BaseParser):
     __platform__ = Platform.BILIBILI
     __supported_type__ = ["视频", "动态"]
     __match__ = r"^(http(s)?://)?((((w){3}.|(m).|(t).)?bilibili\.com)/(video|opus|\b\d{18,19}\b)|b23.tv|bili2233.cn).*"
-    __reserved_parameters__ = ["p"]
+    __reserved_parameters__ = ["p", "comment_root_id"]
     __redirect_keywords__ = ["b23.tv", "bili2233.cn"]
+    #: 解析完才清掉的参数（``comment_root_id`` 只在解析阶段需要 —— 它决定解析哪条评论，
+    #: 但输出链接不需要带它；放这里就能在 ``clean_all=True`` 时被剥掉）
+    __after_clean_parameters__ = ["comment_root_id"]
 
     @staticmethod
     def _to_refs(images: list[BiliImage] | None) -> list[LivePhotoRef | ImageRef]:
@@ -128,7 +131,88 @@ class BiliParse(BaseParser):
         # quoted_media_count 仍算着它的媒体, 引用块却不存在, 图片会掉进正文
         return format_quote_block(body, author, sign_only=True)
 
+    @staticmethod
+    def _comment_rpid(url: str) -> str:
+        """从评论链接里取 ``comment_root_id``（没有就不是评论链接）。"""
+        query = parse_qs(urlparse(url).query)
+        rpid = (query.get("comment_root_id") or [""])[0].strip()
+        return rpid if rpid.isdigit() else ""
+
+    @staticmethod
+    def _render_reply(reply: BiliReply, placeholder: str = "{{media:0}}") -> str:
+        """把一条评论渲染成引用块内容（署名 + 正文 + 配图占位）。
+
+        ``placeholder`` 由调用方给 —— 评论图在整条结果里的媒体索引取决于前面
+        已经收了多少张（视频封面等），不能写死。
+        """
+        author = format_author_link(
+            reply.author_name or "",
+            "",
+            profile_url(Platform.BILIBILI, user_id=str(reply.author_mid or "")),
+        )
+        body = reply.content or ""
+        if reply.images:
+            body = f"{body}\n\n{placeholder}" if body else placeholder
+        return format_quote_block(body, author, sign_only=True)
+
+    async def _parse_with_comment(
+        self, raw_url: str, rpid: str
+    ) -> BiliVideoParseResult | ImageParseResult:
+        """解析「视频 + 指定评论」链接。
+
+        视频走原有完整解析（用户明确要求不要只给评论）；评论取**回复关系最多两层**：
+        目标评论 + 它回复的那条。两条评论都渲染成引用块，评论图走
+        ``quoted_media_count`` 通道（渲染层据此把它们归到引用块里，而不是正文）。
+        """
+        base = await self.bili_api_parse(raw_url)
+
+        chain: list[BiliReply] = []
+        try:
+            async with BiliAPI(proxy=self.proxy) as bili:
+                view = await bili.get_video_info(raw_url, cookie=self.cookie.get_value())
+                aid = ((view.get("data") or {}).get("View") or {}).get("aid")
+                if aid:
+                    chain = await bili.get_reply_chain(aid, rpid, cookie=self.cookie.get_value())
+        except Exception as e:  # noqa: BLE001 - 评论拿不到不该把整个视频解析拖垮
+            logger.opt(exception=e).warning("B站评论获取失败 rpid=%s，只发视频", rpid)
+
+        if not chain:
+            return base
+
+        # 评论图必须挂到 **media 列表末尾** —— 渲染层是用 ``quoted_media_count``
+        # 从 ``to_list(parse_result.media)`` 的**尾部**切片得到引用卡片的，
+        # 视频结果没有 ``photo`` 字段（``VideoParseResult`` 只有单个 ``media``），
+        # 往 photo 上挂会静默丢失（实测：quoted_media_count=6 但一张图都没发出去）。
+        media_items: list[Any] = (
+            list(base.media) if isinstance(base.media, (list, tuple)) else [base.media]
+        ) if getattr(base, "media", None) is not None else []
+        media_base = len(media_items)
+        for reply in chain:
+            media_items.extend(BiliParse._to_refs(reply.images))
+
+        blocks: list[str] = []
+        offset = media_base
+        for reply in chain:
+            blocks.append(
+                BiliParse._render_reply(reply, placeholder=f"{{{{media:{offset}}}}}")
+            )
+            offset += len(reply.images or [])
+
+        quote = "\n\n".join(b for b in blocks if b)
+        existing = getattr(base, "content", "") or ""
+        new_content = f"{existing}\n\n{quote}" if existing else quote
+
+        # 原地改结果对象：类型不变（仍是视频），只补正文与引用媒体。
+        base.content = new_content
+        base.media = media_items  # type: ignore[assignment]
+        base.quoted_media_count = len(media_items) - media_base
+        return base
+
     async def _do_parse(self, raw_url: str) -> BiliVideoParseResult | ImageParseResult:
+        # 评论链接（``?comment_root_id=<rpid>``）: 解析**视频 + 该评论**，
+        # 视频照常完整解析（用户明确要求「视频也解析」），评论按回复关系最多两层。
+        if rpid := BiliParse._comment_rpid(raw_url):
+            return await self._parse_with_comment(raw_url, rpid)
         if await self.is_dynamic(raw_url):
             dynamic = await self.get_dynamic_info(raw_url)
             content = self.hashtag_handler(dynamic.content or "", dynamic.topics)
@@ -198,6 +282,8 @@ class BiliParse(BaseParser):
         else:
             raw_url = await super().get_raw_url(url, **kwargs)
             u = urlparse(raw_url)
+            # ``comment_root_id`` 的保留由 ``__reserved_parameters__`` 负责（父类白名单），
+            # 这里只做原有的一件事：``p=1`` 是默认分P，去掉。
             q = urlencode([(k, v) for k, v in parse_qsl(u.query) if (k, v) != ("p", "1")])
             return u._replace(query=q).geturl()
 
