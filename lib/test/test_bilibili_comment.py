@@ -184,6 +184,41 @@ def test_reply_chain_tolerates_deleted_comment():
     assert [r.rpid for r in chain] == [NESTED_RPID]
 
 
+def test_multiple_comment_pictures_become_a_collage():
+    """多张评论配图要包成 ``<tg-collage>``（图集），不是竖排一串单图。
+
+    富文本里多个独立图片块会渲染成各自分散的图，用户报「图片不是图片组吗？
+    怎么是顺排的」。单张不加外壳（免得多余包裹影响渲染）。
+    """
+    multi = BiliParse._media_marker(["{{media:0}}", "{{media:1}}", "{{media:2}}"])
+    assert multi.startswith("<tg-collage>")
+    assert multi.rstrip().endswith("</tg-collage>")
+    for mark in ("{{media:0}}", "{{media:1}}", "{{media:2}}"):
+        assert mark in multi
+
+    single = BiliParse._media_marker(["{{media:0}}"])
+    assert single == "{{media:0}}"
+    assert BiliParse._media_marker([]) == ""
+
+
+def test_reply_pictures_are_wrapped_in_collage_too():
+    """被回复楼层的图（引用块里）也同样成组。"""
+    reply = BiliReply.parse(
+        _reply(
+            PARENT_RPID, "0", root="0",
+            content={
+                "message": "带两张图",
+                "pictures": [
+                    {"img_src": "https://i0.hdslb.com/a.jpg", "img_width": 1, "img_height": 1},
+                    {"img_src": "https://i0.hdslb.com/b.jpg", "img_width": 1, "img_height": 1},
+                ],
+            },
+        )
+    )
+    block = BiliParse._render_reply(reply, ["{{media:0}}", "{{media:1}}"])
+    assert "<tg-collage>" in block
+
+
 def test_video_card_links_to_video_page_not_cover():
     """引用卡片的标题要链到视频页；链到封面 jpg 会让点标题去开一张图。"""
 

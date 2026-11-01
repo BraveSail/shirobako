@@ -140,11 +140,27 @@ class BiliParse(BaseParser):
         return rpid if rpid.isdigit() else ""
 
     @staticmethod
-    def _render_reply(reply: BiliReply, placeholder: str = "{{media:0}}") -> str:
-        """把一条评论渲染成引用块内容（署名 + 正文 + 配图占位）。
+    def _media_marker(placeholders: Sequence[str]) -> str:
+        """把若干媒体占位符包成**图集**块（多张时）。
 
-        ``placeholder`` 由调用方给 —— 评论图在整条结果里的媒体索引取决于前面
-        已经收了多少张（视频封面等），不能写死。
+        Telegram 富文本里多个独立的图片块会渲染成各自分散的一张张图；包进
+        ``<tg-collage>`` 才是图集（项目里正文媒体/引用块媒体都走这条，见
+        ``plugins.helpers.wrap_collage``）。评论配图本身就是一个相册，不包的话
+        会变成竖排的一串单图（用户报「图片不是图片组吗？怎么是顺排的」）。
+        """
+        items = [p for p in placeholders if p]
+        if not items:
+            return ""
+        if len(items) == 1:
+            return items[0]
+        return "<tg-collage>\n\n" + "\n".join(items) + "\n\n</tg-collage>"
+
+    @staticmethod
+    def _render_reply(reply: BiliReply, placeholders: Sequence[str] = ()) -> str:
+        """把一条评论渲染成引用块内容（署名 + 正文 + 配图图集）。
+
+        ``placeholders`` 由调用方给 —— 评论图在整条结果里的媒体索引取决于前面
+        已经收了多少张，不能写死。
         """
         author = format_author_link(
             reply.author_name or "",
@@ -152,8 +168,8 @@ class BiliParse(BaseParser):
             profile_url(Platform.BILIBILI, user_id=str(reply.author_mid or "")),
         )
         body = reply.content or ""
-        if reply.images:
-            body = f"{body}\n\n{placeholder}" if body else placeholder
+        if marker := BiliParse._media_marker(placeholders):
+            body = f"{body}\n\n{marker}" if body else marker
         return format_quote_block(body, author, sign_only=True)
 
     @staticmethod
@@ -227,22 +243,21 @@ class BiliParse(BaseParser):
         for reply in chain:
             if reply is target:
                 continue  # 目标评论是正文本身，不放进引用块
-            blocks.append(
-                BiliParse._render_reply(reply, placeholder=f"{{{{media:{offset}}}}}")
-            )
+            marks = [f"{{{{media:{offset + i}}}}}" for i in range(len(reply.images or []))]
+            blocks.append(BiliParse._render_reply(reply, marks))
             offset += len(reply.images or [])
 
-        # 目标评论的正文（含它自己的图）
+        # 目标评论的正文（含它自己的图，多张包成图集）
         body_chunks: list[str] = []
         target_offset = offset
         if replies := blocks:
             body_chunks.extend(replies)
         target_body = target.content or ""
-        if target.images:
-            imgs = "\n\n".join(
-                f"{{{{media:{target_offset + i}}}}}" for i in range(len(target.images))
-            )
-            target_body = f"{target_body}\n\n{imgs}" if target_body else imgs
+        if target_marks := [
+            f"{{{{media:{target_offset + i}}}}}" for i in range(len(target.images or []))
+        ]:
+            marker = BiliParse._media_marker(target_marks)
+            target_body = f"{target_body}\n\n{marker}" if target_body else marker
         if target_body:
             body_chunks.append(target_body)
 
