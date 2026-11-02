@@ -35,6 +35,23 @@ def test_get_id_by_url_accepts_article_path():
         raise AssertionError("非推文/文章链接应当报错")
 
 
+def test_article_result_requires_media_download():
+    """长文结果必须声明 requires_media_download=True。
+
+    长文的图被抽成附件放在 ``media`` 里、正文只留外链 markdown。不下载的话流水线
+    走「无媒体」分支（``processed_list`` 为空），渲染层拿不到 ``media_urls`` 就把
+    正文里的图**全部剥掉** —— 用户看到「没图」（实测 6 张全丢）。
+    判据要落在 **result 类**上，不是 parser 类（那个属性不会被读到）。
+    """
+    from parsehub.parsers.parser.twitter import TwitterArticleParseResult
+    from parsehub.types import RichTextParseResult
+
+    assert TwitterArticleParseResult.requires_media_download is True
+    # 普通长文/普通推文仍保持 False：它们的正文图是外链，Telegram 自己抓
+    assert RichTextParseResult.requires_media_download is False
+    assert issubclass(TwitterArticleParseResult, RichTextParseResult)
+
+
 def _article_data(*, cover: str = "", entities: list[dict] | None = None) -> dict:
     return {
         "title": "标题",

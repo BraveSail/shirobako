@@ -72,7 +72,7 @@ class ResultRebuildUnavailable(RuntimeError):
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
 #: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 9
+_CACHE_CONTENT_VERSION = 10
 _CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo", "bilibili"})
 
 

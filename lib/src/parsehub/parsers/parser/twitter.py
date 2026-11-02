@@ -1,6 +1,6 @@
 import html
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse, urlunparse
 
 from ...provider_api.twitter import (
@@ -24,6 +24,18 @@ from ...types import (
 )
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
+
+
+class TwitterArticleParseResult(RichTextParseResult):
+    """twitter 长文（article）。
+
+    **必须声明 ``requires_media_download = True``**：长文的配图被抽成附件放在
+    ``media`` 里，正文只留外链 markdown；不下载的话流水线会走「无媒体」分支
+    （``processed_list`` 为空），渲染层拿不到 ``media_urls`` 就把正文里的图
+    **全部剥掉** —— 用户看到的就是「没图」（实测 6 张全丢）。
+    """
+
+    requires_media_download: ClassVar[bool] = True
 
 
 class TwitterParser(BaseParser):
@@ -314,7 +326,7 @@ class TwitterParser(BaseParser):
         # 与 ``_compose`` / ``_quote_block`` 分配索引时用的是同一份 ``_poll_pairs``
         polls = [TwitterParser._to_result_poll(source) for _role, source in TwitterParser._poll_pairs(tweet)]
         if article := tweet.article:
-            return RichTextParseResult(
+            return TwitterArticleParseResult(
                 markdown_content=TwitterParser._compose(
                     article.content, tweet, reply_yt=reply_yt_quote, quoted_yt=quoted_yt_quote
                 ),
