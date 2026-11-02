@@ -29,7 +29,7 @@ from ..base.base import BaseParser
 class TwitterParser(BaseParser):
     __platform__ = Platform.TWITTER
     __supported_type__ = ["视频", "图文"]
-    __match__ = r"^(http(s)?://)?.+(twitter|fixupx|x).com/.*/status/\d+"
+    __match__ = r"^(http(s)?://)?.+(twitter|fixupx|x).com/.*/(status|article)/\d+"
 
     async def _do_parse(self, raw_url: str) -> MultimediaParseResult | RichTextParseResult:
         tweet = await self._parse(raw_url)
@@ -273,6 +273,11 @@ class TwitterParser(BaseParser):
     @staticmethod
     async def media_parse(tweet: TwitterTweet) -> MultimediaParseResult | RichTextParseResult:
         media: list[AnyMediaRef] = TwitterParser.to_media_refs(tweet.media)
+        # 长文（article）自己的媒体是**独立**的一份 —— 它们不在 ``tweet.media`` 里
+        # （实测 article 有 5 个媒体、``tweet.media`` 为 0 个）。不并进来的话正文
+        # 里的图全部拿不到（用户报「图片呢」）。article 的正文就是主体，所以排在最前。
+        if tweet.article:
+            media = [*TwitterParser.to_media_refs(tweet.article.media), *media]
 
         # 被**引用 / 被回复**推文正文里的 YouTube 链接 -> 引用卡片 (标题可点) + 封面。
         # 只有这两种推文才处理: 它们本来就渲染成引用卡片, 卡片里的链接该有封面。

@@ -553,7 +553,10 @@ class Twitter:
 
     @staticmethod
     def get_id_by_url(url: str) -> str:
-        match = re.search(r"status/(\d+)", url)
+        # ``article`` 与 ``status`` 是同一种 id 空间（实测 article id 直接查
+        # TweetDetail 就返回那条推文，正文在 ``article_results`` 里），
+        # 所以两种路径都取最后那段数字。
+        match = re.search(r"(?:status|article)/(\d+)", url)
         if not match:
             raise ValueError(f"Invalid tweet url: {url}")
         return match[1]
@@ -714,11 +717,22 @@ class ArticleRenderer:
         title = self._data.get("title", "")
 
         self._parse_media_entities()
-        cover_url = self._data.get("cover_media", {}).get("media_info", {}).get("original_img_url", "")
+        cover_info = self._data.get("cover_media", {}).get("media_info", {}) or {}
+        cover_url = cover_info.get("original_img_url", "")
 
         md_lines: list[str] = []
         if cover_url:
             md_lines.append(f"![Cover Image]({cover_url})\n")
+            # 封面**写进了正文就必须也在媒体列表里**：正文的 ``![](url)`` 要靠
+            # ``media_urls`` 换成上传媒体引用，对不上就被剥掉（用户看到正文里
+            # 少一张图）。封面是 ``cover_media``，不在 ``media_entities`` 里，
+            # 所以得单独补一个 —— 按正文出现顺序排在**最前**。
+            width = to_int(cover_info.get("original_img_width")) or 0
+            height = to_int(cover_info.get("original_img_height")) or 0
+            self._media_result.insert(
+                0,
+                TwitterPhoto(url=cover_url, width=width, height=height),
+            )
 
         for block in blocks:
             md_lines.append(self._render_block(block, entity_map))

@@ -292,10 +292,11 @@ FOOTER_META_FIELDS_VERSION = 1
 #:   旧条目是截断摘要 ⇒ 命中就是「这个怎么不全」（222 字/1 图 vs 510 字/4 图）。
 #: - 8 = bilibili 动态的板头图（banner）提到标题上方（2026-11-01）：旧条目没有
 #:   ``banner_media_count`` ⇒ banner 缺失或混在正文里。
+#: - 9 = twitter 长文的媒体与封面接上（2026-11-02）：旧条目零图。
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 8
+CONTENT_VERSION = 9
 
 #: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
 #: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。
