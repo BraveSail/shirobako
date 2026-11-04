@@ -32,7 +32,6 @@ from plugins.helpers import (
     build_caption,
     build_rich_markdown,
     format_label,
-    markdown_needs_blocks,
 )
 from plugins.parse.cache import cache_media_from_message
 from plugins.parse.covers import prepare_video_thumbs
@@ -577,17 +576,22 @@ async def send_rich_media(
         media_urls=media_urls,
         hide_content=spoiler_tag,
     )
-    if (parse_result.is_sensitive and media_blocks) or markdown_needs_blocks(markdown):
-        # 两种情况只能走 blocks:
-        #  1. 敏感内容的媒体必须打码 —— 官方 API 的富文本媒体块没有 spoiler 字段,
-        #     只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler);
-        #  2. 折叠的引用卡片带媒体 —— 图要留在引用块内 (markdown 的 `>` 块做不到)。
-        blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
-        logger.debug(f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}")
-        rich = InputRichMessage(blocks=blocks)
-    else:
-        logger.debug(f"富文本: media={len(media)}, markdown_len={len(markdown)}")
-        rich = InputRichMessage(markdown=markdown, media=media or None)
+    # **一律走 blocks 结构化通道**（2026-11-02 定案）。
+    #
+    # 以前只有两种情况走 blocks（敏感媒体要打码、折叠引用卡片带媒体），其余走
+    # ``InputRichMessageMarkdown`` —— 那条通道的语义是"这段是 markdown，请解析"，
+    # 而我们喂的是**平台原文**（字面量）。语义错配的代价是每撞上一个语法就要打补丁：
+    # 行首 4 空格 → 缩进代码块、``||`` → spoiler、``#``/``_``/``*`` → 各种语法。
+    # 补丁之间还互相破坏（换全角空格解决代码块，结果宽度翻倍把对齐搞歪）。
+    #
+    # blocks 通道的每个块携带**字面量文本**，服务端不解析 —— 原文的缩进、``||``、
+    # ``#`` 全都不需要转义，也不会误解。这才是对的方向，不是再补一个字符替换。
+    blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
+    logger.debug(
+        f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}, "
+        f"markdown_len={len(markdown)}"
+    )
+    rich = InputRichMessage(blocks=blocks)
 
     message = await _post_rich(sender, rich, reporter=reporter)
 

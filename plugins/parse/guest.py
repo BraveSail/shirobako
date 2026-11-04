@@ -30,7 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label, markdown_needs_blocks
+from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
@@ -243,13 +243,9 @@ async def _answer(
             description=_clip(pr.content, 200),
             markdown=markdown,
             media=cached_media or None,
-            # 敏感内容走 blocks 才打得了码; 折叠的引用卡片带媒体也只能走 blocks。
-            # (缓存里带着 is_sensitive, 以前没用上)
-            blocks=(
-                markdown_to_blocks(markdown, media_blocks=cached_blocks)
-                if cached_blocks and (pr.is_sensitive or markdown_needs_blocks(markdown))
-                else None
-            ),
+            # **一律走 blocks**（与 sender/inline 同一决策）：markdown 字符串通道会
+            # 解析平台原文（行首空格变代码块、``||`` 变 spoiler），blocks 的字面量不会。
+            blocks=markdown_to_blocks(markdown, media_blocks=cached_blocks) if cached_blocks else None,
         )
         return True
 
@@ -338,8 +334,8 @@ async def _answer(
             description=description,
             markdown=markdown,
             media=media or None,
-            # 敏感内容的媒体要走 blocks 路径才能打码 (与 inline 同一套)
-            blocks=_blocks if parse_result.is_sensitive and _blocks else None,
+            # **一律走 blocks**（与 sender/inline 同一决策），见上面缓存命中路径的说明
+            blocks=_blocks or None,
         )
 
         # 不写 file_id 缓存: guest 的结果发在**别人群里的一条 inline 消息**上,

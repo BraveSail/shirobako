@@ -34,7 +34,6 @@ from plugins.filters import platform_filter
 from plugins.helpers import (
     build_rich_markdown,
     build_start_text,
-    markdown_needs_blocks,
 )
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
@@ -462,15 +461,13 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             entry = await _upload_and_cache_inline_media(
                 cli, raw_url, parse_result, media, quoted_placeholders, reply_placeholders, media_urls
             )
-            if (parse_result.is_sensitive and media_blocks) or markdown_needs_blocks(markdown):
-                # 敏感内容: markdown+media 路径的 raw 类型没有 spoiler, 只能走 blocks。
-                # 记账成功时用**缓存里那套 file_id 版 blocks** 编辑 —— 与缓存命中时同一套
-                # 渲染, 形态一致, 也不会把本地文件再上传一遍。
-                cached_blocks = cache_media_blocks(entry)[4] if entry is not None else None
-                blocks = markdown_to_blocks(markdown, media_blocks=cached_blocks or media_blocks)
-                await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, blocks=blocks)
-            else:
-                await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
+            # **一律走 blocks**（与 sender 同一决策）：markdown 字符串通道会解析
+            # 平台原文（行首空格变代码块、``||`` 变 spoiler），blocks 的字面量不会。
+            # 记账成功时用**缓存里那套 file_id 版 blocks** —— 与缓存命中同一套渲染，
+            # 也不会把本地文件再上传一遍。
+            cached_blocks = cache_media_blocks(entry)[4] if entry is not None else None
+            blocks = markdown_to_blocks(markdown, media_blocks=cached_blocks or media_blocks)
+            await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, blocks=blocks)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             # ``MESSAGE_ID_INVALID`` on an inline edit means Telegram no longer accepts

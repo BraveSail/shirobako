@@ -70,13 +70,17 @@ def test_hashtag_anchor_keeps_its_inner_text_intact():
     assert esc(anchor) == anchor
 
 
-def test_leading_indent_is_not_a_code_block():
-    """行首 4+ 空格是 Markdown 缩进代码块 —— 换成全角空格（保留视觉缩进）
+def test_leading_indent_is_left_alone_for_the_blocks_path():
+    """行首缩进**原样保留** —— 富文本走 blocks 结构化通道，段落文本是字面量。
 
-    实测 X 的一条动画预告：``      TVアニメ『あかね噺』`` 整行被渲染成代码块。
+    历史：markdown 字符串通道会把行首 4+ 空格解析成缩进代码块，于是加过一版
+    「换成全角空格」的补丁；那版把缩进宽度翻倍、把平台用半角空格做的对齐推歪
+    （用户报「拆东墙补西墙」）。改成 blocks 通道后这个补丁整个删掉了 ——
+    原文的缩进不需要也不应该被改写。
     """
     out = esc("━━━\n\n      TVアニメ『あかね噺』\n  第２期キービジュアル 公開")
-    assert "\u3000\u3000\u3000\u3000\u3000\u3000TVアニメ" in out
-    assert not out.startswith("    ")  # 不再有半角缩进
-    # 少于 4 个空格的行不动
-    assert "\u3000\u3000第２期" not in out
+    # 6 个半角空格原样保留，一个都没被换掉
+    assert "      TVアニメ『あかね噺』" in out
+    assert "\u3000" not in out
+    # 少于 4 个空格同样不动
+    assert "  第２期キービジュアル 公開" in out

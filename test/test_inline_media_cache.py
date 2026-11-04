@@ -199,12 +199,12 @@ def test_the_record_helper_is_all_or_nothing(monkeypatch):
     assert written == [], "部分成功时不能写缓存"
 
 
-def test_the_sensitive_branch_records_too():
-    """敏感内容 (blocks 路径) 也必须记账 —— 这是「每次重新下载」的根因。
+def test_recording_happens_before_delivery_with_no_branch_split():
+    """记账必须**不分分支**地发生一次 —— 这是「每次重新下载」的根因。
 
-    那条路以前绕过了 upload_media_for_cache, 于是 file_id 缓存永远写不进,
-    每次选中都要重新下载。用 AST 盯住结构: 记账发生在 `is_sensitive` 判断**之前**,
-    也就是两条路共用同一次记账。
+    历史上这里是 if/else：敏感走 blocks、其余走 markdown，只有敏感那条记得上账，
+    于是普通内容每次选中都重新下载。后来合并成「一律走 blocks」单一投递路径，
+    记账就在投递之前无条件发生。用 AST 盯住结构：调用点只有一个。
     """
     import ast
 
@@ -217,12 +217,15 @@ def test_the_sensitive_branch_records_too():
         for n in ast.walk(func)
         if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_upload_and_cache_inline_media"
     ]
-    sensitive_lines = [
-        n.lineno for n in ast.walk(func) if isinstance(n, ast.If) and "is_sensitive" in ast.dump(n.test)
+    assert len(record_lines) == 1, f"记账应只有一处 (单一投递路径共用), 实际 {len(record_lines)} 处"
+    # 投递（edit_inline_rich_message）必须在记账**之后**，否则拿不到 file_id
+    edit_lines = [
+        n.lineno
+        for n in ast.walk(func)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "edit_inline_rich_message"
     ]
-    assert len(record_lines) == 1, f"记账应只有一处 (两条路共用), 实际 {len(record_lines)} 处"
-    assert sensitive_lines, "应当仍有一条敏感内容分支"
-    assert record_lines[0] < min(sensitive_lines), "记账必须在敏感分支**之前**, 否则敏感内容又不写缓存了"
+    assert edit_lines, "应当有投递调用"
+    assert record_lines[0] < min(edit_lines), "记账必须在投递之前"
 
 
 def test_the_sensitive_branch_edits_with_the_cached_blocks():

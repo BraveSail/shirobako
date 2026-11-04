@@ -291,8 +291,18 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
 
     def flush_paragraph(buf: list[str]) -> None:
         if buf:
-            text = "\n".join(buf).strip()
-            if text:
+            # **不能 strip 每行**：平台原文常用行首空格做居中/对齐（实测 X 的动画
+            # 预告：``◤　　　◥`` 边框内 11 个半角空格的标题）。blocks 通道的段落
+            # 文本是**字面量**，服务端不解析 —— 缩进原样保留才对，这正是它比
+            # markdown 字符串通道更靠谱的地方（那边行首 4 空格会被当代码块）。
+            #
+            # 只去掉**首尾空行**（段落分隔用的），中间每一行原样保留。
+            while buf and not buf[0].strip():
+                buf.pop(0)
+            while buf and not buf[-1].strip():
+                buf.pop()
+            text = "\n".join(buf)
+            if text.strip():
                 blocks.append(InputRichBlockParagraph(parse_inline(text)))
             buf.clear()
 
