@@ -17,6 +17,39 @@ from plugins.parse.reporters import InlineStatusReporter
 from services.cache import CacheEntry, CacheParseResult
 
 
+def _rich_text(rich_message) -> str:
+    """把 blocks 富文本拼成可搜索的文本（测试断言用）。
+
+    富文本一律走 ``InputRichMessage(blocks=[...])``（平台原文当字面量，服务端不解析），
+    所以 ``rich_message.markdown`` 恒为 None —— 断言要看 blocks 里的文字。
+    """
+    parts: list[str] = []
+
+    def _walk(obj) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, str):
+            parts.append(obj)
+            return
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+            return
+        text = getattr(obj, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(text, list):
+            _walk(text)
+        for attr in ("items", "children", "blocks", "content", "title"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                _walk(child)
+
+    _walk(getattr(rich_message, "blocks", None))
+    return "\n".join(parts)
+
+
+
 def _cached_entry() -> CacheEntry:
     return CacheEntry(
         parse_result=CacheParseResult(title="标题", content="正文", author_name="作者"),
@@ -238,7 +271,7 @@ def _service():
 def _first_frame_markdown(answer_calls: list) -> str:
     """第一次 answer_guest_query 发出的 markdown。"""
     assert answer_calls, "guest 一条消息都没发出去"
-    return answer_calls[0].input_message_content.rich_message.markdown
+    return _rich_text(answer_calls[0].input_message_content.rich_message)
 
 
 def _run_guest(answer_calls: list, events: list, *, mid: str | None = MID):

@@ -192,6 +192,10 @@ async def edit_inline_rich_message(
     if blocks:
         rich = InputRichMessage(blocks=blocks)
     else:
+        # 兜底：调用方没给 blocks 时退回字符串通道。**正常路径不该走到这里** ——
+        # 直发/进度/inline/guest 都显式传 blocks（平台原文要当字面量，见
+        # plugins/parse/sender.py 的说明）。
+        logger.debug("edit_inline_rich_message 未收到 blocks, 退回 markdown 通道")
         rich = InputRichMessage(markdown=markdown, media=media or None)
     # 媒体上传发生在 write 里 (blocks 路径由各 block 自己上传); 封面 URL 抓不到时
     # 服务端会拒收整条 —— 去掉封面重发一次 (普通路径一直有这个兜底)。
@@ -486,26 +490,20 @@ def cached_rich_message(
     *,
     sensitive: bool = False,
 ) -> InputRichMessage:
-    """按"是否敏感"选渲染路径 —— **敏感内容必须走 blocks 才能打码**。
+    """缓存命中路径的富文本构造 —— **一律走 blocks**（与直发/进度/inline 同一通道）。
 
-    富文本的 markdown 路径 (``InputRichMessage(markdown=…, media=…)``) 打不了码:
-    官方 API 的 ``InputRichBlockPhoto`` 没有 spoiler 字段, 只有 raw 的
-    ``PageBlockPhoto/Video(spoiler=)`` 才有。直发路径一直在这么做
-    (``send_rich_media`` 里 ``is_sensitive and media_blocks`` 时切 blocks),
-    **缓存路径以前漏了这一步, 于是"第二次发同一个链接"就是没打码的**。
+    历史：这里按"是否敏感"二选一，敏感走 blocks（才能打码）、其余走 markdown 字符串。
+    现在统一走 blocks，两个理由：
 
-    抽成一个函数给三条缓存路径 (私聊/群、inline、guest) 共用, 免得三处再各写一遍。
+    - 平台原文在 markdown 字符串通道里会被解析（行首空格→代码块、``||``→spoiler），
+      与最终消息不一致；
+    - blocks 的媒体块本来就带 spoiler 参数，敏感与非敏感同一套代码。
 
-    另外: "折叠的引用卡片带媒体"同样只能走 blocks (``markdown_needs_blocks``) ——
-    那条形态 markdown 表达不了 (块内嵌不了 details 与图)。
+    ``sensitive`` 参数保留但不再决定通道 —— 打码信息已经在 ``media_blocks`` 里了。
     """
-    from plugins.helpers import markdown_needs_blocks
+    from plugins.parse.rich_blocks import markdown_to_blocks
 
-    if media_blocks and (sensitive or markdown_needs_blocks(markdown)):
-        from plugins.parse.rich_blocks import markdown_to_blocks
-
-        return InputRichMessage(blocks=markdown_to_blocks(markdown, media_blocks=media_blocks))
-    return InputRichMessage(markdown=markdown, media=media or None)
+    return InputRichMessage(blocks=markdown_to_blocks(markdown, media_blocks=media_blocks))
 
 
 async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]) -> list:

@@ -13,6 +13,7 @@ from log import logger
 from plugins.context import get_config_target
 from plugins.helpers import build_progress_markdown, format_label
 from plugins.parse.inline_rich import edit_inline_rich_message
+from plugins.parse.rich_blocks import markdown_to_blocks
 from plugins.parse.sender import MessageSender
 from repo.settings import SettingsConfig
 from services import SettingsService, StatusReporter
@@ -135,14 +136,19 @@ class MessageStatusReporter(StatusReporter):
             return
         self._last_markdown = markdown
         self._last_rich_at = monotonic()
+        # **与最终结果同一条通道**（blocks 结构化）：处理过程也必须这样，否则平台原文
+        # 在占位消息里仍会被 markdown 解析（行首空格变代码块、``||`` 变 spoiler），
+        # 出现「占位消息格式不对、最终消息正常」的割裂（用户报过）。
+        # blocks 里段落文本是字面量，两种消息的排版才真正一致。
+        blocks = markdown_to_blocks(markdown)
         try:
             if self._msg is None:
                 self._msg = await MessageSender(self._cli, self._user_msg, self._config).rich_message(
-                    rich_message=InputRichMessage(markdown=markdown)
+                    rich_message=InputRichMessage(blocks=blocks)
                 )
             else:
                 await self._msg.edit_text(
-                    rich_message=InputRichMessage(markdown=markdown), link_preview_options=_NO_PREVIEW
+                    rich_message=InputRichMessage(blocks=blocks), link_preview_options=_NO_PREVIEW
                 )
         except (FloodWait, SlowmodeWait):
             pass
@@ -317,7 +323,10 @@ class InlineStatusReporter(StatusReporter):
         self._last_markdown = markdown
         self._last_rich_at = monotonic()
         try:
-            await edit_inline_rich_message(self._cli, self._mid, markdown=markdown)
+            # 与直发同一条通道（blocks 结构化），见 _send_rich 里的说明
+            await edit_inline_rich_message(
+                self._cli, self._mid, markdown=markdown, blocks=markdown_to_blocks(markdown)
+            )
         except (FloodWait, SlowmodeWait):
             pass
         except Forbidden as e:

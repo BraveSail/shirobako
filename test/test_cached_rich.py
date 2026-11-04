@@ -11,6 +11,39 @@ from plugins.parse.inline_rich import (
 from services.cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult
 
 
+def _rich_text(rich_message) -> str:
+    """把 blocks 富文本拼成可搜索的文本（测试断言用）。
+
+    富文本一律走 ``InputRichMessage(blocks=[...])``（平台原文当字面量，服务端不解析），
+    所以 ``rich_message.markdown`` 恒为 None —— 断言要看 blocks 里的文字。
+    """
+    parts: list[str] = []
+
+    def _walk(obj) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, str):
+            parts.append(obj)
+            return
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+            return
+        text = getattr(obj, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(text, list):
+            _walk(text)
+        for attr in ("items", "children", "blocks", "content", "title"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                _walk(child)
+
+    _walk(getattr(rich_message, "blocks", None))
+    return "\n".join(parts)
+
+
+
 def _config():
     return types.SimpleNamespace(
         hide_title=False, hide_desc=False, hide_source=False, video_cover=False, rich_mode=True
@@ -327,17 +360,30 @@ def test_non_sensitive_entry_produces_unspoiled_blocks():
     assert all(getattr(v, "spoiler", True) is False for v in blocks.values()), "非敏感不该打码"
 
 
-def test_cached_rich_message_takes_the_blocks_path_when_sensitive():
-    """敏感 -> blocks 路径; spoiler 只在 raw 块上存在, markdown 路径打不了码"""
+def test_cached_rich_message_always_takes_the_blocks_path():
+    """缓存路径**一律走 blocks**（与直发/进度/inline 同一通道）。
+
+    历史：这里按 ``sensitive`` 二选一 —— 敏感走 blocks（spoiler 只在 raw 块上存在，
+    markdown 路径打不了码），其余走 markdown 字符串。现在统一走 blocks，因为
+    markdown 字符串通道会**解析平台原文**（行首空格→代码块、``||``→spoiler），
+    与最终消息格式不一致。
+    """
+    for sensitive in (False, True):
+        entry = _entry(is_sensitive=sensitive)
+        markdown, media, blocks = build_cached_rich_content(
+            entry, "https://x.com/a/status/1", lang="zh-hans", config=_config()
+        )
+        rich = cached_rich_message(markdown, media, blocks, sensitive=sensitive)
+        assert rich.blocks, f"sensitive={sensitive} 也必须走 blocks"
+        assert rich.markdown is None, "不再使用 markdown 字符串通道"
+
+    # 敏感内容的图必须打成码（多图会包进 collage，要递归找）
     entry = _entry(is_sensitive=True)
     markdown, media, blocks = build_cached_rich_content(
         entry, "https://x.com/a/status/1", lang="zh-hans", config=_config()
     )
     rich = cached_rich_message(markdown, media, blocks, sensitive=True)
-    assert rich.blocks, "敏感内容应该走 blocks 路径"
-    assert rich.markdown is None
 
-    # 多图会被包成 collage, 打码块在它**内部** —— 要递归找
     def walk(nodes):
         for node in nodes or []:
             yield node
@@ -345,15 +391,6 @@ def test_cached_rich_message_takes_the_blocks_path_when_sensitive():
 
     kinds = {type(n).__name__ for n in walk(rich.blocks)}
     assert "SpoilerPhotoBlock" in kinds, f"没找到打码块: {sorted(kinds)}"
-
-
-def test_cached_rich_message_stays_markdown_when_not_sensitive():
-    entry = _entry()
-    markdown, media, blocks = build_cached_rich_content(
-        entry, "https://x.com/a/status/1", lang="zh-hans", config=_config()
-    )
-    rich = cached_rich_message(markdown, media, blocks)
-    assert rich.markdown and not rich.blocks
 
 
 def test_extract_cache_media_on_empty_message():

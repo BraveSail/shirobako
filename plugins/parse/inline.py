@@ -558,7 +558,10 @@ def build_inline_rich_content(
     markdown = build_rich_markdown(
         parse_result, config=config, lang=lang, view_label=_t("查看"), hide_content=spoiler_tag
     )
-    return InputRichMessageContent(InputRichMessage(markdown=strip_media_markdown(markdown)))
+    # **与直发同一条通道**（blocks 结构化）：inline 结果列表里的预览也是平台原文，
+    # 走 markdown 字符串会被解析（行首空格→代码块、``||``→spoiler），与最终消息不一致。
+    # 媒体已在上面剥掉，blocks 里只有文字块，不触发 EXTERNAL_MEDIA_NOT_SUPPORTED。
+    return InputRichMessageContent(InputRichMessage(blocks=markdown_to_blocks(strip_media_markdown(markdown))))
 
 
 async def build_inline_results(

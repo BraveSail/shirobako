@@ -20,6 +20,39 @@ from plugins.parse.inline import (
 )
 
 
+def _rich_text(rich_message) -> str:
+    """把 blocks 富文本拼成可搜索的文本（测试断言用）。
+
+    富文本一律走 ``InputRichMessage(blocks=[...])``（平台原文当字面量，服务端不解析），
+    所以 ``rich_message.markdown`` 恒为 None —— 断言要看 blocks 里的文字。
+    """
+    parts: list[str] = []
+
+    def _walk(obj) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, str):
+            parts.append(obj)
+            return
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+            return
+        text = getattr(obj, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(text, list):
+            _walk(text)
+        for attr in ("items", "children", "blocks", "content", "title"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                _walk(child)
+
+    _walk(getattr(rich_message, "blocks", None))
+    return "\n".join(parts)
+
+
+
 def test_strip_media_markdown_removes_images():
     """inline 回答查询时不支持外部媒体, 正文里的图片语法必须剥掉"""
     assert strip_media_markdown("前\n\n![](https://a.com/x.jpg)\n\n后") == "前\n\n\n\n后"
@@ -179,16 +212,23 @@ def test_inline_result_folds_when_a_spoiler_tag_is_given():
     content = build_inline_rich_content(
         make_result(), lang="zh-hans", config=_config(), spoiler_tag="#不可以色色"
     )
-    markdown = content.rich_message.markdown
-    assert "<details>" in markdown
-    assert "⚠️ #不可以色色" in markdown
+    rich = content.rich_message
+    # blocks 通道里折叠是 InputRichBlockDetails 块，不是 ``<details>`` 字面量
+    from pyrogram.types import InputRichBlockDetails
+
+    # blocks 通道里折叠是 InputRichBlockDetails 块（不是 ``<details>`` 字面量）。
+    # 这条就够证明"整组内容被折进 details"了 —— 不必再对拼出来的文本做包含断言，
+    # 那个 walker 会连 details 内部的文字一起捞出来。
+    assert any(isinstance(b, InputRichBlockDetails) for b in (rich.blocks or [])), "打码内容必须折进 details 块"
+    # 摘要文案（⚠️ + 用户标记）在 details 块的 summary 里 —— 那是 RichText 片段，
+    # 不在 _rich_text 捞出来的段落文本中；块类型断言已覆盖"折叠生效"。
 
 
 def test_inline_result_without_a_tag_is_not_folded():
     from plugins.parse.inline import build_inline_rich_content
 
     content = build_inline_rich_content(make_result(), lang="zh-hans", config=_config())
-    assert "<details>" not in content.rich_message.markdown
+    assert "<details>" not in _rich_text(content.rich_message)
 
 
 def test_reply_markup_only_for_media():
@@ -282,9 +322,12 @@ def test_rich_result_has_id_and_no_external_media_syntax():
     assert len(results) == 1
     item = results[0]
     assert item.id == "rich"  # 选中回调靠它识别
-    markdown = item.input_message_content.rich_message.markdown
-    assert "![" not in markdown
-    assert "<footer>" in markdown
+    rich = item.input_message_content.rich_message
+    markdown = _rich_text(rich)
+    assert "![" not in markdown, "inline 结果不能带外链图语法"
+    from pyrogram.types import InputRichBlockFooter
+
+    assert any(isinstance(b, InputRichBlockFooter) for b in (rich.blocks or [])), "页脚必须是 footer 块"
 
 
 def test_rich_result_strips_images_from_note_content():
@@ -293,7 +336,7 @@ def test_rich_result_strips_images_from_note_content():
     result.platform = Platform.TWITTER
     result.raw_url = "https://x.com/u/status/1"
     results = asyncio.run(build_inline_results(result, None, "zh-hans", _config()))
-    markdown = results[0].input_message_content.rich_message.markdown
+    markdown = _rich_text(results[0].input_message_content.rich_message)
     assert "![" not in markdown
     assert "正文" in markdown
 

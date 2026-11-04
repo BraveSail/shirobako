@@ -4,7 +4,6 @@ banner 在 ``media`` 列表**开头**（``banner_media_count`` 记数量），�
 ``quoted_media_count`` 从尾部切正好对称。渲染层把它放到最顶、后面跟一道 ``---``。
 """
 
-import pytest
 
 from plugins.helpers import build_rich_markdown
 

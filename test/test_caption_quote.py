@@ -18,6 +18,39 @@ from plugins.helpers import (
     neutralize_markdown,
 )
 
+
+def _rich_text(rich_message) -> str:
+    """把 blocks 富文本拼成可搜索的文本（测试断言用）。
+
+    富文本一律走 ``InputRichMessage(blocks=[...])``（平台原文当字面量，服务端不解析），
+    所以 ``rich_message.markdown`` 恒为 None —— 断言要看 blocks 里的文字。
+    """
+    parts: list[str] = []
+
+    def _walk(obj) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, str):
+            parts.append(obj)
+            return
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+            return
+        text = getattr(obj, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(text, list):
+            _walk(text)
+        for attr in ("items", "children", "blocks", "content", "title"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                _walk(child)
+
+    _walk(getattr(rich_message, "blocks", None))
+    return "\n".join(parts)
+
+
 QUOTE_SAMPLE = "> \u56de\u590d @u\uff1a\n> hi\n\nbody"
 UNDERSCORE_QUOTE = "> \u56de\u590d @__yuuuumr__\uff1a\n> hi\n\nbody"
 UNDERSCORE_URL = "https://x.com/__yuuuumr__/status/2095537240726450480"
@@ -460,10 +493,30 @@ def test_inline_cached_rich_result_keeps_blockquote_and_link():
 
     entry = CacheEntry(parse_result=CacheParseResult(content=UNDERSCORE_QUOTE))
     item = build_cached_rich_result(entry, UNDERSCORE_URL, "zh-hans", SettingsConfig())
-    markdown = item.input_message_content.rich_message.markdown
+    markdown = _rich_text(item.input_message_content.rich_message)
 
-    assert "> " in markdown  # 引用块语法
-    assert UNDERSCORE_URL in markdown
+    # blocks 通道里引用块是 InputRichBlockBlockQuotation（不是 ``> `` 字面量）
+    from pyrogram.types import InputRichBlockBlockQuotation
+
+    assert any(
+        isinstance(b, InputRichBlockBlockQuotation)
+        for b in (item.input_message_content.rich_message.blocks or [])
+    ), "引用块必须保留"
+    assert "hi" in markdown
+    # 链接在 blocks 里是 RichTextUrl 类型（url 存在它的 url 字段上），
+    # 不是文本里的字面 URL —— 断言要查 url 字段。
+    from pyrogram.types import RichTextUrl
+
+    def _urls(nodes):
+        for node in nodes or []:
+            if isinstance(node, RichTextUrl):
+                yield node.url
+            for attr in ("text", "items", "children", "blocks", "content"):
+                child = getattr(node, attr, None)
+                if isinstance(child, list):
+                    yield from _urls(child)
+
+    assert UNDERSCORE_URL in set(_urls(item.input_message_content.rich_message.blocks)), "链接必须保留且可点"
     assert "来源" in markdown
 
 

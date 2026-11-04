@@ -69,11 +69,15 @@ def _clip(text: str | None, limit: int) -> str:
 
 
 def _result(title: str, description: str, markdown: str, media: list | None = None) -> InlineQueryResultArticle:
+    # 与直发/进度消息同一条通道（blocks 结构化）：inline 结果里的文字也是平台原文，
+    # 走 markdown 字符串会被服务端解析，排布与最终消息不一致。
     return InlineQueryResultArticle(
         id=GUEST_RESULT_ID,
         title=title,
         description=description,
-        input_message_content=InputRichMessageContent(InputRichMessage(markdown=markdown, media=media or None)),
+        input_message_content=InputRichMessageContent(
+            InputRichMessage(blocks=markdown_to_blocks(markdown))
+        ),
     )
 
 

@@ -12,6 +12,38 @@ from unittest.mock import AsyncMock
 from plugins.parse.reporters import STATUS_DONE_TEXT, MessageStatusReporter
 
 
+def _rich_text(rich_message) -> str:
+    """把 blocks 富文本拼成可搜索的文本（测试断言用）。
+
+    富文本一律走 ``InputRichMessage(blocks=[...])``（平台原文当字面量，服务端不解析），
+    所以 ``rich_message.markdown`` 恒为 None —— 断言要看 blocks 里的文字。
+    """
+    parts: list[str] = []
+
+    def _walk(obj) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, str):
+            parts.append(obj)
+            return
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+            return
+        text = getattr(obj, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(text, list):
+            _walk(text)
+        for attr in ("items", "children", "blocks", "content", "title"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                _walk(child)
+    _walk(getattr(rich_message, "blocks", None))
+    return "\n".join(parts)
+
+
+
 class _Msg:
     """够用的假 Message: 记录 edit_text / delete 的调用。"""
 
@@ -104,7 +136,7 @@ def test_report_edits_the_same_message():
     reporter = _reporter(msg)
     asyncio.run(reporter.report("下 载 中..."))
     msg.edit_text.assert_awaited_once()
-    assert "下 载 中..." in msg.edit_text.await_args.kwargs["rich_message"].markdown
+    assert "下 载 中..." in _rich_text(msg.edit_text.await_args.kwargs["rich_message"])
     msg.delete.assert_not_awaited()
 
 
@@ -120,7 +152,7 @@ def test_progress_is_sent_as_a_rich_message():
     """处理过程必须是富文本, 不再是纯文本的 "▎解 析 中..." """
     msg = _Msg()
     asyncio.run(_reporter(None, user_msg=msg)._send_rich("**▎解 析 中...**"))
-    assert msg.answer_rich.await_args.kwargs["rich_message"].markdown == "**▎解 析 中...**"
+    assert "▎解 析 中..." in _rich_text(msg.answer_rich.await_args.kwargs["rich_message"])
 
 
 def test_the_stage_label_stays_html_because_the_footer_needs_it():
@@ -147,9 +179,11 @@ def test_the_stage_label_stays_html_because_the_footer_needs_it():
     reporter = _reporter(None, user_msg=msg)
     reporter._raw_url = "https://x.com/a/status/1"
     asyncio.run(reporter.report("解 析 中..."))
-    markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
-    assert "<b>▎解 析 中...</b>" in markdown
-    assert "**▎" not in markdown
+    rich = msg.answer_rich.await_args.kwargs["rich_message"]
+    markdown = _rich_text(rich)
+    assert "▎解 析 中..." in markdown
+    # blocks 通道里加粗是 RichTextBold 类型，不再是 ``**`` / ``<b>`` 字面量
+    assert "**" not in markdown and "<b>" not in markdown
 
 
 def test_a_stage_without_a_result_renders_a_skeleton():
@@ -158,9 +192,10 @@ def test_a_stage_without_a_result_renders_a_skeleton():
     reporter = _reporter(None, user_msg=msg)
     reporter._raw_url = "https://x.com/a/status/1"
     asyncio.run(reporter.report("解 析 中..."))
-    markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
+    markdown = _rich_text(msg.answer_rich.await_args.kwargs["rich_message"])
     assert "解 析 中..." in markdown
-    assert "<footer>" in markdown  # 页脚的来源链接在, 与最终结果同结构
+    # 页脚的来源链接在（blocks 通道里它是 InputRichBlockFooter 块，不再是 ``<footer>`` 字面量）
+    assert "来源" in markdown
 
 
 def test_a_stage_with_a_result_uses_the_full_layout():
@@ -185,12 +220,14 @@ def test_a_stage_with_a_result_uses_the_full_layout():
         markdown_content="正文内容",
     )
     asyncio.run(reporter.report_result(result, "下 载 中..."))
-    markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
-    assert "# 标题" in markdown
+    markdown = _rich_text(msg.answer_rich.await_args.kwargs["rich_message"])
+    assert "标题" in markdown  # blocks 里是 SectionHeading 块，不再是 ``# 标题`` 字面量
     assert "正文内容" in markdown
-    # 进度放在页尾第一段: 与最终结果的"时间 · 统计"同一个位置
-    footer = markdown.split("<footer>", 1)[1]
-    assert "下 载 中..." in footer
+    # 进度放在页尾: 与最终结果的"时间 · 统计"同一个位置。
+    # blocks 通道里页脚是 InputRichBlockFooter 块（不是 ``<footer>`` 字面量），
+    # 所以用"进度文案在正文之后"来判位置。
+    assert "下 载 中..." in markdown
+    assert markdown.index("正文内容") < markdown.index("下 载 中..."), "进度必须在正文之后（页尾）"
 
 
 def test_progress_refresh_reuses_the_last_result():
@@ -207,8 +244,8 @@ def test_progress_refresh_reuses_the_last_result():
     asyncio.run(reporter.report_result(result, "下 载 中..."))
     reporter._last_rich_at = 0.0  # 绕过节流, 只看渲染
     asyncio.run(reporter.report_progress("下载中 3/10"))
-    markdown = msg.edit_text.await_args.kwargs["rich_message"].markdown
-    assert "# 标题" in markdown, "进度刷新应保持完整排版"
+    markdown = _rich_text(msg.edit_text.await_args.kwargs["rich_message"])
+    assert "标题" in markdown  # blocks 里是 SectionHeading 块，不再是 ``# 标题`` 字面量, "进度刷新应保持完整排版"
     assert "下载中 3/10" in markdown
 
 
