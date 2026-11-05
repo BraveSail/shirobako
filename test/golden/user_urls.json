@@ -1,0 +1,5526 @@
+{
+ "by_host": {
+  "github.com": [
+   {
+    "url": "https://github.com/actions/runner-images/issues/14748",
+    "count": 9
+   },
+   {
+    "url": "https://github.com/desktop-app/patches.git",
+    "count": 5
+   },
+   {
+    "url": "https://github.com/LuanRT/googlevideo",
+    "count": 5
+   },
+   {
+    "url": "https://github.com/nextalone/nagram",
+    "count": 4
+   },
+   {
+    "url": "https://github.com/AcgEmtTool/bilibili_bangumi_area_limit_hack",
+    "count": 4
+   },
+   {
+    "url": "https://github.com/BraveSail/hermes-agent我看一堆我的提交还有核心的",
+    "count": 3
+   },
+   {
+    "url": "https://github.com/BraveSail/ParseHub",
+    "count": 3
+   },
+   {
+    "url": "https://github.com/AcgEmtTool/dump_tools/commit/c2466204538aea0970d276725311fb11b23ecf7f",
+    "count": 3
+   },
+   {
+    "url": "https://github.com/metacu...`",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/BraveSail/tdesktop/releases`",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/BraveSail/mizugram`",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/BraveSail/lib_ui.git",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/BraveSail/mizugram/pull/new/merge/official-7.2.10",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/BraveSail/shirobako",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/BraveSail/hermes-plugin-wire-router`",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/AcgEmtTool/dump_tools/actions/runs/38157121268",
+    "count": 2
+   },
+   {
+    "url": "https://github.com",
+    "count": 2
+   },
+   {
+    "url": "https://github.com/NousResearch/hermes-agent/issues/21587#issuecomment-4413421621",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/telegramdesktop/tdesktop",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/33882092532",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/chen08209/FlClash.git",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/bre01/mihomo.git",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/bre01/mihomo/tree/codex/tailscale-kernel-forward",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/XTLS/Xray-install/raw/main/install-release.sh",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/chen08209/FlCl...`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/login/device`(x2",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35127783525`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35136054257",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35136054257`——**可以直接在网页下载**",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/flutter/flutter/issues/189724",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/ardera/flutter-engine-binaries-for-arm",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35145914455",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35144255998",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35142521740",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35140028218",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/settings/tokens`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/FlClash/actions/runs/35152389639`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/TDesktop-x64/tdesktop/releases`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/tdesktop`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/telegramdesktop/tdesktop.git`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/tdesktop/settings",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/TDesktop-x64/tdesktop/releases`**（点版本号跳的就是它",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/chen08209/FlClash.git`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/chen08209/FlClash.git`（首次需",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/lib_ui.git(x2",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/shirobako/settings`(x3",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/ParseHub/settings`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/ParseHub/settings",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/orgs/community/discussions/157487",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/z-...`",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/BraveSail/hermes-plugin-wire-router",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/SHASU...`(x2",
+    "count": 1
+   },
+   {
+    "url": "https://github.com/B...`",
+    "count": 1
+   }
+  ],
+  "mc.tencent.com": [
+   {
+    "url": "https://mc.tencent.com/oO9XvQeS",
+    "count": 1
+   }
+  ],
+  "platforxiaomimimo.com": [
+   {
+    "url": "https://platform.xiaomimimo.com/docs/zh-CN/integration/hermes-agent",
+    "count": 1
+   }
+  ],
+  "imgsrv.crunchyroll.com": [
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6d4f67201690d8bedaf67f8e24eceafc.png",
+    "count": 5
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6890a25fa63414877080845e015e3437.png",
+    "count": 4
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6890a25fa634…`",
+    "count": 2
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/e364ee62c5065befaa88ae7c7cfdde98.png",
+    "count": 2
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/7e237bbef472bc2ce59765c902a1baf4.png",
+    "count": 2
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/88a0c6843a98ab5a9b878f57560c66c5.png",
+    "count": 1
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/59055de6cd6a7f0fab0bde2bb46c08d2.png",
+    "count": 1
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6890a25fa63414877080845e015e3437.png`",
+    "count": 1
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/80321cc41cf121ef50dd791b1771fd19.png",
+    "count": 1
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/22e86a31a4e42991f9acc0e1c9719d15.png",
+    "count": 1
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/910f94b62f4d0ba6cf9d8b86cd450596.png",
+    "count": 1
+   },
+   {
+    "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/4e3b77b746a0facec1770c1b0c30144f.png",
+    "count": 1
+   }
+  ],
+  "site.anibt.net": [
+   {
+    "url": "https://site.anibt.net/api/releases/publish",
+    "count": 1
+   }
+  ],
+  "image.p-c2-x.abema-tv.com": [
+   {
+    "url": "https://image.p-c2-x.abema-tv.com/image/programs/203-28_s1_p26/thumb001.png",
+    "count": 4
+   },
+   {
+    "url": "https://image.p-c2-x.abema-tv.com/image/programs/203-28_s1_p26/thumb001.png`",
+    "count": 2
+   },
+   {
+    "url": "https://image.p-c2-x.abema-tv.com/image/programs/675-12_s1_p9/thumb001.png",
+    "count": 1
+   },
+   {
+    "url": "https://image.p-c2-x.abema-tv.com/image/programs/12-27_s1_p80/thumb001.png",
+    "count": 1
+   },
+   {
+    "url": "https://image.p-c2-x.abema-tv.com/image/programs/5-79_s1_p36/thumb001.png",
+    "count": 1
+   }
+  ],
+  "dash.kirara-fantasia.moe": [
+   {
+    "url": "https://dash.kirara-fantasia.moe/tasks/4745",
+    "count": 5
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/ui/tasks/3480",
+    "count": 3
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/ui/tasks/3994",
+    "count": 3
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/tasks/5173",
+    "count": 2
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/ui/tasks/4521",
+    "count": 1
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/tasks/4745`——用户要求",
+    "count": 1
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/tasks/4745`",
+    "count": 1
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe",
+    "count": 1
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/tasks/5205",
+    "count": 1
+   },
+   {
+    "url": "https://dash.kirara-fantasia.moe/tasks/5256",
+    "count": 1
+   }
+  ],
+  "pic.bstarstatic.com": [
+   {
+    "url": "https://pic.bstarstatic.com/ogv/68db17492efc5cfa742f4ca33d53d49d.png@900w_1200h_100Q_1c.jpg",
+    "count": 4
+   },
+   {
+    "url": "https://pic.bstarstatic.com/ogv/e52a70466c7e4f3eeeb0a4cad65232e7.png@900w_1200h_100Q_1c.jpg",
+    "count": 1
+   },
+   {
+    "url": "https://pic.bstarstatic.com/ogv/68db17492efc5cfa742f4ca33d53d49d.png@900w_1200h_100Q_1c.jpg`",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:56852": [
+   {
+    "url": "http://127.0.0.1:56852/ui/tasks/3480`、`/tasks/3480`",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:56852/api/v1/tasks/3480`",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:56852/`",
+    "count": 1
+   }
+  ],
+  "ouo.si": [
+   {
+    "url": "https://ouo.si/view/33412",
+    "count": 4
+   },
+   {
+    "url": "https://ouo.si/dry-run",
+    "count": 3
+   },
+   {
+    "url": "https://ouo.si/css/flags/flags.min.css",
+    "count": 2
+   },
+   {
+    "url": "https://ouo.si/view/31729`（Nyaa",
+    "count": 1
+   },
+   {
+    "url": "https://ouo.si/view/33118`、infohash",
+    "count": 1
+   },
+   {
+    "url": "https://ouo.si/view/33118`",
+    "count": 1
+   },
+   {
+    "url": "https://ouo.si/view/33118",
+    "count": 1
+   },
+   {
+    "url": "https://ouo.si/view/33412`",
+    "count": 1
+   }
+  ],
+  "github.blog": [
+   {
+    "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+    "count": 38
+   },
+   {
+    "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/(x2",
+    "count": 2
+   },
+   {
+    "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/(x3",
+    "count": 1
+   },
+   {
+    "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/(x4",
+    "count": 1
+   }
+  ],
+  "x.com": [
+   {
+    "url": "https://x.com/a",
+    "count": 21
+   },
+   {
+    "url": "https://x.com/yuuuumr/status/2095537240726450480",
+    "count": 20
+   },
+   {
+    "url": "https://x.com/MirukuSeki3/status/2105625907042132005",
+    "count": 6
+   },
+   {
+    "url": "https://x.com/fxkurumi_info/status/21",
+    "count": 6
+   },
+   {
+    "url": "https://x.com/Onokiwi/status/2103122284328227157",
+    "count": 5
+   },
+   {
+    "url": "https://x.com/precure_movie/status/2106537282111000920?s=20",
+    "count": 5
+   },
+   {
+    "url": "https://x.com/giraffe_Mola/status/2106316141836882417",
+    "count": 5
+   },
+   {
+    "url": "https://x.com/Haruhi_Smith/status/2106215481665540155这种推文能不能捞到引用",
+    "count": 4
+   },
+   {
+    "url": "https://x.com/798145343h/status/2106227349947625944",
+    "count": 4
+   },
+   {
+    "url": "https://x.com/ikizulive_staff/status/2107425646582374748",
+    "count": 4
+   },
+   {
+    "url": "https://x.com/chihara_anime/status/2110672031205511204",
+    "count": 4
+   },
+   {
+    "url": "https://x.com/Onokiwi/status/2103122284328227157`",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/zane_os/status/2106232516009144693",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/VincentBounce/status/2105608886996906153",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/BArchiveWarfare/status/2106298669393990138",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/Suikoden_anime/status/2106398886827098121",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/Hysteric_Barbie/status/2107106216082301045",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/ponycan_anime/status/2107063262986506737",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/sudachi_anime/status/2107380382673031359",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/fxkurumi_info/status/2107410546899451980",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/hashtag/FX%E6%88%A6%E5%A3%AB%E3%81%8F%E3%82%8B%E3%81%BF%E3%81%A1%E3%82%83%E3%82%93?src=hashtag_click",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/MaxForAI/status/2108035230003274189",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/muu3_666/status/2109617017993191432",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/corndogjpn2/status/2110194193402597694",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/BLEACHanimation/status/2114311018834792483",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/akanebanashi_pr/status/2114282910937391232",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/TheFluke999/article/2053655686765314432",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/tenken_official/status/2118004645750808738",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/sugoilite/status/2118329185366376804",
+    "count": 3
+   },
+   {
+    "url": "https://x.com/ysoke145/status/2106108297497772434",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/ysoke145",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/a/status/123(x2",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/MirukuSeki3",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/giraffe_Mola/status/2106316141836882417`「没有缓存",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/asora_jp/status/2107244453484265938",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/McDonaldsJapan/status/2107025501768299005",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/thsottiaux/status/2107576143285219799",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/kinutani_yutaka/status/2107777443696431236",
+    "count": 2
+   },
+   {
+    "url": "https://x.com/Haruhi_Smith/status/2106215481665540155",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/oto_jampan/status/2105728932154835261",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/xx1_ro/status/2106408369708040527",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/{tweet.author_handle}`（两处",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/ysoke145/status/2106108297497772434(x2",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/ysoke145(x2",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/ysoke145/status/2106108297497772434*",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/zane_os/status/2106232516009144693(x3",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/NuiNayu/status/2106025053351784940",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/a/status/123",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/...↵https://b23.tv/",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/...就这样",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/BArchiveWarfare/",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/i/status/2106362173111034087`",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/MirukuSeki3/status/2105625907042132005(x3",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/xxx/status/123(x3",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/MirukuSeki3(x2",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/huacn...`",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/i/status/2106362173111034087",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/hashtag/%E6%B6%BC%E5%AE%AE%E3%83%8F%E3%83%AB%E3%83%92%E3%81%AE%E6%86%82%E9%AC%B1?src=hashtag_click",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/anag2bgod/status/2106498295212491199",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/Asora_JP/status/2107304853395439714",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/McDonaldsJapan/status/2107025501768299005`",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/McDonaldsJapan",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/thsottiaux",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/ikizulive_staff",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/Apple/status/2104922864910815586",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/sim_dr1/status/2107780697251574187",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/corndogjpn2/status/2110194193402597694?s=20",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/corndogjpn2/status/2110194193402597694?s\\u003d20",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/corndogjpn2",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/TheFluke999/article/2053655686765314432`：标题「奶龙和奶蛙如何区分以及二者之间的关系",
+    "count": 1
+   },
+   {
+    "url": "https://x.com/TheFluke999/article/2053655686765314432`",
+    "count": 1
+   }
+  ],
+  "pixiv.net": [
+   {
+    "url": "https://www.pixiv.net/artworks/149431603",
+    "count": 7
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/150374301",
+    "count": 7
+   },
+   {
+    "url": "https://www.pixiv.net/tags/AI%E7%94%BB%E5%83%8F",
+    "count": 2
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/150374301`",
+    "count": 2
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/149431603#1",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/149635020",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/149431603`（3",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/149431603(x3",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/ajax/illust/{id}",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/（否则",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/tags/{tag}`、twitter",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/users/{illust.author_id}`、twitter",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/tags/(x2",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/artworks/149431603(x2",
+    "count": 1
+   },
+   {
+    "url": "https://www.pixiv.net/`",
+    "count": 1
+   }
+  ],
+  "douyin.com": [
+   {
+    "url": "https://www.douyin.com/video/7692999234357906715",
+    "count": 7
+   },
+   {
+    "url": "https://www.douyin.com/article/7696571479932144911",
+    "count": 6
+   },
+   {
+    "url": "https://www.douyin.com/article/7696571479932144911`",
+    "count": 3
+   },
+   {
+    "url": "https://www.douyin.com/jingxuan?modal_id=7681253030809274598",
+    "count": 1
+   },
+   {
+    "url": "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=",
+    "count": 1
+   },
+   {
+    "url": "https://www.douyin.com/article/7696571479932144911`（网页版跳登录墙",
+    "count": 1
+   }
+  ],
+  "facebook.com": [
+   {
+    "url": "https://www.facebook.com/reel/1062069896432386/",
+    "count": 1
+   }
+  ],
+  "codefather.cn": [
+   {
+    "url": "https://www.codefather.cn/post/2006991927538368513",
+    "count": 2
+   }
+  ],
+  "tailscale.com": [
+   {
+    "url": "https://tailscale.com/docs/how-to/quickstart",
+    "count": 1
+   }
+  ],
+  "core.telegraorg": [
+   {
+    "url": "https://core.telegram.org/bots/features#privacy-mode",
+    "count": 3
+   },
+   {
+    "url": "https://core.telegram.org/bots/api#sendmessagedraft",
+    "count": 1
+   },
+   {
+    "url": "https://core.telegram.org/bots/serverless",
+    "count": 1
+   },
+   {
+    "url": "https://core.telegram.org/bots/...`",
+    "count": 1
+   },
+   {
+    "url": "https://core.telegram.org/bots/api#rich-message-formatting",
+    "count": 1
+   },
+   {
+    "url": "https://core.telegram.org/api/bots/inline",
+    "count": 1
+   }
+  ],
+  "snapshot.debian.org": [
+   {
+    "url": "http://snapshot.debian.org/archive/debian/20250601T000000Z/`",
+    "count": 2
+   }
+  ],
+  "hermes-agent.nousresearch.com": [
+   {
+    "url": "https://hermes-agent.nousresearch.com/install.sh",
+    "count": 2
+   }
+  ],
+  "127.0.0.1:9090": [
+   {
+    "url": "http://127.0.0.1:9090/configs`——确认配置生效",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:9090/",
+    "count": 1
+   }
+  ],
+  "gist.githubusercontent.com": [
+   {
+    "url": "https://gist.githubusercontent.com/B...`",
+    "count": 2
+   },
+   {
+    "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/gistfile1.yml`（刷新缓存可加个",
+    "count": 1
+   },
+   {
+    "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/7bf29e8e0f78aea31c049cc969fb2b672493",
+    "count": 1
+   },
+   {
+    "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/a2f1d0c7afd91be9010292085908a6045480",
+    "count": 1
+   },
+   {
+    "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/750fbe4ccec5f1cdc186dec8f88acc992f4a",
+    "count": 1
+   }
+  ],
+  "help.gradle.org": [
+   {
+    "url": "https://help.gradle.org",
+    "count": 5
+   }
+  ],
+  "stackoverflow.com": [
+   {
+    "url": "https://stackoverflow.com/questions/76025990/how-to-compile-android-arm64-release-linux-arm64-gen-snapshot-from-flutte",
+    "count": 1
+   }
+  ],
+  "dl.google.com": [
+   {
+    "url": "https://dl.google.com/dl/android/maven2/co...`",
+    "count": 1
+   }
+  ],
+  "raw.githubusercontent.com": [
+   {
+    "url": "https://raw.githubusercontent.com/metacubex/sing-tun/main/monitor_android.go`",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/metacubex/sing-tun/main/monitor_android.go",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/MetaCubeX/mihomo/Alpha/",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/yt-dlp/yt...`",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/yt_dlp/extractor/abematv.py",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/src/core/SabrStream.ts",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/protos/video_streaming/video_playback_abr_request.proto",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/protos/misc/common.proto",
+    "count": 1
+   },
+   {
+    "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/examples/downloader/vod-example.ts",
+    "count": 1
+   }
+  ],
+  "161.33.133.174:8899": [
+   {
+    "url": "http://161.33.133.174:8899/FlClash-0.8.98-windows-amd64-setup.exe",
+    "count": 2
+   },
+   {
+    "url": "http://161.33.133.174:8899/`（python3",
+    "count": 1
+   },
+   {
+    "url": "http://161.33.133.174:8899/FlClash-0.8.98-windows-amd64.zip(x2",
+    "count": 1
+   },
+   {
+    "url": "http://161.33.133.174:8899/FlClash-0.8.98-windows-amd64-setup.exe(x2",
+    "count": 1
+   },
+   {
+    "url": "http://161.33.133.174:8899/`",
+    "count": 1
+   },
+   {
+    "url": "http://161.33.133.174:8899/",
+    "count": 1
+   }
+  ],
+  "api.commandcode.ai": [
+   {
+    "url": "https://api.commandcode.ai/provider/v1`",
+    "count": 5
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/chat/completions`",
+    "count": 2
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/responses`（POST、OpenAI",
+    "count": 2
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/responses",
+    "count": 2
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1`（协议面已验证是通的",
+    "count": 1
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/responses`（545",
+    "count": 1
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/responses`（新",
+    "count": 1
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/responses`（之前是",
+    "count": 1
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1/responses`",
+    "count": 1
+   },
+   {
+    "url": "https://api.commandcode.ai/provider/v1\\nopencode-go",
+    "count": 1
+   }
+  ],
+  "api.github.com": [
+   {
+    "url": "https://api.github.com/repos/TDesktop-x64/tdesktop/actions/workflows/windows-release.yml",
+    "count": 3
+   },
+   {
+    "url": "https://api.github.com/repos/BraveSail/FlClash/actions/artifacts/10470251336/zip(x3",
+    "count": 1
+   },
+   {
+    "url": "https://api.github.com/repos/nxtrace/NTrace-core/relea...`",
+    "count": 1
+   },
+   {
+    "url": "https://api.github.com/repos/morluto/rea",
+    "count": 1
+   },
+   {
+    "url": "https://api.github.com/repos/LuanRT/googlevideo/contents/src/protos",
+    "count": 1
+   }
+  ],
+  "api-docs.deepseek.com": [
+   {
+    "url": "https://api-docs.deepseek.com/guides/responses_api/",
+    "count": 9
+   },
+   {
+    "url": "https://api-docs.deepseek.com/guides/responses_api/`",
+    "count": 1
+   },
+   {
+    "url": "https://api-docs.deepseek.com/guides/responses_api/`——需",
+    "count": 1
+   },
+   {
+    "url": "https://api-docs.deepseek.com/guides/responses_api/`（7,126",
+    "count": 1
+   }
+  ],
+  "goproxy.cn,direct": [
+   {
+    "url": "https://goproxy.cn,direct",
+    "count": 2
+   }
+  ],
+  "api.deepseek.com`": [
+   {
+    "url": "https://api.deepseek.com`",
+    "count": 2
+   }
+  ],
+  "bstar.kirara-fantasia.moe`": [
+   {
+    "url": "https://bstar.kirara-fantasia.moe`",
+    "count": 1
+   }
+  ],
+  "changelogs.ubuntu.com": [
+   {
+    "url": "https://changelogs.ubuntu.com/meta-release-lts`",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:18888": [
+   {
+    "url": "http://127.0.0.1:18888/api/health?area=th&type=season\\",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:18888/int...`",
+    "count": 1
+   }
+  ],
+  "momo.talk`（Cloudflare": [
+   {
+    "url": "https://momo.talk`（Cloudflare",
+    "count": 1
+   }
+  ],
+  "bstar.kirara-fantas...`": [
+   {
+    "url": "https://bstar.kirara-fantas...`",
+    "count": 1
+   }
+  ],
+  "app.bilibili.com": [
+   {
+    "url": "https://app.bilibili.com/x/v2/account/myinfo`",
+    "count": 1
+   }
+  ],
+  "hub.see.moe": [
+   {
+    "url": "https://hub.see.moe",
+    "count": 16
+   },
+   {
+    "url": "https://hub.see.moe/api/devices",
+    "count": 9
+   },
+   {
+    "url": "https://hub.see.moe/report",
+    "count": 7
+   },
+   {
+    "url": "https://hub.see.moe/report`",
+    "count": 2
+   },
+   {
+    "url": "https://hub.see.moe/node?id=probe00000001\\",
+    "count": 1
+   },
+   {
+    "url": "https://hub.see.moe/lookup?id=probe-alias\\",
+    "count": 1
+   },
+   {
+    "url": "https://hub.see.moe/?token=HmF42IzQ56w-Kv9yJr1yKludF9M8EluTJmppYXvg-lo",
+    "count": 1
+   }
+  ],
+  "hub.see.moe(x4": [
+   {
+    "url": "https://hub.see.moe(x4",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:18100": [
+   {
+    "url": "http://127.0.0.1:18100/\\nexit=0",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:18100/",
+    "count": 1
+   }
+  ],
+  "gstatic.com": [
+   {
+    "url": "http://www.gstatic.com/generate_204\\n===",
+    "count": 1
+   }
+  ],
+  "hub.see.moe`": [
+   {
+    "url": "https://hub.see.moe`",
+    "count": 2
+   }
+  ],
+  "127.0.0.1:19092": [
+   {
+    "url": "http://127.0.0.1:19092/proxies",
+    "count": 2
+   },
+   {
+    "url": "http://127.0.0.1:19092/rules",
+    "count": 2
+   }
+  ],
+  "hub.see.moe(x3": [
+   {
+    "url": "https://hub.see.moe(x3",
+    "count": 1
+   }
+  ],
+  "hub.see.moe`(x2": [
+   {
+    "url": "https://hub.see.moe`(x2",
+    "count": 1
+   }
+  ],
+  "***@127.0.0.1": [
+   {
+    "url": "http://***@127.0.0.1",
+    "count": 1
+   }
+  ],
+  "pub.dev": [
+   {
+    "url": "https://pub.dev/api/archives/",
+    "count": 1
+   }
+  ],
+  "storage.googleapis.com": [
+   {
+    "url": "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-linux-arm64-release.zip\\",
+    "count": 1
+   }
+  ],
+  "hub.see.moe\\n": [
+   {
+    "url": "https://hub.see.moe\\n",
+    "count": 1
+   }
+  ],
+  "pc.lan:18443": [
+   {
+    "url": "http://pc.lan:18443/`",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:18999": [
+   {
+    "url": "http://127.0.0.1:18999/api/...`",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:18999/api/devices",
+    "count": 1
+   }
+  ],
+  "rolldown.rs": [
+   {
+    "url": "https://rolldown.rs/reference/InputOptions.checks#plugintimings",
+    "count": 3
+   }
+  ],
+  "curl.se": [
+   {
+    "url": "https://curl.se/libcurl/c/libcurl-errors.html",
+    "count": 14
+   },
+   {
+    "url": "https://curl.se/libcurl/c/libcurl-errors.html(x4",
+    "count": 1
+   }
+  ],
+  "gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws": [
+   {
+    "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws/?dst=https%3A%2F%2Fwww.crunchyroll.com%2Fcontent%2Fv1%2Fbrowse%3Fsort_by%3Dnewly_added%26type%3Depisode%26n%3D100%26start%3D0%26preferred_audio_language%3Dja-JP%26force_locale%3D%26locale%3Den-US",
+    "count": 6
+   },
+   {
+    "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws/`",
+    "count": 2
+   },
+   {
+    "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws/?dst=https%3A%2F%2Fwww.crunchyroll.com%2Fcontent%(x2",
+    "count": 1
+   }
+  ],
+  "packagecloud.io": [
+   {
+    "url": "https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh",
+    "count": 4
+   }
+  ],
+  "gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws`": [
+   {
+    "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws`",
+    "count": 1
+   }
+  ],
+  "mxqs6jjuhfqgr35wohr3dnnrse0zipzq.lambda-url.ap-southeast-1.on.aws`": [
+   {
+    "url": "https://mxqs6jjuhfqgr35wohr3dnnrse0zipzq.lambda-url.ap-southeast-1.on.aws`",
+    "count": 1
+   }
+  ],
+  "$API_ID.exe...`(x6": [
+   {
+    "url": "https://$API_ID.exe...`(x6",
+    "count": 1
+   }
+  ],
+  "gxz7idj3ydatia4xxyayf...`": [
+   {
+    "url": "https://gxz7idj3ydatia4xxyayf...`",
+    "count": 1
+   }
+  ],
+  "server-67564.prod.hosts.ooklaserver.net:8080": [
+   {
+    "url": "https://server-67564.prod.hosts.ooklaserver.net:8080/speedtest/random4000x4000.jpg`（IP",
+    "count": 1
+   }
+  ],
+  "server-675...`(x4": [
+   {
+    "url": "https://server-675...`(x4",
+    "count": 1
+   }
+  ],
+  "nxtrace.org": [
+   {
+    "url": "https://www.nxtrace.org/downloads",
+    "count": 1
+   }
+  ],
+  "server-67564.prod....`": [
+   {
+    "url": "https://server-67564.prod....`",
+    "count": 1
+   }
+  ],
+  "server-67...`": [
+   {
+    "url": "https://server-67...`",
+    "count": 1
+   }
+  ],
+  "discord.gg": [
+   {
+    "url": "https://discord.gg/deno",
+    "count": 2
+   }
+  ],
+  "deno.land": [
+   {
+    "url": "https://deno.land/install.sh",
+    "count": 2
+   }
+  ],
+  "momo.talk": [
+   {
+    "url": "https://momo.talk",
+    "count": 2
+   }
+  ],
+  "api.abema.io": [
+   {
+    "url": "https://api.abema.io/v1/video/programs/26-272_s1_p101",
+    "count": 4
+   },
+   {
+    "url": "https://api.abema.io/v1/video/programs/203-28_s1_p39",
+    "count": 3
+   },
+   {
+    "url": "https://api.abema.io/v1/video/programs/26-272_s1_p101`",
+    "count": 2
+   },
+   {
+    "url": "https://api.abema.io/v1/ip/geo`",
+    "count": 2
+   },
+   {
+    "url": "https://api.abema.io/v1/media/slots/{slot_id}`",
+    "count": 2
+   },
+   {
+    "url": "https://api.abema.io/v1/video/programs/203-28_s1_p39`",
+    "count": 2
+   },
+   {
+    "url": "https://api.abema.io/v1/video/programs/26-272_s1_p101(x2",
+    "count": 1
+   },
+   {
+    "url": "https://api.abema.io/v1/video/series/{series_id}\\",
+    "count": 1
+   }
+  ],
+  "161.33.133.174:39495": [
+   {
+    "url": "http://161.33.133.174:39495/`（161",
+    "count": 6
+   },
+   {
+    "url": "http://161.33.133.174:39495/",
+    "count": 3
+   },
+   {
+    "url": "http://161.33.133.174:39495/`",
+    "count": 2
+   },
+   {
+    "url": "http://161.33.133.174:39495/`、`api_bearer",
+    "count": 1
+   },
+   {
+    "url": "http://161.33.133.174:39495/`、`api_bearer=[len=366",
+    "count": 1
+   },
+   {
+    "url": "http://161.33.133.174:39495/\\napi_bearer",
+    "count": 1
+   }
+  ],
+  "api.p-c3-e.abema-tv.com`": [
+   {
+    "url": "https://api.p-c3-e.abema-tv.com`",
+    "count": 1
+   }
+  ],
+  "abema.tv...`": [
+   {
+    "url": "https://abema.tv...`",
+    "count": 1
+   }
+  ],
+  "developer.z": [
+   {
+    "url": "https://developer.z",
+    "count": 1
+   }
+  ],
+  "vod-abematv.akamaized.net": [
+   {
+    "url": "https://vod-abematv.akamaized.net/slot/{slot_id}/playlist.m3u8`",
+    "count": 4
+   },
+   {
+    "url": "https://vod-abematv.akamaized.net/program/210-19_s1_p13/1080/playlist.m3u8?aver=",
+    "count": 2
+   }
+  ],
+  "api.cline.bot": [
+   {
+    "url": "https://api.cline.bot/api/v1/models",
+    "count": 4
+   },
+   {
+    "url": "https://api.cline.bot/api/v1`（OpenAI",
+    "count": 3
+   },
+   {
+    "url": "https://api.cline.bot/api/v1",
+    "count": 3
+   },
+   {
+    "url": "https://api.cline.bot/api/v1`",
+    "count": 2
+   },
+   {
+    "url": "https://api.cline.bot/api/v1/models`（公开目录",
+    "count": 1
+   },
+   {
+    "url": "https://api.cline.bot/api/v1/chat/completions`",
+    "count": 1
+   }
+  ],
+  "docs.cline.bot": [
+   {
+    "url": "https://docs.cline.bot/llms.txt`、`https://raw.githubusercontent.com/cline/cline/main/docs/getting-started/clinepass.mdx`、`https://api.cline.bot/api/v1`",
+    "count": 1
+   },
+   {
+    "url": "https://docs.cline.bot/getting-started/clinepass.md`",
+    "count": 1
+   }
+  ],
+  "dash.kirara-fantasia.moe:56852`、ws": [
+   {
+    "url": "http://dash.kirara-fantasia.moe:56852`、ws",
+    "count": 1
+   }
+  ],
+  "dash.kirara-fantasia.moe:56852`（配临时": [
+   {
+    "url": "http://dash.kirara-fantasia.moe:56852`（配临时",
+    "count": 1
+   }
+  ],
+  "opencode.ai": [
+   {
+    "url": "https://opencode.ai/zen/go/v1/responses`",
+    "count": 4
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1`",
+    "count": 2
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1(x2",
+    "count": 2
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1`、key_env",
+    "count": 1
+   },
+   {
+    "url": "https://opencode.ai/zen/v1`",
+    "count": 1
+   },
+   {
+    "url": "https://opencode.ai/zen/g...`",
+    "count": 1
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1",
+    "count": 1
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1/responses(x2",
+    "count": 1
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1/chat/completions`（stock",
+    "count": 1
+   },
+   {
+    "url": "https://opencode.ai/zen/go/v1/chat/completions",
+    "count": 1
+   }
+  ],
+  "package...`": [
+   {
+    "url": "https://package...`",
+    "count": 1
+   }
+  ],
+  "bravesail.github.io": [
+   {
+    "url": "https://bravesail.github.io/mizugram/check`",
+    "count": 1
+   }
+  ],
+  "bravesail.githu...`": [
+   {
+    "url": "https://bravesail.githu...`",
+    "count": 1
+   }
+  ],
+  "bravesail.github.io...`": [
+   {
+    "url": "https://bravesail.github.io...`",
+    "count": 1
+   }
+  ],
+  "rr1---nfo.ouo.si": [
+   {
+    "url": "https://rr1---nfo.ouo.si/%5BDynamis%20One%5D%20Tensei%20shitara%20Ken%20deshita%20II%20-%2001%20%28B-Global%201920x1080%20HEVC%20AAC%20MKV%29%20%5BFD2FF223%5D.mkv",
+    "count": 2
+   },
+   {
+    "url": "https://rr1---nfo.ouo.si/%5BDynamis%20One%5D%20Tensei%20shitara%20Ken%20deshita%20II%20-%2001%20%28B-Global%201920x108",
+    "count": 1
+   }
+  ],
+  "anilist.co": [
+   {
+    "url": "https://anilist.co/anime/159042",
+    "count": 3
+   },
+   {
+    "url": "https://anilist.co/anime/204650",
+    "count": 2
+   }
+  ],
+  "bgtv": [
+   {
+    "url": "https://bgm.tv/index/77872",
+    "count": 5
+   },
+   {
+    "url": "https://bgm.tv/group/topic/472394",
+    "count": 4
+   },
+   {
+    "url": "https://bgm.tv/index/77872`",
+    "count": 4
+   },
+   {
+    "url": "https://bgm.tv/subject/412008",
+    "count": 3
+   },
+   {
+    "url": "https://bgm.tv/help/bbcode",
+    "count": 3
+   },
+   {
+    "url": "https://bgm.tv/subject/topic/41209",
+    "count": 3
+   },
+   {
+    "url": "https://bgm.tv/blog/376763",
+    "count": 3
+   },
+   {
+    "url": "https://bgm.tv/blog/381120",
+    "count": 2
+   },
+   {
+    "url": "https://bgm.tv/rakuen/topic/subject/41119#post_410747",
+    "count": 2
+   },
+   {
+    "url": "https://bgm.tv/blog/381120`",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/help/bbcode`",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/group/topic/472394`",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/user/{uid}`",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/subject/topic/41209`（条目讨论",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/blog/381120(x2",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/ep/1738535#post_2241753",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/ep/1738535/edit",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/person/33229`",
+    "count": 1
+   },
+   {
+    "url": "https://bgm.tv/index/77872`（409",
+    "count": 1
+   }
+  ],
+  "myanimelist.net": [
+   {
+    "url": "https://myanimelist.net/anime/53913",
+    "count": 3
+   }
+  ],
+  "themoviedb.org": [
+   {
+    "url": "https://www.themoviedb.org/tv/134667",
+    "count": 3
+   }
+  ],
+  "i0.wp.com": [
+   {
+    "url": "https://i0.wp.com/pic.bstarstatic.com/ogv/daa737a5f196b25adec301a4ad3e6bc9.png@1280w_720h_100Q_1c.jpg",
+    "count": 3
+   }
+  ],
+  "anibt.net": [
+   {
+    "url": "https://anibt.net/grou...`",
+    "count": 1
+   }
+  ],
+  "p2.bahamut.cotw": [
+   {
+    "url": "https://p2.bahamut.com.tw/B/2KU/50/927c9f5bc756da4e313869a4e120k5i5.JPG",
+    "count": 4
+   },
+   {
+    "url": "https://p2.bahamut.com.tw/B/2KU/50/927c9f5bc756da4e313869a4e120k5i5.JPG`",
+    "count": 2
+   }
+  ],
+  "ani.gamer.cotw": [
+   {
+    "url": "https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}",
+    "count": 1
+   },
+   {
+    "url": "https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}(x2",
+    "count": 1
+   }
+  ],
+  "telegra.ph": [
+   {
+    "url": "https://telegra.ph/file/3e17277703ddf4545f76b.png",
+    "count": 2
+   }
+  ],
+  "t.me": [
+   {
+    "url": "https://t.me/c/2611750880/36692/42397",
+    "count": 3
+   },
+   {
+    "url": "https://t.me/c/1481033767/1214274",
+    "count": 3
+   },
+   {
+    "url": "https://t.me/tginfoen/2200",
+    "count": 3
+   },
+   {
+    "url": "https://t.me/c/2611750880/36692/42397`",
+    "count": 1
+   },
+   {
+    "url": "https://t.me/c/2611750880/13289",
+    "count": 1
+   },
+   {
+    "url": "https://t.me/tginfoen/2200?embed=1&mode=tme",
+    "count": 1
+   }
+  ],
+  "api.gamer.cotw": [
+   {
+    "url": "https://api.gamer.com.tw/mobile_app/anime/v3/constants.php",
+    "count": 3
+   },
+   {
+    "url": "https://api.gamer.com.tw/mobile_app/anime/v3/constants.php`「直接看这个",
+    "count": 2
+   }
+  ],
+  "apkcombo.com": [
+   {
+    "url": "https://apkcombo.com/%E5%B7%B4%E5%93%88%E5%A7%86%E7%89%B9%E5%8B%95%E7%95%AB%E7%98%8B/tw.com.gamer.android.animad/downl(x2",
+    "count": 1
+   },
+   {
+    "url": "https://apkcombo.com/checkin",
+    "count": 1
+   },
+   {
+    "url": "https://apkcombo.com/animad/tw.com.gamer.android.animad/",
+    "count": 1
+   }
+  ],
+  "apkpure.com": [
+   {
+    "url": "https://apkpure.com/animad/tw.com.gamer.android.animad",
+    "count": 1
+   }
+  ],
+  "api.twitter.com": [
+   {
+    "url": "https://api.twitter.com/graphql/kPLTRmMnzbPTv70___D06w/TweetResultByRestId",
+    "count": 1
+   }
+  ],
+  "threads.com": [
+   {
+    "url": "https://www.threads.com/@yuxiuaaa_/post/DeI4z3cEnXY",
+    "count": 5
+   },
+   {
+    "url": "https://www.threads.com/@snowmaple_official",
+    "count": 4
+   },
+   {
+    "url": "https://www.threads.com/@snowmaple_official/post/DerX8SaGo1a`",
+    "count": 4
+   },
+   {
+    "url": "https://www.threads.com/@ani.gamer.com.tw/post/DeBC3GKAG4n",
+    "count": 3
+   },
+   {
+    "url": "https://www.threads.com/@nichi_studio/post/DeKDRoXEoi9",
+    "count": 3
+   },
+   {
+    "url": "https://www.threads.com/@snowmaple_official/post/DeY4kZBGnhG",
+    "count": 3
+   },
+   {
+    "url": "https://www.threads.com/@snowmaple_official/post/DerX8SaGo1a",
+    "count": 3
+   },
+   {
+    "url": "https://www.threads.com/search?q=%E5%AD%B8%E5%9C%92%E5%81%B6%E5%83%8F%E5%A4%A7%E5%B8%AB&serp_type=tags",
+    "count": 3
+   },
+   {
+    "url": "https://www.threads.com/tag/",
+    "count": 3
+   },
+   {
+    "url": "https://www.threads.com/@threads/post/Dd9gVqImmyx",
+    "count": 2
+   },
+   {
+    "url": "https://www.threads.com/@threads/post/Dd9gVqImmyx（带",
+    "count": 2
+   },
+   {
+    "url": "https://www.threads.com/@a_li8557/post/DZJ5hTTGlju（正文含多个",
+    "count": 2
+   },
+   {
+    "url": "https://www.threads.com/tag/%E7%94%B3%E8%AB%8B%E5%AF%A9%E5%88%A4",
+    "count": 2
+   },
+   {
+    "url": "https://www.threads.com/graphql/query",
+    "count": 1
+   },
+   {
+    "url": "https://www.threads.com/@bestpika/post/DeHnGiigRgh",
+    "count": 1
+   },
+   {
+    "url": "https://www.threads.com/@snowmaple_official/post/DeTKrdrGjrZ",
+    "count": 1
+   },
+   {
+    "url": "https://www.threads.com/tag/{name}`（实测",
+    "count": 1
+   },
+   {
+    "url": "https://www.threads.com/tag/%E7%94%B3%E8%AB%8B%E5%AF%A9%E5%88%A4(x2",
+    "count": 1
+   },
+   {
+    "url": "https://www.threads.com/@snowmaple_official(x2",
+    "count": 1
+   },
+   {
+    "url": "https://www.threads.com/search?q=申請審判&serp_type=tags",
+    "count": 1
+   }
+  ],
+  "instagracom": [
+   {
+    "url": "https://www.instagram.com/reel/Dd_pnzHSKs8/",
+    "count": 3
+   },
+   {
+    "url": "https://www.instagram.com/reel/DcSZYKBtAK-/?mdxt=NWV6ZHEwcXdidGd5",
+    "count": 3
+   },
+   {
+    "url": "https://www.instagram.com/reel/DW1o47EDPOI/",
+    "count": 2
+   },
+   {
+    "url": "https://www.instagram.com/reel/DW1o47EDPOI/（caption",
+    "count": 2
+   },
+   {
+    "url": "https://www.instagram.com/reel/DWzs-vODzbt/",
+    "count": 2
+   },
+   {
+    "url": "https://www.instagram.com/graphql/query",
+    "count": 1
+   },
+   {
+    "url": "https://www.instagram.com/`",
+    "count": 1
+   }
+  ],
+  "api22-normal-c-alisg.tiktokv.com": [
+   {
+    "url": "https://api22-normal-c-alisg.tiktokv.com/aweme/v1/feed/",
+    "count": 1
+   }
+  ],
+  "api.bilibili.com": [
+   {
+    "url": "https://api.bilibili.com/x/web-interface/view/detail?bvid=",
+    "count": 1
+   },
+   {
+    "url": "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=",
+    "count": 1
+   },
+   {
+    "url": "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=1261967911063388214&features=itemOpusStyle,opusBigCover,onlyfansVote`",
+    "count": 1
+   }
+  ],
+  "kuaishou.com": [
+   {
+    "url": "https://www.kuaishou.com/graphql",
+    "count": 3
+   },
+   {
+    "url": "https://www.kuaishou.com/short-video/3xdmz2xiuaw7kkg",
+    "count": 2
+   },
+   {
+    "url": "https://www.kuaishou.com/short-video/3xdmz2xiuaw7kkg(x2",
+    "count": 1
+   }
+  ],
+  "weibo.com": [
+   {
+    "url": "https://weibo.com/ajax/statuses/show?id=",
+    "count": 1
+   },
+   {
+    "url": "https://weibo.com/tv/api/component",
+    "count": 1
+   },
+   {
+    "url": "https://weibo.com/1886672467/Rm1w5iaAD?pagetype=profilefeed",
+    "count": 1
+   }
+  ],
+  "mp.weixin.qq.com": [
+   {
+    "url": "https://mp.weixin.qq.com/s/",
+    "count": 1
+   }
+  ],
+  "zhihu.com": [
+   {
+    "url": "https://www.zhihu.com/api/v4/pins/{id}（实测无需",
+    "count": 1
+   }
+  ],
+  "zhuanlan.zhihu.com": [
+   {
+    "url": "https://zhuanlan.zhihu.com/api/articles/{id}",
+    "count": 1
+   }
+  ],
+  "tieba.baidu.com": [
+   {
+    "url": "https://tieba.baidu.com/c/f/pb/page_pc（POST",
+    "count": 1
+   }
+  ],
+  "douban.com": [
+   {
+    "url": "https://m.douban.com/rexxar/api/v2/group/topic/{id}（移动版",
+    "count": 1
+   },
+   {
+    "url": "https://m.douban.com/",
+    "count": 1
+   }
+  ],
+  "coolapk.com": [
+   {
+    "url": "https://www.coolapk.com/feed/",
+    "count": 1
+   }
+  ],
+  "h5.pipix.com": [
+   {
+    "url": "https://h5.pipix.com/ppx/item/",
+    "count": 1
+   }
+  ],
+  "api.xiaoheihe.cn": [
+   {
+    "url": "https://api.xiaoheihe.cn/v3/bbs/app/api/web/share?h_camp=link&h_session_id=yYmW4doqh9JCsq2I&h_src=YXBwX3NoYXJl&link_id=970772a04ea8&new_post_share_style_v2=0",
+    "count": 3
+   },
+   {
+    "url": "https://api.xiaoheihe.cn/bbs/app/link/tree（GET",
+    "count": 1
+   },
+   {
+    "url": "https://api.xiaoheihe.cn/v3/bbs/app/api/web/share?h_camp=link&h_session_id=yYmW4doqh9JCsq2I&h_src=YXBwX3NoYXJl&link_id",
+    "count": 1
+   }
+  ],
+  "share.xiaochuankeji.cn": [
+   {
+    "url": "https://share.xiaochuankeji.cn/planck/share/post/detail_h5（POST",
+    "count": 1
+   }
+  ],
+  "linux.do": [
+   {
+    "url": "https://linux.do/t/topic/2979226",
+    "count": 13
+   },
+   {
+    "url": "https://linux.do/tag/{tag}`",
+    "count": 7
+   },
+   {
+    "url": "https://linux.do/t/topic/3059838",
+    "count": 7
+   },
+   {
+    "url": "https://linux.do/t/topic/2986588/2",
+    "count": 6
+   },
+   {
+    "url": "https://linux.do/t/topic/2979226/11",
+    "count": 4
+   },
+   {
+    "url": "https://linux.do/t/topic/2977803/11",
+    "count": 4
+   },
+   {
+    "url": "https://linux.do/u/VerenQwQ",
+    "count": 4
+   },
+   {
+    "url": "https://linux.do/t/topic/2943678/3",
+    "count": 4
+   },
+   {
+    "url": "https://linux.do/t/topic/2687136",
+    "count": 4
+   },
+   {
+    "url": "https://linux.do/tag/NSFW",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/tag/%E5%A5%B3%E8%A3%85",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/2987239",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/2989140/4?u=libc.so.6",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/2989140/24?u=libc.so.6",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/2977838/16?u=libc.so.6",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/2987481",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/3033779",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/3059838`",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/t/topic/3064284/6?u=libc.so.6",
+    "count": 3
+   },
+   {
+    "url": "https://linux.do/u/paomian_1",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/t/topic/2979226(x2",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/tag/%E7%BA%AF%E6%B0%B4",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/tag/{tag}",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/t/topic/2943678/3`",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/t/topic/2985951",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/t/topic/3059838`、`3064284/6`",
+    "count": 2
+   },
+   {
+    "url": "https://linux.do/t/topic/2979226`、`https://linux.do/t/topic/2979226/11`、`https://linux.do/t/2979226/4`、`https://linux.do/t/topic/2977803/11`",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/2979226*",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/topic/2979226*",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/tag/…",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/topic/2979226`（1",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/2979226/4`",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/tag/%E7%BA%AF%E6%B0%B4(x2",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/u/paomian_1(x2",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/topic/2979226`**",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/topic/2977803/11`**",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/u/MystDove",
+    "count": 1
+   },
+   {
+    "url": "https://linux.do/t/topic/3033779`",
+    "count": 1
+   }
+  ],
+  "cdn3.ldstatic.com": [
+   {
+    "url": "https://cdn3.ldstatic.com/original/4X/e/c/c/ecc0139dde63d601e4d9fb8a2ea6433b9d3f",
+    "count": 2
+   },
+   {
+    "url": "https://cdn3.ldstatic.com/",
+    "count": 2
+   },
+   {
+    "url": "https://cdn3.ldstatic.com/(x5",
+    "count": 1
+   },
+   {
+    "url": "https://cdn3.ldstatic.com/...svg",
+    "count": 1
+   },
+   {
+    "url": "https://cdn3.ldstatic.com/original/4X/5/9/b/59b3bf7046f6...`",
+    "count": 1
+   },
+   {
+    "url": "https://cdn3.ldstatic.com/....svg",
+    "count": 1
+   }
+  ],
+  "bilibili.com": [
+   {
+    "url": "https://m.bilibili.com/opus/1261967911063388214",
+    "count": 4
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_on=1&comment_root_id=318640242161#reply318640242161",
+    "count": 3
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_on=1&comment_root_id=318640242161&share_tag=s_i#reply318640242161",
+    "count": 3
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV15LYw62Enb/?trackid=web_pegasus_0.router-web-pegasus-2479516-gfll4.1791068618884.239&spm_id_from=333.1007.tianma.3-3-9.click",
+    "count": 2
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1q4ab6FECm",
+    "count": 2
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV17x411w7KC",
+    "count": 2
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1oxxY69Es4#reply318640242161",
+    "count": 2
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV15LYw62Enb/?trackid=web_pegasus_0.router-web-pegasus-2479516-gfll4.1791068618884.239&",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1UqHi6uEie`",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1q4ab6FECm`",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1q3Z9BoE9G/?spm_id_from=333.337.search-card.all.click&vd_source=28affb1483963bd2b4d1c30eb35d92b6",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1wLpv68EnA/?spm_id_from=333.1387.upload.video_card.click&vd_source=28affb1483963bd2b4d1c30eb35d92b6",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/opus/1261967911063388214`",
+    "count": 1
+   },
+   {
+    "url": "https://m.bilibili.com/opus/1261967911063388214`（【阿洛娜的日程笔记（第32期",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/opus/",
+    "count": 1
+   },
+   {
+    "url": "https://m.bilibili.com/opus/1261967911063388214`",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_on=1&comment_root_id=318640242161#reply318640242161`",
+    "count": 1
+   },
+   {
+    "url": "https://m.bilibili.com/opus/1261967911063388214`（detail",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1oxxY69Es4#reply318640242161(x2",
+    "count": 1
+   },
+   {
+    "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_root_id=318640242161#reply318640242161",
+    "count": 1
+   }
+  ],
+  "t.bilibili.com": [
+   {
+    "url": "https://t.bilibili.com/1255035275497701377",
+    "count": 9
+   },
+   {
+    "url": "https://t.bilibili.com/1255035275497701377?spm_id_from=333.1365.list.card_time.click",
+    "count": 7
+   },
+   {
+    "url": "https://t.bilibili.com/1265762239826100230?spm_id_from=333.1365.list.card_time.click",
+    "count": 3
+   },
+   {
+    "url": "https://t.bilibili.com/1255035275497701377?spm_id_from=333.1365.list.card_time.click(x2",
+    "count": 1
+   },
+   {
+    "url": "https://t.bilibili.com/1265762239826100230`（banner",
+    "count": 1
+   }
+  ],
+  "docs.pytest.org": [
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+    "count": 15
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n689",
+    "count": 2
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n239",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n44(x2",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n11",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n17",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n683",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1034",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n693",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n25",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n690",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n7",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html(x3",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1070",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1066",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1098",
+    "count": 1
+   },
+   {
+    "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1090",
+    "count": 1
+   }
+  ],
+  "space.bilibili.com": [
+   {
+    "url": "https://space.bilibili.com/224267770",
+    "count": 1
+   },
+   {
+    "url": "https://space.bilibili.com/1157901692",
+    "count": 1
+   },
+   {
+    "url": "https://space.bilibili.com/12345",
+    "count": 1
+   }
+  ],
+  "Bilibili.com": [
+   {
+    "url": "https://Bilibili.com/video/BV1",
+    "count": 1
+   }
+  ],
+  "X.com": [
+   {
+    "url": "https://X.com/a/status/123",
+    "count": 1
+   }
+  ],
+  "b23.tv": [
+   {
+    "url": "https://b23.tv/abc123",
+    "count": 1
+   },
+   {
+    "url": "https://b23.tv/G1VPROs",
+    "count": 1
+   }
+  ],
+  "search.bilibili.com": [
+   {
+    "url": "https://search.bilibili.com/all?keyword=",
+    "count": 3
+   }
+  ],
+  "d.apkpure.com": [
+   {
+    "url": "https://d.apkpure.com/b/XAPK/make.more.r2d2.cellular_z.play?version=latest",
+    "count": 1
+   },
+   {
+    "url": "https://d.apkpure.com/b/XAPK/make.more.r2d2.play.cellular_pro?versionCode=110",
+    "count": 1
+   }
+  ],
+  "example.com": [
+   {
+    "url": "https://example.com/plain",
+    "count": 2
+   },
+   {
+    "url": "https://example.com/plain(x4",
+    "count": 1
+   }
+  ],
+  "bilibili.com`+UA、`change_source`": [
+   {
+    "url": "https://www.bilibili.com`+UA、`change_source`",
+    "count": 1
+   }
+  ],
+  "youtu.be": [
+   {
+    "url": "https://youtu.be/WUm_Yg4MNoo",
+    "count": 4
+   },
+   {
+    "url": "https://youtu.be/crC-xwmo3_k",
+    "count": 3
+   },
+   {
+    "url": "https://youtu.be/WUm_Yg4MNoo`",
+    "count": 1
+   }
+  ],
+  "youtube.com": [
+   {
+    "url": "https://www.youtube.com/playlist?list",
+    "count": 8
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=Nbc7I6y97FI",
+    "count": 5
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=KvsjV5UKmdg",
+    "count": 5
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=V73Kz89G1HA",
+    "count": 4
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=x2PxfivBaaE",
+    "count": 4
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=Am9SRZAiWqY",
+    "count": 3
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=jTbsEsYSnpM",
+    "count": 3
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=_QCcVv1sBYM",
+    "count": 3
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=-E9QFYAyPYU",
+    "count": 3
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=Tnkdv8tBu1g",
+    "count": 3
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "count": 2
+   },
+   {
+    "url": "https://www.youtube.com/post/UgkxNoA6S6qRc2Yc7QXHcECdW9JHe7XLDpAB",
+    "count": 2
+   },
+   {
+    "url": "https://www.youtube.com/feed/history\\",
+    "count": 2
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=_IBAJkEsuG4",
+    "count": 2
+   },
+   {
+    "url": "https://www.youtube.com/@BlueArchive_JP`（主页",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/@BlueArchive_JP",
+    "count": 1
+   },
+   {
+    "url": "https://youtube.com/shorts/hnSeq_P3jAo(x3",
+    "count": 1
+   },
+   {
+    "url": "http://youtube.com/post/Ugkxzq0QbgtS1VgHo8hIjZwpiwshZSvd-JtO",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=QRJaXLAU-eA",
+    "count": 1
+   },
+   {
+    "url": "http://youtube.com/post/UgkxNoA6S6qRc2Yc7QXHcECdW9JHe7XLDpAB",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=dXclVwpFvZY",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=V73Kz89G1HA`",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=csSN8XuN1u4",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/watch?v=",
+    "count": 1
+   },
+   {
+    "url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    "count": 1
+   }
+  ],
+  "xiaohongshu.com": [
+   {
+    "url": "https://www.xiaohongshu.com/explore/69bcb6d8000000002003aa1a?xsec_token=...&xsec_source=pc_user",
+    "count": 6
+   },
+   {
+    "url": "https://www.xiaohongshu.com/explore/",
+    "count": 2
+   },
+   {
+    "url": "https://www.xiaohongshu.com/404",
+    "count": 2
+   },
+   {
+    "url": "https://www.xiaohongshu.com/explore/6411cf99000000001300b6d9",
+    "count": 2
+   },
+   {
+    "url": "https://www.xiaohongshu.com/discovery/item/674051740000000007027a15?xsec_token=",
+    "count": 2
+   }
+  ],
+  "0115765.com": [
+   {
+    "url": "https://0115765.com/archives/208357`",
+    "count": 2
+   }
+  ],
+  "bilibili.com`": [
+   {
+    "url": "https://www.bilibili.com`",
+    "count": 2
+   }
+  ],
+  "t.co": [
+   {
+    "url": "https://t.co/cl4HMa5dzc**`",
+    "count": 1
+   }
+  ],
+  "twitter.com": [
+   {
+    "url": "https://twitter.com/thsottiaux/status/2107576143285219799",
+    "count": 3
+   },
+   {
+    "url": "https://twitter.com/kon_kokine/status/2107756845704360201",
+    "count": 1
+   },
+   {
+    "url": "https://twitter.com/tateishi_aoba",
+    "count": 1
+   }
+  ],
+  "bangumi.github.io": [
+   {
+    "url": "https://bangumi.github.io/api/",
+    "count": 3
+   },
+   {
+    "url": "https://bangumi.github.io/api/`",
+    "count": 1
+   }
+  ],
+  "patch.bgm38.tv": [
+   {
+    "url": "https://patch.bgm38.tv/edit/episode/1738535",
+    "count": 1
+   }
+  ],
+  "snapchat.com": [
+   {
+    "url": "https://www.snapchat.com/spotlight/W7_…AAAAAA`（匿名",
+    "count": 1
+   },
+   {
+    "url": "https://www.snapchat.com/@shreypatel57`、`published_at=2021-11-24`",
+    "count": 1
+   }
+  ],
+  "cf-st.sc-cdn.net": [
+   {
+    "url": "https://cf-st.sc-cdn.net/d/",
+    "count": 1
+   },
+   {
+    "url": "https://cf-st.sc-cdn.net/d/kKJHIR1QAznRKK9jgYYDq.1034.IRZX",
+    "count": 1
+   }
+  ],
+  "yt3.ggpht.com": [
+   {
+    "url": "https://yt3.ggpht.com/BDxqRAXYZJaY_up2qZA0tBJZunPylTEr06qT",
+    "count": 1
+   }
+  ],
+  "video-nrt1-1.xx.fbcdn.net": [
+   {
+    "url": "https://video-nrt1-1.xx.fbcdn.net/o1/v/t2/f2/m366/AQO5kCBW",
+    "count": 1
+   }
+  ],
+  "upos-sz-mirrorcosov.bilivideo.com": [
+   {
+    "url": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:9999": [
+   {
+    "url": "http://127.0.0.1:9999/view/33412",
+    "count": 3
+   },
+   {
+    "url": "http://127.0.0.1:9999/css/flags/flags.min.css",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:9999/img/flags/hk.svg",
+    "count": 1
+   }
+  ],
+  "challenges.cloudflare.com": [
+   {
+    "url": "https://challenges.cloudflare.com",
+    "count": 5
+   }
+  ],
+  "a.nel.cloudflare.com": [
+   {
+    "url": "https://a.nel.cloudflare.com/report/v4?s=HhXt5aUvGRJNtzE2JYLR3pfYuNnhTj3sVCi%2Fux4ubjjoKLSIsIjbIMQtsOlDtJCPac4K8F9MCunQ8SQbnITgJEKR3rNNWJ4%2B%2Feg2jXCHgQQpKO1ieDAnW1QeiVtim7m52c5wv%2Bw%3D",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:9200": [
+   {
+    "url": "http://127.0.0.1:9200",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:9200/n...`",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:9200/nyaapantsu/_mapping",
+    "count": 1
+   },
+   {
+    "url": "http://127.0.0.1:9200/nyaapant...`",
+    "count": 1
+   }
+  ],
+  "bgwiki": [
+   {
+    "url": "https://bgm.wiki/assets/flags/",
+    "count": 1
+   }
+  ],
+  "127.0.0.1:9200(x2": [
+   {
+    "url": "http://127.0.0.1:9200(x2",
+    "count": 1
+   }
+  ],
+  "mxqs6jjuhfqgr35wohr3dnnrse0zipzq.lambda-url.ap-southeast-1.on.aws": [
+   {
+    "url": "https://mxqs6jjuhfqgr35wohr3dnnrse0zipzq.lambda-url.ap-southeast-1.on.aws/?dst=https%3A%2F%2Fwww.crunchyroll.com%2Fauth%2Fv1%2Ftoken",
+    "count": 2
+   }
+  ],
+  "crunchyroll.com": [
+   {
+    "url": "https://www.crunchyroll.com/auth/v1/token",
+    "count": 2
+   },
+   {
+    "url": "https://www.crunchyroll.com/content/",
+    "count": 1
+   },
+   {
+    "url": "https://www.crunchyroll.com/watch/GE00375144JAJP/just-colleagues",
+    "count": 1
+   },
+   {
+    "url": "https://www.crunchyroll.com/watch/GE00385718ZHCN/episode-4",
+    "count": 1
+   },
+   {
+    "url": "https://www.crunchyroll.com/content/v2/discover/browse?type=episode&sort_by=newly_added&n=100&from_date=1791380396436&to_date=1791639596436&preferred_audio_language=ja-JP&locale=zh-TW",
+    "count": 1
+   }
+  ],
+  "abema.tv": [
+   {
+    "url": "https://abema.tv/channels/abema-anime/slots/E8xbz1edCA4Xwd",
+    "count": 3
+   },
+   {
+    "url": "https://abema.tv/channels/anime-live/slots/9FYQyoHb3meybd",
+    "count": 1
+   }
+  ],
+  "trycloudflare.com": [
+   {
+    "url": "https://trycloudflare.com/",
+    "count": 1
+   }
+  ],
+  "rea.tools": [
+   {
+    "url": "https://rea.tools/",
+    "count": 3
+   },
+   {
+    "url": "https://rea.tools/ge",
+    "count": 1
+   }
+  ],
+  "ip-api.com": [
+   {
+    "url": "http://ip-api.com/json/`",
+    "count": 1
+   }
+  ],
+  "api.p-c3-e.abema-tv.com": [
+   {
+    "url": "https://api.p-c3-e.abema-tv.com/v1/contentlist/episodeGroups/{series_id}_eg0/contents\\",
+    "count": 1
+   }
+  ],
+  "api.bilibili.tv": [
+   {
+    "url": "https://api.bilibili.tv/intl/gateway/v2/ogv/view/app/season?s_locale=zh_SG&mobi_app=bstar_a&platform=android&ep_id={ep",
+    "count": 1
+   }
+  ],
+  "tetsuryo-anime.com": [
+   {
+    "url": "https://tetsuryo-anime.com/",
+    "count": 1
+   }
+  ],
+  "tetsudou-musume.net": [
+   {
+    "url": "https://tetsudou-musume.net/index.php",
+    "count": 1
+   }
+  ],
+  "...douyinpic.com": [
+   {
+    "url": "https://...douyinpic.com/",
+    "count": 1
+   },
+   {
+    "url": "https://...douyinpic.com/...~tplv-dy-long-article:0:0.heic",
+    "count": 1
+   }
+  ],
+  "lf-dy-gr-sourcecdn.bytegecko.com": [
+   {
+    "url": "https://lf-dy-gr-sourcecdn.bytegecko.com/obj/byte-gurd-source-gr/search/fe/douyin/morphling_high/douyin_article_detail/{feed_v2,index}/template.js`",
+    "count": 1
+   }
+  ],
+  "`": [
+   {
+    "url": "https://`",
+    "count": 1
+   }
+  ],
+  "core.teleg": [
+   {
+    "url": "https://core.teleg",
+    "count": 1
+   }
+  ],
+  "lf-douyin-search-fe.bytetos.c...`": [
+   {
+    "url": "https://lf-douyin-search-fe.bytetos.c...`",
+    "count": 1
+   }
+  ],
+  "lf-dy-g...`": [
+   {
+    "url": "https://lf-dy-g...`",
+    "count": 1
+   }
+  ],
+  "gitee.com": [
+   {
+    "url": "https://gitee.com/.../claude-code-source-code.git",
+    "count": 1
+   }
+  ],
+  "douyinpic.com": [
+   {
+    "url": "https://douyinpic.com/",
+    "count": 1
+   }
+  ],
+  "bgtv`": [
+   {
+    "url": "https://bgm.tv`",
+    "count": 2
+   }
+  ],
+  "download.bt.cn": [
+   {
+    "url": "https://download.bt.cn/src/php-8.5.12.tar.gz`",
+    "count": 1
+   }
+  ],
+  "cf1-node.aapan...`": [
+   {
+    "url": "https://cf1-node.aapan...`",
+    "count": 1
+   }
+  ],
+  "cf1-node.aapanel.com": [
+   {
+    "url": "https://cf1-node.aapanel.com/src/php-8.5.12.tar.gz",
+    "count": 1
+   }
+  ],
+  "likale.io": [
+   {
+    "url": "https://lm.ikale.io/docs/cli/detect/",
+    "count": 3
+   }
+  ],
+  "ptt.cc": [
+   {
+    "url": "https://www.ptt.cc/bbs/C_Chat/M.1792932204.A.E69.html",
+    "count": 4
+   },
+   {
+    "url": "https://www.ptt.cc/bbs/C_Chat/M.1792932204.A.E69.html`",
+    "count": 3
+   },
+   {
+    "url": "https://www.ptt.cc/bbs/C_Chat/M.1793266681.A.A54.html",
+    "count": 3
+   },
+   {
+    "url": "https://www.ptt.cc/bbs/C_Chat/M.1793834465.A.E9D.html",
+    "count": 3
+   },
+   {
+    "url": "https://www.ptt.cc/bbs/C_Chat/M.1792932204.A.E69.html`（作者",
+    "count": 1
+   }
+  ],
+  "i.imgur.com": [
+   {
+    "url": "https://i.imgur.com/Oo9D6mx.jpeg",
+    "count": 4
+   },
+   {
+    "url": "https://i.imgur.com/tQm2XSB.jpeg",
+    "count": 4
+   },
+   {
+    "url": "https://i.imgur.com/lp3lXzL.jpeg",
+    "count": 3
+   },
+   {
+    "url": "https://i.imgur.com/xxx.jpeg`",
+    "count": 1
+   },
+   {
+    "url": "https://i.imgur.com/Oo9D6mx.jpeg`、`https://i.imgur.com/tQm2XSB.jpeg`（当前渲染",
+    "count": 1
+   },
+   {
+    "url": "https://i.imgur.com/Oo9D6mx.jpeg`、`https://i.imgur.com/tQm2XSB.jpeg`",
+    "count": 1
+   }
+  ],
+  "api.telegraorg`": [
+   {
+    "url": "https://api.telegram.org`",
+    "count": 1
+   }
+  ],
+  "youtube.com`": [
+   {
+    "url": "https://www.youtube.com`",
+    "count": 1
+   }
+  ],
+  "api.ipify.org": [
+   {
+    "url": "https://api.ipify.org",
+    "count": 1
+   }
+  ],
+  "i.mopix.cc": [
+   {
+    "url": "https://i.mopix.cc/YRTfNb.jpg",
+    "count": 4
+   },
+   {
+    "url": "https://i.mopix.cc/YRTfNb.jpg\\n渲染长度",
+    "count": 1
+   },
+   {
+    "url": "https://i.mopix.cc/YRTfNb.jpg\\",
+    "count": 1
+   }
+  ],
+  "i1.hdslb.com": [
+   {
+    "url": "https://i1.hdslb.com/bfs/new_dyn/31243dc9950cd8ee6c055e816a664b622859372.jpg@1416w_798h_1c.avif",
+    "count": 2
+   }
+  ]
+ },
+ "all": [
+  {
+   "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+   "count": 38
+  },
+  {
+   "url": "https://x.com/a",
+   "count": 21
+  },
+  {
+   "url": "https://x.com/yuuuumr/status/2095537240726450480",
+   "count": 20
+  },
+  {
+   "url": "https://hub.see.moe",
+   "count": 16
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+   "count": 15
+  },
+  {
+   "url": "https://curl.se/libcurl/c/libcurl-errors.html",
+   "count": 14
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226",
+   "count": 13
+  },
+  {
+   "url": "https://api-docs.deepseek.com/guides/responses_api/",
+   "count": 9
+  },
+  {
+   "url": "https://hub.see.moe/api/devices",
+   "count": 9
+  },
+  {
+   "url": "https://github.com/actions/runner-images/issues/14748",
+   "count": 9
+  },
+  {
+   "url": "https://t.bilibili.com/1255035275497701377",
+   "count": 9
+  },
+  {
+   "url": "https://www.youtube.com/playlist?list",
+   "count": 8
+  },
+  {
+   "url": "https://hub.see.moe/report",
+   "count": 7
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/149431603",
+   "count": 7
+  },
+  {
+   "url": "https://t.bilibili.com/1255035275497701377?spm_id_from=333.1365.list.card_time.click",
+   "count": 7
+  },
+  {
+   "url": "https://linux.do/tag/{tag}`",
+   "count": 7
+  },
+  {
+   "url": "https://www.douyin.com/video/7692999234357906715",
+   "count": 7
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/150374301",
+   "count": 7
+  },
+  {
+   "url": "https://linux.do/t/topic/3059838",
+   "count": 7
+  },
+  {
+   "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws/?dst=https%3A%2F%2Fwww.crunchyroll.com%2Fcontent%2Fv1%2Fbrowse%3Fsort_by%3Dnewly_added%26type%3Depisode%26n%3D100%26start%3D0%26preferred_audio_language%3Dja-JP%26force_locale%3D%26locale%3Den-US",
+   "count": 6
+  },
+  {
+   "url": "http://161.33.133.174:39495/`（161",
+   "count": 6
+  },
+  {
+   "url": "https://x.com/MirukuSeki3/status/2105625907042132005",
+   "count": 6
+  },
+  {
+   "url": "https://linux.do/t/topic/2986588/2",
+   "count": 6
+  },
+  {
+   "url": "https://www.xiaohongshu.com/explore/69bcb6d8000000002003aa1a?xsec_token=...&xsec_source=pc_user",
+   "count": 6
+  },
+  {
+   "url": "https://x.com/fxkurumi_info/status/21",
+   "count": 6
+  },
+  {
+   "url": "https://www.douyin.com/article/7696571479932144911",
+   "count": 6
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6d4f67201690d8bedaf67f8e24eceafc.png",
+   "count": 5
+  },
+  {
+   "url": "https://help.gradle.org",
+   "count": 5
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1`",
+   "count": 5
+  },
+  {
+   "url": "https://github.com/desktop-app/patches.git",
+   "count": 5
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/tasks/4745",
+   "count": 5
+  },
+  {
+   "url": "https://x.com/Onokiwi/status/2103122284328227157",
+   "count": 5
+  },
+  {
+   "url": "https://x.com/precure_movie/status/2106537282111000920?s=20",
+   "count": 5
+  },
+  {
+   "url": "https://x.com/giraffe_Mola/status/2106316141836882417",
+   "count": 5
+  },
+  {
+   "url": "https://www.threads.com/@yuxiuaaa_/post/DeI4z3cEnXY",
+   "count": 5
+  },
+  {
+   "url": "https://challenges.cloudflare.com",
+   "count": 5
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=Nbc7I6y97FI",
+   "count": 5
+  },
+  {
+   "url": "https://github.com/LuanRT/googlevideo",
+   "count": 5
+  },
+  {
+   "url": "https://bgm.tv/index/77872",
+   "count": 5
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=KvsjV5UKmdg",
+   "count": 5
+  },
+  {
+   "url": "https://github.com/nextalone/nagram",
+   "count": 4
+  },
+  {
+   "url": "https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh",
+   "count": 4
+  },
+  {
+   "url": "https://api.abema.io/v1/video/programs/26-272_s1_p101",
+   "count": 4
+  },
+  {
+   "url": "https://vod-abematv.akamaized.net/slot/{slot_id}/playlist.m3u8`",
+   "count": 4
+  },
+  {
+   "url": "https://api.cline.bot/api/v1/models",
+   "count": 4
+  },
+  {
+   "url": "https://image.p-c2-x.abema-tv.com/image/programs/203-28_s1_p26/thumb001.png",
+   "count": 4
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1/responses`",
+   "count": 4
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6890a25fa63414877080845e015e3437.png",
+   "count": 4
+  },
+  {
+   "url": "https://pic.bstarstatic.com/ogv/68db17492efc5cfa742f4ca33d53d49d.png@900w_1200h_100Q_1c.jpg",
+   "count": 4
+  },
+  {
+   "url": "https://p2.bahamut.com.tw/B/2KU/50/927c9f5bc756da4e313869a4e120k5i5.JPG",
+   "count": 4
+  },
+  {
+   "url": "https://x.com/Haruhi_Smith/status/2106215481665540155这种推文能不能捞到引用",
+   "count": 4
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226/11",
+   "count": 4
+  },
+  {
+   "url": "https://linux.do/t/topic/2977803/11",
+   "count": 4
+  },
+  {
+   "url": "https://linux.do/u/VerenQwQ",
+   "count": 4
+  },
+  {
+   "url": "https://x.com/798145343h/status/2106227349947625944",
+   "count": 4
+  },
+  {
+   "url": "https://linux.do/t/topic/2943678/3",
+   "count": 4
+  },
+  {
+   "url": "https://linux.do/t/topic/2687136",
+   "count": 4
+  },
+  {
+   "url": "https://github.com/AcgEmtTool/bilibili_bangumi_area_limit_hack",
+   "count": 4
+  },
+  {
+   "url": "https://x.com/ikizulive_staff/status/2107425646582374748",
+   "count": 4
+  },
+  {
+   "url": "https://bgm.tv/group/topic/472394",
+   "count": 4
+  },
+  {
+   "url": "https://ouo.si/view/33412",
+   "count": 4
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=V73Kz89G1HA",
+   "count": 4
+  },
+  {
+   "url": "https://x.com/chihara_anime/status/2110672031205511204",
+   "count": 4
+  },
+  {
+   "url": "https://www.threads.com/@snowmaple_official",
+   "count": 4
+  },
+  {
+   "url": "https://youtu.be/WUm_Yg4MNoo",
+   "count": 4
+  },
+  {
+   "url": "https://bgm.tv/index/77872`",
+   "count": 4
+  },
+  {
+   "url": "https://www.threads.com/@snowmaple_official/post/DerX8SaGo1a`",
+   "count": 4
+  },
+  {
+   "url": "https://m.bilibili.com/opus/1261967911063388214",
+   "count": 4
+  },
+  {
+   "url": "https://www.ptt.cc/bbs/C_Chat/M.1792932204.A.E69.html",
+   "count": 4
+  },
+  {
+   "url": "https://i.imgur.com/Oo9D6mx.jpeg",
+   "count": 4
+  },
+  {
+   "url": "https://i.imgur.com/tQm2XSB.jpeg",
+   "count": 4
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=x2PxfivBaaE",
+   "count": 4
+  },
+  {
+   "url": "https://i.mopix.cc/YRTfNb.jpg",
+   "count": 4
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/ui/tasks/3480",
+   "count": 3
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/ui/tasks/3994",
+   "count": 3
+  },
+  {
+   "url": "https://github.com/BraveSail/hermes-agent我看一堆我的提交还有核心的",
+   "count": 3
+  },
+  {
+   "url": "https://api.github.com/repos/TDesktop-x64/tdesktop/actions/workflows/windows-release.yml",
+   "count": 3
+  },
+  {
+   "url": "https://rolldown.rs/reference/InputOptions.checks#plugintimings",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/Onokiwi/status/2103122284328227157`",
+   "count": 3
+  },
+  {
+   "url": "http://161.33.133.174:39495/",
+   "count": 3
+  },
+  {
+   "url": "https://api.cline.bot/api/v1`（OpenAI",
+   "count": 3
+  },
+  {
+   "url": "https://api.cline.bot/api/v1",
+   "count": 3
+  },
+  {
+   "url": "https://ouo.si/dry-run",
+   "count": 3
+  },
+  {
+   "url": "https://anilist.co/anime/159042",
+   "count": 3
+  },
+  {
+   "url": "https://bgm.tv/subject/412008",
+   "count": 3
+  },
+  {
+   "url": "https://myanimelist.net/anime/53913",
+   "count": 3
+  },
+  {
+   "url": "https://www.themoviedb.org/tv/134667",
+   "count": 3
+  },
+  {
+   "url": "https://i0.wp.com/pic.bstarstatic.com/ogv/daa737a5f196b25adec301a4ad3e6bc9.png@1280w_720h_100Q_1c.jpg",
+   "count": 3
+  },
+  {
+   "url": "https://api.abema.io/v1/video/programs/203-28_s1_p39",
+   "count": 3
+  },
+  {
+   "url": "https://t.me/c/2611750880/36692/42397",
+   "count": 3
+  },
+  {
+   "url": "https://api.gamer.com.tw/mobile_app/anime/v3/constants.php",
+   "count": 3
+  },
+  {
+   "url": "https://www.kuaishou.com/graphql",
+   "count": 3
+  },
+  {
+   "url": "https://www.threads.com/@ani.gamer.com.tw/post/DeBC3GKAG4n",
+   "count": 3
+  },
+  {
+   "url": "https://github.com/BraveSail/ParseHub",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/tag/NSFW",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/tag/%E5%A5%B3%E8%A3%85",
+   "count": 3
+  },
+  {
+   "url": "https://core.telegram.org/bots/features#privacy-mode",
+   "count": 3
+  },
+  {
+   "url": "https://t.me/c/1481033767/1214274",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/zane_os/status/2106232516009144693",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/VincentBounce/status/2105608886996906153",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/BArchiveWarfare/status/2106298669393990138",
+   "count": 3
+  },
+  {
+   "url": "https://search.bilibili.com/all?keyword=",
+   "count": 3
+  },
+  {
+   "url": "https://www.instagram.com/reel/Dd_pnzHSKs8/",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/Suikoden_anime/status/2106398886827098121",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/Hysteric_Barbie/status/2107106216082301045",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/ponycan_anime/status/2107063262986506737",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/sudachi_anime/status/2107380382673031359",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/2987239",
+   "count": 3
+  },
+  {
+   "url": "https://youtu.be/crC-xwmo3_k",
+   "count": 3
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=Am9SRZAiWqY",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/fxkurumi_info/status/2107410546899451980",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/hashtag/FX%E6%88%A6%E5%A3%AB%E3%81%8F%E3%82%8B%E3%81%BF%E3%81%A1%E3%82%83%E3%82%93?src=hashtag_click",
+   "count": 3
+  },
+  {
+   "url": "https://twitter.com/thsottiaux/status/2107576143285219799",
+   "count": 3
+  },
+  {
+   "url": "https://www.threads.com/@nichi_studio/post/DeKDRoXEoi9",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/2989140/4?u=libc.so.6",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/2989140/24?u=libc.so.6",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/2977838/16?u=libc.so.6",
+   "count": 3
+  },
+  {
+   "url": "https://bangumi.github.io/api/",
+   "count": 3
+  },
+  {
+   "url": "https://bgm.tv/help/bbcode",
+   "count": 3
+  },
+  {
+   "url": "https://bgm.tv/subject/topic/41209",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/2987481",
+   "count": 3
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=jTbsEsYSnpM",
+   "count": 3
+  },
+  {
+   "url": "https://github.com/AcgEmtTool/dump_tools/commit/c2466204538aea0970d276725311fb11b23ecf7f",
+   "count": 3
+  },
+  {
+   "url": "http://127.0.0.1:9999/view/33412",
+   "count": 3
+  },
+  {
+   "url": "https://www.threads.com/@snowmaple_official/post/DeY4kZBGnhG",
+   "count": 3
+  },
+  {
+   "url": "https://rea.tools/",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/MaxForAI/status/2108035230003274189",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/muu3_666/status/2109617017993191432",
+   "count": 3
+  },
+  {
+   "url": "https://abema.tv/channels/abema-anime/slots/E8xbz1edCA4Xwd",
+   "count": 3
+  },
+  {
+   "url": "https://api.xiaoheihe.cn/v3/bbs/app/api/web/share?h_camp=link&h_session_id=yYmW4doqh9JCsq2I&h_src=YXBwX3NoYXJl&link_id=970772a04ea8&new_post_share_style_v2=0",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/corndogjpn2/status/2110194193402597694",
+   "count": 3
+  },
+  {
+   "url": "https://www.douyin.com/article/7696571479932144911`",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/3033779",
+   "count": 3
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=_QCcVv1sBYM",
+   "count": 3
+  },
+  {
+   "url": "https://bgm.tv/blog/376763",
+   "count": 3
+  },
+  {
+   "url": "https://www.threads.com/@snowmaple_official/post/DerX8SaGo1a",
+   "count": 3
+  },
+  {
+   "url": "https://www.threads.com/search?q=%E5%AD%B8%E5%9C%92%E5%81%B6%E5%83%8F%E5%A4%A7%E5%B8%AB&serp_type=tags",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/3059838`",
+   "count": 3
+  },
+  {
+   "url": "https://www.threads.com/tag/",
+   "count": 3
+  },
+  {
+   "url": "https://lm.ikale.io/docs/cli/detect/",
+   "count": 3
+  },
+  {
+   "url": "https://linux.do/t/topic/3064284/6?u=libc.so.6",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/BLEACHanimation/status/2114311018834792483",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/akanebanashi_pr/status/2114282910937391232",
+   "count": 3
+  },
+  {
+   "url": "https://www.ptt.cc/bbs/C_Chat/M.1792932204.A.E69.html`",
+   "count": 3
+  },
+  {
+   "url": "https://t.me/tginfoen/2200",
+   "count": 3
+  },
+  {
+   "url": "https://www.ptt.cc/bbs/C_Chat/M.1793266681.A.A54.html",
+   "count": 3
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=-E9QFYAyPYU",
+   "count": 3
+  },
+  {
+   "url": "https://www.instagram.com/reel/DcSZYKBtAK-/?mdxt=NWV6ZHEwcXdidGd5",
+   "count": 3
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=Tnkdv8tBu1g",
+   "count": 3
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_on=1&comment_root_id=318640242161#reply318640242161",
+   "count": 3
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_on=1&comment_root_id=318640242161&share_tag=s_i#reply318640242161",
+   "count": 3
+  },
+  {
+   "url": "https://t.bilibili.com/1265762239826100230?spm_id_from=333.1365.list.card_time.click",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/TheFluke999/article/2053655686765314432",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/tenken_official/status/2118004645750808738",
+   "count": 3
+  },
+  {
+   "url": "https://i.imgur.com/lp3lXzL.jpeg",
+   "count": 3
+  },
+  {
+   "url": "https://www.ptt.cc/bbs/C_Chat/M.1793834465.A.E9D.html",
+   "count": 3
+  },
+  {
+   "url": "https://x.com/sugoilite/status/2118329185366376804",
+   "count": 3
+  },
+  {
+   "url": "https://www.codefather.cn/post/2006991927538368513",
+   "count": 2
+  },
+  {
+   "url": "http://snapshot.debian.org/archive/debian/20250601T000000Z/`",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/metacu...`",
+   "count": 2
+  },
+  {
+   "url": "https://hermes-agent.nousresearch.com/install.sh",
+   "count": 2
+  },
+  {
+   "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/(x2",
+   "count": 2
+  },
+  {
+   "url": "https://gist.githubusercontent.com/B...`",
+   "count": 2
+  },
+  {
+   "url": "http://161.33.133.174:8899/FlClash-0.8.98-windows-amd64-setup.exe",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/BraveSail/tdesktop/releases`",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/BraveSail/mizugram`",
+   "count": 2
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/chat/completions`",
+   "count": 2
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/responses`（POST、OpenAI",
+   "count": 2
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/responses",
+   "count": 2
+  },
+  {
+   "url": "https://goproxy.cn,direct",
+   "count": 2
+  },
+  {
+   "url": "https://api.deepseek.com`",
+   "count": 2
+  },
+  {
+   "url": "https://hub.see.moe/report`",
+   "count": 2
+  },
+  {
+   "url": "https://hub.see.moe`",
+   "count": 2
+  },
+  {
+   "url": "http://127.0.0.1:19092/proxies",
+   "count": 2
+  },
+  {
+   "url": "http://127.0.0.1:19092/rules",
+   "count": 2
+  },
+  {
+   "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws/`",
+   "count": 2
+  },
+  {
+   "url": "https://discord.gg/deno",
+   "count": 2
+  },
+  {
+   "url": "https://deno.land/install.sh",
+   "count": 2
+  },
+  {
+   "url": "https://momo.talk",
+   "count": 2
+  },
+  {
+   "url": "http://161.33.133.174:39495/`",
+   "count": 2
+  },
+  {
+   "url": "https://api.abema.io/v1/video/programs/26-272_s1_p101`",
+   "count": 2
+  },
+  {
+   "url": "https://api.abema.io/v1/ip/geo`",
+   "count": 2
+  },
+  {
+   "url": "https://api.abema.io/v1/media/slots/{slot_id}`",
+   "count": 2
+  },
+  {
+   "url": "https://vod-abematv.akamaized.net/program/210-19_s1_p13/1080/playlist.m3u8?aver=",
+   "count": 2
+  },
+  {
+   "url": "https://api.cline.bot/api/v1`",
+   "count": 2
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1`",
+   "count": 2
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1(x2",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/BraveSail/lib_ui.git",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/BraveSail/mizugram/pull/new/merge/official-7.2.10",
+   "count": 2
+  },
+  {
+   "url": "https://image.p-c2-x.abema-tv.com/image/programs/203-28_s1_p26/thumb001.png`",
+   "count": 2
+  },
+  {
+   "url": "https://rr1---nfo.ouo.si/%5BDynamis%20One%5D%20Tensei%20shitara%20Ken%20deshita%20II%20-%2001%20%28B-Global%201920x1080%20HEVC%20AAC%20MKV%29%20%5BFD2FF223%5D.mkv",
+   "count": 2
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6890a25fa634…`",
+   "count": 2
+  },
+  {
+   "url": "https://api.abema.io/v1/video/programs/203-28_s1_p39`",
+   "count": 2
+  },
+  {
+   "url": "https://telegra.ph/file/3e17277703ddf4545f76b.png",
+   "count": 2
+  },
+  {
+   "url": "https://anilist.co/anime/204650",
+   "count": 2
+  },
+  {
+   "url": "https://p2.bahamut.com.tw/B/2KU/50/927c9f5bc756da4e313869a4e120k5i5.JPG`",
+   "count": 2
+  },
+  {
+   "url": "https://api.gamer.com.tw/mobile_app/anime/v3/constants.php`「直接看这个",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/ysoke145/status/2106108297497772434",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/ysoke145",
+   "count": 2
+  },
+  {
+   "url": "https://cdn3.ldstatic.com/original/4X/e/c/c/ecc0139dde63d601e4d9fb8a2ea6433b9d3f",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/u/paomian_1",
+   "count": 2
+  },
+  {
+   "url": "https://www.pixiv.net/tags/AI%E7%94%BB%E5%83%8F",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226(x2",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/tag/%E7%BA%AF%E6%B0%B4",
+   "count": 2
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV15LYw62Enb/?trackid=web_pegasus_0.router-web-pegasus-2479516-gfll4.1791068618884.239&spm_id_from=333.1007.tianma.3-3-9.click",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/tag/{tag}",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/a/status/123(x2",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/t/topic/2943678/3`",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/MirukuSeki3",
+   "count": 2
+  },
+  {
+   "url": "https://example.com/plain",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/giraffe_Mola/status/2106316141836882417`「没有缓存",
+   "count": 2
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/150374301`",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/BraveSail/shirobako",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/asora_jp/status/2107244453484265938",
+   "count": 2
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1q4ab6FECm",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/t/topic/2985951",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/McDonaldsJapan/status/2107025501768299005",
+   "count": 2
+  },
+  {
+   "url": "https://www.xiaohongshu.com/explore/",
+   "count": 2
+  },
+  {
+   "url": "https://www.xiaohongshu.com/404",
+   "count": 2
+  },
+  {
+   "url": "https://www.xiaohongshu.com/explore/6411cf99000000001300b6d9",
+   "count": 2
+  },
+  {
+   "url": "https://www.kuaishou.com/short-video/3xdmz2xiuaw7kkg",
+   "count": 2
+  },
+  {
+   "url": "https://www.threads.com/@threads/post/Dd9gVqImmyx",
+   "count": 2
+  },
+  {
+   "url": "https://www.instagram.com/reel/DW1o47EDPOI/",
+   "count": 2
+  },
+  {
+   "url": "https://www.threads.com/@threads/post/Dd9gVqImmyx（带",
+   "count": 2
+  },
+  {
+   "url": "https://www.threads.com/@a_li8557/post/DZJ5hTTGlju（正文含多个",
+   "count": 2
+  },
+  {
+   "url": "https://www.instagram.com/reel/DW1o47EDPOI/（caption",
+   "count": 2
+  },
+  {
+   "url": "https://www.instagram.com/reel/DWzs-vODzbt/",
+   "count": 2
+  },
+  {
+   "url": "https://0115765.com/archives/208357`",
+   "count": 2
+  },
+  {
+   "url": "https://www.bilibili.com`",
+   "count": 2
+  },
+  {
+   "url": "https://bgm.tv/blog/381120",
+   "count": 2
+  },
+  {
+   "url": "https://bgm.tv/rakuen/topic/subject/41119#post_410747",
+   "count": 2
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/e364ee62c5065befaa88ae7c7cfdde98.png",
+   "count": 2
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+   "count": 2
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV17x411w7KC",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/thsottiaux/status/2107576143285219799",
+   "count": 2
+  },
+  {
+   "url": "https://www.youtube.com/post/UgkxNoA6S6qRc2Yc7QXHcECdW9JHe7XLDpAB",
+   "count": 2
+  },
+  {
+   "url": "https://www.xiaohongshu.com/discovery/item/674051740000000007027a15?xsec_token=",
+   "count": 2
+  },
+  {
+   "url": "https://x.com/kinutani_yutaka/status/2107777443696431236",
+   "count": 2
+  },
+  {
+   "url": "https://ouo.si/css/flags/flags.min.css",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/BraveSail/hermes-plugin-wire-router`",
+   "count": 2
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/7e237bbef472bc2ce59765c902a1baf4.png",
+   "count": 2
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/tasks/5173",
+   "count": 2
+  },
+  {
+   "url": "https://mxqs6jjuhfqgr35wohr3dnnrse0zipzq.lambda-url.ap-southeast-1.on.aws/?dst=https%3A%2F%2Fwww.crunchyroll.com%2Fauth%2Fv1%2Ftoken",
+   "count": 2
+  },
+  {
+   "url": "https://www.crunchyroll.com/auth/v1/token",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/AcgEmtTool/dump_tools/actions/runs/38157121268",
+   "count": 2
+  },
+  {
+   "url": "https://www.youtube.com/feed/history\\",
+   "count": 2
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=_IBAJkEsuG4",
+   "count": 2
+  },
+  {
+   "url": "https://cdn3.ldstatic.com/",
+   "count": 2
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n689",
+   "count": 2
+  },
+  {
+   "url": "https://github.com",
+   "count": 2
+  },
+  {
+   "url": "https://www.threads.com/tag/%E7%94%B3%E8%AB%8B%E5%AF%A9%E5%88%A4",
+   "count": 2
+  },
+  {
+   "url": "https://bgm.tv`",
+   "count": 2
+  },
+  {
+   "url": "https://linux.do/t/topic/3059838`、`3064284/6`",
+   "count": 2
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1oxxY69Es4#reply318640242161",
+   "count": 2
+  },
+  {
+   "url": "https://i1.hdslb.com/bfs/new_dyn/31243dc9950cd8ee6c055e816a664b622859372.jpg@1416w_798h_1c.avif",
+   "count": 2
+  },
+  {
+   "url": "https://github.com/NousResearch/hermes-agent/issues/21587#issuecomment-4413421621",
+   "count": 1
+  },
+  {
+   "url": "https://mc.tencent.com/oO9XvQeS",
+   "count": 1
+  },
+  {
+   "url": "https://platform.xiaomimimo.com/docs/zh-CN/integration/hermes-agent",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/88a0c6843a98ab5a9b878f57560c66c5.png",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/59055de6cd6a7f0fab0bde2bb46c08d2.png",
+   "count": 1
+  },
+  {
+   "url": "https://site.anibt.net/api/releases/publish",
+   "count": 1
+  },
+  {
+   "url": "https://image.p-c2-x.abema-tv.com/image/programs/675-12_s1_p9/thumb001.png",
+   "count": 1
+  },
+  {
+   "url": "https://pic.bstarstatic.com/ogv/e52a70466c7e4f3eeeb0a4cad65232e7.png@900w_1200h_100Q_1c.jpg",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:56852/ui/tasks/3480`、`/tasks/3480`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:56852/api/v1/tasks/3480`",
+   "count": 1
+  },
+  {
+   "url": "https://ouo.si/view/31729`（Nyaa",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/telegramdesktop/tdesktop",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/33882092532",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/chen08209/FlClash.git",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/bre01/mihomo.git",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/bre01/mihomo/tree/codex/tailscale-kernel-forward",
+   "count": 1
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/ui/tasks/4521",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/149431603#1",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/149635020",
+   "count": 1
+  },
+  {
+   "url": "https://www.douyin.com/jingxuan?modal_id=7681253030809274598",
+   "count": 1
+  },
+  {
+   "url": "https://www.facebook.com/reel/1062069896432386/",
+   "count": 1
+  },
+  {
+   "url": "https://tailscale.com/docs/how-to/quickstart",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/XTLS/Xray-install/raw/main/install-release.sh",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/chen08209/FlCl...`",
+   "count": 1
+  },
+  {
+   "url": "https://core.telegram.org/bots/api#sendmessagedraft",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/login/device`(x2",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9090/configs`——确认配置生效",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9090/",
+   "count": 1
+  },
+  {
+   "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/gistfile1.yml`（刷新缓存可加个",
+   "count": 1
+  },
+  {
+   "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/(x3",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35127783525`",
+   "count": 1
+  },
+  {
+   "url": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/(x4",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35136054257",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35136054257`——**可以直接在网页下载**",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/flutter/flutter/issues/189724",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/ardera/flutter-engine-binaries-for-arm",
+   "count": 1
+  },
+  {
+   "url": "https://stackoverflow.com/questions/76025990/how-to-compile-android-arm64-release-linux-arm64-gen-snapshot-from-flutte",
+   "count": 1
+  },
+  {
+   "url": "https://dl.google.com/dl/android/maven2/co...`",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/metacubex/sing-tun/main/monitor_android.go`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35145914455",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35144255998",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35142521740",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35140028218",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/metacubex/sing-tun/main/monitor_android.go",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:8899/`（python3",
+   "count": 1
+  },
+  {
+   "url": "https://api.github.com/repos/BraveSail/FlClash/actions/artifacts/10470251336/zip(x3",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:8899/FlClash-0.8.98-windows-amd64.zip(x2",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:8899/FlClash-0.8.98-windows-amd64-setup.exe(x2",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:8899/`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/settings/tokens`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/FlClash/actions/runs/35152389639`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/TDesktop-x64/tdesktop/releases`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/tdesktop`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/telegramdesktop/tdesktop.git`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/tdesktop/settings",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/TDesktop-x64/tdesktop/releases`**（点版本号跳的就是它",
+   "count": 1
+  },
+  {
+   "url": "https://api-docs.deepseek.com/guides/responses_api/`",
+   "count": 1
+  },
+  {
+   "url": "https://api-docs.deepseek.com/guides/responses_api/`——需",
+   "count": 1
+  },
+  {
+   "url": "https://api-docs.deepseek.com/guides/responses_api/`（7,126",
+   "count": 1
+  },
+  {
+   "url": "https://bstar.kirara-fantasia.moe`",
+   "count": 1
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/tasks/4745`——用户要求",
+   "count": 1
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/tasks/4745`",
+   "count": 1
+  },
+  {
+   "url": "https://changelogs.ubuntu.com/meta-release-lts`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:18888/api/health?area=th&type=season\\",
+   "count": 1
+  },
+  {
+   "url": "https://momo.talk`（Cloudflare",
+   "count": 1
+  },
+  {
+   "url": "https://bstar.kirara-fantas...`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:18888/int...`",
+   "count": 1
+  },
+  {
+   "url": "https://app.bilibili.com/x/v2/account/myinfo`",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe(x4",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:18100/\\nexit=0",
+   "count": 1
+  },
+  {
+   "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/7bf29e8e0f78aea31c049cc969fb2b672493",
+   "count": 1
+  },
+  {
+   "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/a2f1d0c7afd91be9010292085908a6045480",
+   "count": 1
+  },
+  {
+   "url": "http://www.gstatic.com/generate_204\\n===",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe(x3",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe`(x2",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:18100/",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe/node?id=probe00000001\\",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe/lookup?id=probe-alias\\",
+   "count": 1
+  },
+  {
+   "url": "http://***@127.0.0.1",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:8899/",
+   "count": 1
+  },
+  {
+   "url": "https://pub.dev/api/archives/",
+   "count": 1
+  },
+  {
+   "url": "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-linux-arm64-release.zip\\",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/MetaCubeX/mihomo/Alpha/",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe\\n",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/chen08209/FlClash.git`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/chen08209/FlClash.git`（首次需",
+   "count": 1
+  },
+  {
+   "url": "https://gist.githubusercontent.com/BraveSail/28c883f58fc0aaeeff1670d1956863bb/raw/750fbe4ccec5f1cdc186dec8f88acc992f4a",
+   "count": 1
+  },
+  {
+   "url": "http://pc.lan:18443/`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:18999/api/...`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:18999/api/devices",
+   "count": 1
+  },
+  {
+   "url": "https://curl.se/libcurl/c/libcurl-errors.html(x4",
+   "count": 1
+  },
+  {
+   "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws/?dst=https%3A%2F%2Fwww.crunchyroll.com%2Fcontent%(x2",
+   "count": 1
+  },
+  {
+   "url": "https://gxz7idj3ydatia4xxyayfgovw40tbtmp.lambda-url.us-west-1.on.aws`",
+   "count": 1
+  },
+  {
+   "url": "https://mxqs6jjuhfqgr35wohr3dnnrse0zipzq.lambda-url.ap-southeast-1.on.aws`",
+   "count": 1
+  },
+  {
+   "url": "https://$API_ID.exe...`(x6",
+   "count": 1
+  },
+  {
+   "url": "https://gxz7idj3ydatia4xxyayf...`",
+   "count": 1
+  },
+  {
+   "url": "https://server-67564.prod.hosts.ooklaserver.net:8080/speedtest/random4000x4000.jpg`（IP",
+   "count": 1
+  },
+  {
+   "url": "https://server-675...`(x4",
+   "count": 1
+  },
+  {
+   "url": "https://api.github.com/repos/nxtrace/NTrace-core/relea...`",
+   "count": 1
+  },
+  {
+   "url": "https://www.nxtrace.org/downloads",
+   "count": 1
+  },
+  {
+   "url": "https://server-67564.prod....`",
+   "count": 1
+  },
+  {
+   "url": "https://server-67...`",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:39495/`、`api_bearer",
+   "count": 1
+  },
+  {
+   "url": "https://api.p-c3-e.abema-tv.com`",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:39495/`、`api_bearer=[len=366",
+   "count": 1
+  },
+  {
+   "url": "https://api.abema.io/v1/video/programs/26-272_s1_p101(x2",
+   "count": 1
+  },
+  {
+   "url": "http://161.33.133.174:39495/\\napi_bearer",
+   "count": 1
+  },
+  {
+   "url": "https://abema.tv...`",
+   "count": 1
+  },
+  {
+   "url": "https://developer.z",
+   "count": 1
+  },
+  {
+   "url": "https://ouo.si/view/33118`、infohash",
+   "count": 1
+  },
+  {
+   "url": "https://ouo.si/view/33118`",
+   "count": 1
+  },
+  {
+   "url": "https://ouo.si/view/33118",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/yt-dlp/yt...`",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/yt_dlp/extractor/abematv.py",
+   "count": 1
+  },
+  {
+   "url": "https://docs.cline.bot/llms.txt`、`https://raw.githubusercontent.com/cline/cline/main/docs/getting-started/clinepass.mdx`、`https://api.cline.bot/api/v1`",
+   "count": 1
+  },
+  {
+   "url": "https://api.cline.bot/api/v1/models`（公开目录",
+   "count": 1
+  },
+  {
+   "url": "https://api.cline.bot/api/v1/chat/completions`",
+   "count": 1
+  },
+  {
+   "url": "https://docs.cline.bot/getting-started/clinepass.md`",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/149431603`（3",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/149431603(x3",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:56852/`",
+   "count": 1
+  },
+  {
+   "url": "http://dash.kirara-fantasia.moe:56852`、ws",
+   "count": 1
+  },
+  {
+   "url": "http://dash.kirara-fantasia.moe:56852`（配临时",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1`、key_env",
+   "count": 1
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1`（协议面已验证是通的",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/v1`",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/g...`",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/lib_ui.git(x2",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1/responses(x2",
+   "count": 1
+  },
+  {
+   "url": "https://package...`",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1/chat/completions`（stock",
+   "count": 1
+  },
+  {
+   "url": "https://opencode.ai/zen/go/v1/chat/completions",
+   "count": 1
+  },
+  {
+   "url": "https://bravesail.github.io/mizugram/check`",
+   "count": 1
+  },
+  {
+   "url": "https://bravesail.githu...`",
+   "count": 1
+  },
+  {
+   "url": "https://bravesail.github.io...`",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/6890a25fa63414877080845e015e3437.png`",
+   "count": 1
+  },
+  {
+   "url": "https://anibt.net/grou...`",
+   "count": 1
+  },
+  {
+   "url": "https://rr1---nfo.ouo.si/%5BDynamis%20One%5D%20Tensei%20shitara%20Ken%20deshita%20II%20-%2001%20%28B-Global%201920x108",
+   "count": 1
+  },
+  {
+   "url": "https://hub.see.moe/?token=HmF42IzQ56w-Kv9yJr1yKludF9M8EluTJmppYXvg-lo",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/80321cc41cf121ef50dd791b1771fd19.png",
+   "count": 1
+  },
+  {
+   "url": "https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}",
+   "count": 1
+  },
+  {
+   "url": "https://t.me/c/2611750880/36692/42397`",
+   "count": 1
+  },
+  {
+   "url": "https://pic.bstarstatic.com/ogv/68db17492efc5cfa742f4ca33d53d49d.png@900w_1200h_100Q_1c.jpg`",
+   "count": 1
+  },
+  {
+   "url": "https://apkcombo.com/%E5%B7%B4%E5%93%88%E5%A7%86%E7%89%B9%E5%8B%95%E7%95%AB%E7%98%8B/tw.com.gamer.android.animad/downl(x2",
+   "count": 1
+  },
+  {
+   "url": "https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}(x2",
+   "count": 1
+  },
+  {
+   "url": "https://apkpure.com/animad/tw.com.gamer.android.animad",
+   "count": 1
+  },
+  {
+   "url": "https://apkcombo.com/checkin",
+   "count": 1
+  },
+  {
+   "url": "https://apkcombo.com/animad/tw.com.gamer.android.animad/",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/Haruhi_Smith/status/2106215481665540155",
+   "count": 1
+  },
+  {
+   "url": "https://api.twitter.com/graphql/kPLTRmMnzbPTv70___D06w/TweetResultByRestId",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/graphql/query",
+   "count": 1
+  },
+  {
+   "url": "https://www.instagram.com/graphql/query",
+   "count": 1
+  },
+  {
+   "url": "https://api22-normal-c-alisg.tiktokv.com/aweme/v1/feed/",
+   "count": 1
+  },
+  {
+   "url": "https://api.bilibili.com/x/web-interface/view/detail?bvid=",
+   "count": 1
+  },
+  {
+   "url": "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=",
+   "count": 1
+  },
+  {
+   "url": "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=",
+   "count": 1
+  },
+  {
+   "url": "https://weibo.com/ajax/statuses/show?id=",
+   "count": 1
+  },
+  {
+   "url": "https://weibo.com/tv/api/component",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/ajax/illust/{id}",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/（否则",
+   "count": 1
+  },
+  {
+   "url": "https://mp.weixin.qq.com/s/",
+   "count": 1
+  },
+  {
+   "url": "https://www.zhihu.com/api/v4/pins/{id}（实测无需",
+   "count": 1
+  },
+  {
+   "url": "https://zhuanlan.zhihu.com/api/articles/{id}",
+   "count": 1
+  },
+  {
+   "url": "https://tieba.baidu.com/c/f/pb/page_pc（POST",
+   "count": 1
+  },
+  {
+   "url": "https://m.douban.com/rexxar/api/v2/group/topic/{id}（移动版",
+   "count": 1
+  },
+  {
+   "url": "https://m.douban.com/",
+   "count": 1
+  },
+  {
+   "url": "https://www.coolapk.com/feed/",
+   "count": 1
+  },
+  {
+   "url": "https://h5.pipix.com/ppx/item/",
+   "count": 1
+  },
+  {
+   "url": "https://api.xiaoheihe.cn/bbs/app/link/tree（GET",
+   "count": 1
+  },
+  {
+   "url": "https://share.xiaochuankeji.cn/planck/share/post/detail_h5（POST",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/oto_jampan/status/2105728932154835261",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/xx1_ro/status/2106408369708040527",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/tags/{tag}`、twitter",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/users/{illust.author_id}`、twitter",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/{tweet.author_handle}`（两处",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226`、`https://linux.do/t/topic/2979226/11`、`https://linux.do/t/2979226/4`、`https://linux.do/t/topic/2977803/11`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/shirobako/settings`(x3",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/ysoke145/status/2106108297497772434(x2",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/ysoke145(x2",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/tags/(x2",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/artworks/149431603(x2",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/2979226*",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226*",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/ParseHub/settings`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/ParseHub/settings",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/orgs/community/discussions/157487",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/ysoke145/status/2106108297497772434*",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/tag/…",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226`（1",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/2979226/4`",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/zane_os/status/2106232516009144693(x3",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/tag/%E7%BA%AF%E6%B0%B4(x2",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/u/paomian_1(x2",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n239",
+   "count": 1
+  },
+  {
+   "url": "https://space.bilibili.com/224267770",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/NuiNayu/status/2106025053351784940",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/a/status/123",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/...↵https://b23.tv/",
+   "count": 1
+  },
+  {
+   "url": "https://Bilibili.com/video/BV1",
+   "count": 1
+  },
+  {
+   "url": "https://X.com/a/status/123",
+   "count": 1
+  },
+  {
+   "url": "https://b23.tv/abc123",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/...就这样",
+   "count": 1
+  },
+  {
+   "url": "https://space.bilibili.com/1157901692",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV15LYw62Enb/?trackid=web_pegasus_0.router-web-pegasus-2479516-gfll4.1791068618884.239&",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/topic/2979226`**",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/topic/2977803/11`**",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/BArchiveWarfare/",
+   "count": 1
+  },
+  {
+   "url": "https://t.bilibili.com/1255035275497701377?spm_id_from=333.1365.list.card_time.click(x2",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1UqHi6uEie`",
+   "count": 1
+  },
+  {
+   "url": "https://d.apkpure.com/b/XAPK/make.more.r2d2.cellular_z.play?version=latest",
+   "count": 1
+  },
+  {
+   "url": "https://d.apkpure.com/b/XAPK/make.more.r2d2.play.cellular_pro?versionCode=110",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/i/status/2106362173111034087`",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/MirukuSeki3/status/2105625907042132005(x3",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/xxx/status/123(x3",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/MirukuSeki3(x2",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/huacn...`",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/i/status/2106362173111034087",
+   "count": 1
+  },
+  {
+   "url": "https://space.bilibili.com/12345",
+   "count": 1
+  },
+  {
+   "url": "https://example.com/plain(x4",
+   "count": 1
+  },
+  {
+   "url": "https://www.pixiv.net/`",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/z-...`",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/hashtag/%E6%B6%BC%E5%AE%AE%E3%83%8F%E3%83%AB%E3%83%92%E3%81%AE%E6%86%82%E9%AC%B1?src=hashtag_click",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/anag2bgod/status/2106498295212491199",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/@bestpika/post/DeHnGiigRgh",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/Asora_JP/status/2107304853395439714",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1q4ab6FECm`",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/McDonaldsJapan/status/2107025501768299005`",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com`+UA、`change_source`",
+   "count": 1
+  },
+  {
+   "url": "https://www.kuaishou.com/short-video/3xdmz2xiuaw7kkg(x2",
+   "count": 1
+  },
+  {
+   "url": "https://t.co/cl4HMa5dzc**`",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/@BlueArchive_JP`（主页",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/McDonaldsJapan",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/@BlueArchive_JP",
+   "count": 1
+  },
+  {
+   "url": "https://bangumi.github.io/api/`",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/blog/381120`",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/help/bbcode`",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/group/topic/472394`",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/user/{uid}`",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/subject/topic/41209`（条目讨论",
+   "count": 1
+  },
+  {
+   "url": "https://youtube.com/shorts/hnSeq_P3jAo(x3",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/blog/381120(x2",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/u/MystDove",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/thsottiaux",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/ikizulive_staff",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/Apple/status/2104922864910815586",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/sim_dr1/status/2107780697251574187",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/ep/1738535#post_2241753",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/ep/1738535/edit",
+   "count": 1
+  },
+  {
+   "url": "https://patch.bgm38.tv/edit/episode/1738535",
+   "count": 1
+  },
+  {
+   "url": "http://youtube.com/post/Ugkxzq0QbgtS1VgHo8hIjZwpiwshZSvd-JtO",
+   "count": 1
+  },
+  {
+   "url": "https://www.snapchat.com/spotlight/W7_…AAAAAA`（匿名",
+   "count": 1
+  },
+  {
+   "url": "https://cf-st.sc-cdn.net/d/",
+   "count": 1
+  },
+  {
+   "url": "https://www.snapchat.com/@shreypatel57`、`published_at=2021-11-24`",
+   "count": 1
+  },
+  {
+   "url": "https://yt3.ggpht.com/BDxqRAXYZJaY_up2qZA0tBJZunPylTEr06qT",
+   "count": 1
+  },
+  {
+   "url": "https://video-nrt1-1.xx.fbcdn.net/o1/v/t2/f2/m366/AQO5kCBW",
+   "count": 1
+  },
+  {
+   "url": "https://cf-st.sc-cdn.net/d/kKJHIR1QAznRKK9jgYYDq.1034.IRZX",
+   "count": 1
+  },
+  {
+   "url": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=QRJaXLAU-eA",
+   "count": 1
+  },
+  {
+   "url": "http://youtube.com/post/UgkxNoA6S6qRc2Yc7QXHcECdW9JHe7XLDpAB",
+   "count": 1
+  },
+  {
+   "url": "https://twitter.com/kon_kokine/status/2107756845704360201",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=dXclVwpFvZY",
+   "count": 1
+  },
+  {
+   "url": "https://core.telegram.org/bots/serverless",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9999/css/flags/flags.min.css",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9999/img/flags/hk.svg",
+   "count": 1
+  },
+  {
+   "url": "https://a.nel.cloudflare.com/report/v4?s=HhXt5aUvGRJNtzE2JYLR3pfYuNnhTj3sVCi%2Fux4ubjjoKLSIsIjbIMQtsOlDtJCPac4K8F9MCunQ8SQbnITgJEKR3rNNWJ4%2B%2Feg2jXCHgQQpKO1ieDAnW1QeiVtim7m52c5wv%2Bw%3D",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=V73Kz89G1HA`",
+   "count": 1
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/responses`（545",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9200",
+   "count": 1
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/responses`（新",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.wiki/assets/flags/",
+   "count": 1
+  },
+  {
+   "url": "https://ouo.si/view/33412`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9200(x2",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/BraveSail/hermes-plugin-wire-router",
+   "count": 1
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/responses`（之前是",
+   "count": 1
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1/responses`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9200/n...`",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9200/nyaapantsu/_mapping",
+   "count": 1
+  },
+  {
+   "url": "http://127.0.0.1:9200/nyaapant...`",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1q3Z9BoE9G/?spm_id_from=333.337.search-card.all.click&vd_source=28affb1483963bd2b4d1c30eb35d92b6",
+   "count": 1
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/22e86a31a4e42991f9acc0e1c9719d15.png",
+   "count": 1
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/tasks/5205",
+   "count": 1
+  },
+  {
+   "url": "https://www.crunchyroll.com/content/",
+   "count": 1
+  },
+  {
+   "url": "https://weibo.com/1886672467/Rm1w5iaAD?pagetype=profilefeed",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/@snowmaple_official/post/DeTKrdrGjrZ",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1wLpv68EnA/?spm_id_from=333.1387.upload.video_card.click&vd_source=28affb1483963bd2b4d1c30eb35d92b6",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/910f94b62f4d0ba6cf9d8b86cd450596.png",
+   "count": 1
+  },
+  {
+   "url": "https://www.crunchyroll.com/watch/GE00375144JAJP/just-colleagues",
+   "count": 1
+  },
+  {
+   "url": "https://imgsrv.crunchyroll.com/catalog/crunchyroll/4e3b77b746a0facec1770c1b0c30144f.png",
+   "count": 1
+  },
+  {
+   "url": "https://www.crunchyroll.com/watch/GE00385718ZHCN/episode-4",
+   "count": 1
+  },
+  {
+   "url": "https://www.crunchyroll.com/content/v2/discover/browse?type=episode&sort_by=newly_added&n=100&from_date=1791380396436&to_date=1791639596436&preferred_audio_language=ja-JP&locale=zh-TW",
+   "count": 1
+  },
+  {
+   "url": "https://image.p-c2-x.abema-tv.com/image/programs/12-27_s1_p80/thumb001.png",
+   "count": 1
+  },
+  {
+   "url": "https://abema.tv/channels/anime-live/slots/9FYQyoHb3meybd",
+   "count": 1
+  },
+  {
+   "url": "https://t.me/c/2611750880/13289",
+   "count": 1
+  },
+  {
+   "url": "https://trycloudflare.com/",
+   "count": 1
+  },
+  {
+   "url": "https://image.p-c2-x.abema-tv.com/image/programs/5-79_s1_p36/thumb001.png",
+   "count": 1
+  },
+  {
+   "url": "https://dash.kirara-fantasia.moe/tasks/5256",
+   "count": 1
+  },
+  {
+   "url": "https://core.telegram.org/bots/...`",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n44(x2",
+   "count": 1
+  },
+  {
+   "url": "http://ip-api.com/json/`",
+   "count": 1
+  },
+  {
+   "url": "https://api.p-c3-e.abema-tv.com/v1/contentlist/episodeGroups/{series_id}_eg0/contents\\",
+   "count": 1
+  },
+  {
+   "url": "https://api.abema.io/v1/video/series/{series_id}\\",
+   "count": 1
+  },
+  {
+   "url": "https://api.bilibili.tv/intl/gateway/v2/ogv/view/app/season?s_locale=zh_SG&mobi_app=bstar_a&platform=android&ep_id={ep",
+   "count": 1
+  },
+  {
+   "url": "https://api.github.com/repos/morluto/rea",
+   "count": 1
+  },
+  {
+   "url": "https://rea.tools/ge",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n11",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/corndogjpn2/status/2110194193402597694?s=20",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/corndogjpn2/status/2110194193402597694?s\\u003d20",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/corndogjpn2",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=csSN8XuN1u4",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/SHASU...`(x2",
+   "count": 1
+  },
+  {
+   "url": "https://api.github.com/repos/LuanRT/googlevideo/contents/src/protos",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=",
+   "count": 1
+  },
+  {
+   "url": "https://api.xiaoheihe.cn/v3/bbs/app/api/web/share?h_camp=link&h_session_id=yYmW4doqh9JCsq2I&h_src=YXBwX3NoYXJl&link_id",
+   "count": 1
+  },
+  {
+   "url": "https://tetsuryo-anime.com/",
+   "count": 1
+  },
+  {
+   "url": "https://tetsudou-musume.net/index.php",
+   "count": 1
+  },
+  {
+   "url": "https://twitter.com/tateishi_aoba",
+   "count": 1
+  },
+  {
+   "url": "https://...douyinpic.com/",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/src/core/SabrStream.ts",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/protos/video_streaming/video_playback_abr_request.proto",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/protos/misc/common.proto",
+   "count": 1
+  },
+  {
+   "url": "https://raw.githubusercontent.com/LuanRT/googlevideo/main/examples/downloader/vod-example.ts",
+   "count": 1
+  },
+  {
+   "url": "https://lf-dy-gr-sourcecdn.bytegecko.com/obj/byte-gurd-source-gr/search/fe/douyin/morphling_high/douyin_article_detail/{feed_v2,index}/template.js`",
+   "count": 1
+  },
+  {
+   "url": "https://www.douyin.com/article/7696571479932144911`（网页版跳登录墙",
+   "count": 1
+  },
+  {
+   "url": "https://...douyinpic.com/...~tplv-dy-long-article:0:0.heic",
+   "count": 1
+  },
+  {
+   "url": "https://linux.do/t/topic/3033779`",
+   "count": 1
+  },
+  {
+   "url": "https://cdn3.ldstatic.com/(x5",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n17",
+   "count": 1
+  },
+  {
+   "url": "https://`",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n683",
+   "count": 1
+  },
+  {
+   "url": "https://cdn3.ldstatic.com/...svg",
+   "count": 1
+  },
+  {
+   "url": "https://cdn3.ldstatic.com/original/4X/5/9/b/59b3bf7046f6...`",
+   "count": 1
+  },
+  {
+   "url": "https://cdn3.ldstatic.com/....svg",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1034",
+   "count": 1
+  },
+  {
+   "url": "https://core.teleg",
+   "count": 1
+  },
+  {
+   "url": "https://core.telegram.org/bots/api#rich-message-formatting",
+   "count": 1
+  },
+  {
+   "url": "https://lf-douyin-search-fe.bytetos.c...`",
+   "count": 1
+  },
+  {
+   "url": "https://lf-dy-g...`",
+   "count": 1
+  },
+  {
+   "url": "https://gitee.com/.../claude-code-source-code.git",
+   "count": 1
+  },
+  {
+   "url": "https://douyinpic.com/",
+   "count": 1
+  },
+  {
+   "url": "https://youtu.be/WUm_Yg4MNoo`",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/tag/{name}`（实测",
+   "count": 1
+  },
+  {
+   "url": "https://download.bt.cn/src/php-8.5.12.tar.gz`",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/tag/%E7%94%B3%E8%AB%8B%E5%AF%A9%E5%88%A4(x2",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/@snowmaple_official(x2",
+   "count": 1
+  },
+  {
+   "url": "https://cf1-node.aapan...`",
+   "count": 1
+  },
+  {
+   "url": "https://cf1-node.aapanel.com/src/php-8.5.12.tar.gz",
+   "count": 1
+  },
+  {
+   "url": "https://www.threads.com/search?q=申請審判&serp_type=tags",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n693",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n25",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n690",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/person/33229`",
+   "count": 1
+  },
+  {
+   "url": "https://b23.tv/G1VPROs",
+   "count": 1
+  },
+  {
+   "url": "https://api.telegram.org`",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com`",
+   "count": 1
+  },
+  {
+   "url": "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=1261967911063388214&features=itemOpusStyle,opusBigCover,onlyfansVote`",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/opus/1261967911063388214`",
+   "count": 1
+  },
+  {
+   "url": "https://i.imgur.com/xxx.jpeg`",
+   "count": 1
+  },
+  {
+   "url": "https://i.imgur.com/Oo9D6mx.jpeg`、`https://i.imgur.com/tQm2XSB.jpeg`（当前渲染",
+   "count": 1
+  },
+  {
+   "url": "https://m.bilibili.com/opus/1261967911063388214`（【阿洛娜的日程笔记（第32期",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n7",
+   "count": 1
+  },
+  {
+   "url": "https://github.com/B...`",
+   "count": 1
+  },
+  {
+   "url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+   "count": 1
+  },
+  {
+   "url": "https://api.ipify.org",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/opus/",
+   "count": 1
+  },
+  {
+   "url": "https://i.imgur.com/Oo9D6mx.jpeg`、`https://i.imgur.com/tQm2XSB.jpeg`",
+   "count": 1
+  },
+  {
+   "url": "https://m.bilibili.com/opus/1261967911063388214`",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html(x3",
+   "count": 1
+  },
+  {
+   "url": "https://api.commandcode.ai/provider/v1\\nopencode-go",
+   "count": 1
+  },
+  {
+   "url": "https://www.instagram.com/`",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1070",
+   "count": 1
+  },
+  {
+   "url": "https://i.mopix.cc/YRTfNb.jpg\\n渲染长度",
+   "count": 1
+  },
+  {
+   "url": "https://i.mopix.cc/YRTfNb.jpg\\",
+   "count": 1
+  },
+  {
+   "url": "https://t.me/tginfoen/2200?embed=1&mode=tme",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1066",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/TheFluke999/article/2053655686765314432`：标题「奶龙和奶蛙如何区分以及二者之间的关系",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_on=1&comment_root_id=318640242161#reply318640242161`",
+   "count": 1
+  },
+  {
+   "url": "https://m.bilibili.com/opus/1261967911063388214`（detail",
+   "count": 1
+  },
+  {
+   "url": "https://t.bilibili.com/1265762239826100230`（banner",
+   "count": 1
+  },
+  {
+   "url": "https://x.com/TheFluke999/article/2053655686765314432`",
+   "count": 1
+  },
+  {
+   "url": "https://www.ptt.cc/bbs/C_Chat/M.1792932204.A.E69.html`（作者",
+   "count": 1
+  },
+  {
+   "url": "https://bgm.tv/index/77872`（409",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1oxxY69Es4#reply318640242161(x2",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1098",
+   "count": 1
+  },
+  {
+   "url": "https://docs.pytest.org/en/stable/how-to/capture-warnings.html\\n1090",
+   "count": 1
+  },
+  {
+   "url": "https://www.bilibili.com/video/BV1oxxY69Es4?comment_root_id=318640242161#reply318640242161",
+   "count": 1
+  },
+  {
+   "url": "https://core.telegram.org/api/bots/inline",
+   "count": 1
+  }
+ ]
+}
