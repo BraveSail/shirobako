@@ -137,13 +137,33 @@ _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
 ]
 
 
+def _unescape_markdown(text: str) -> str:
+    """还原 markdown 转义（``\\#`` → ``#``）。
+
+    为什么需要: ``format_text`` 会给平台原文加反斜杠转义（那是给 **markdown 字符串
+    通道**用的 —— 服务端解析 markdown 时会把 ``\\#`` 还原成 ``#``）。但富文本现在
+    一律走 **blocks 通道**，那段文本被当成**字面量**塞进 ``RichText`` ——
+    没人再做还原，用户就看到字面的 ``\\#C_Chat``。
+
+    转义清单与 ``helpers._TG_RESERVED`` 一致（官方 18 个保留字符）。
+    """
+    if not text or "\\" not in text:
+        return text
+    return re.sub(r"\\([_\*\[\]\(\)~`>#\+\-=\|\{\}\.!])", r"\1", text)
+
+
 def parse_inline(text: str) -> str | list:
     """把一行 markdown 拆成 Richtext 片段 (无格式时直接返回原字符串)。
 
     只处理正文里常见的几种行内标记; 链接单独处理 url 参数。
+
+    ⚠️ 入口先做 :func:`_unescape_markdown`：这段文本来自 ``format_text``，它给
+    平台原文加过 markdown 反斜杠转义。blocks 通道不解转义（那是 markdown 通道的
+    事），不还原就会把反斜杠原样发出去。
     """
     if not text:
         return text
+    text = _unescape_markdown(text)
     parts: list = []
     pos = 0
     while pos < len(text):
@@ -329,28 +349,39 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
         # ── 折叠容器 ──
         # **markdown 路径由服务端解析这两个标签, blocks 路径必须自己认** ——
         # 不认的话标签会原样进段落, 用户看到字面的 <details>, 里面的内容也全散架。
-        # 敏感内容走 blocks, 所以只有敏感内容会这样 (与 <tg-time> 同一类坑)。
+        #
+        # ⚠️ **必须按嵌套深度配对**: 折叠块里可以再嵌折叠块（PTT 那种「推文（261 條）」
+        # 里面又套一个「展开全文」）。以前只找**第一个** ``</details>``，内层一闭合就
+        # 判定结束 ⇒ 内层的闭合标签和外层的整段内容都漏进正文，用户看到字面的
+        # ``</details>``。
         if stripped.startswith("<details>"):
             flush_paragraph(paragraph)
             chunk: list[str] = []
-            one_line = re.match(r"<details>(.*)</details>\s*$", stripped, re.S)
-            if one_line:
-                chunk.append(one_line.group(1))
+            rest = stripped[len("<details>"):]
+            same_line = re.fullmatch(r"(.*)</details>\s*", rest, re.S)
+            if same_line and "<details>" not in same_line.group(1):
+                # 整个折叠块在同一行（``<details><summary>…</summary>x</details>``）
+                chunk.append(same_line.group(1))
                 i += 1
             else:
-                chunk.append(stripped[len("<details>") :])
+                depth = 1 + rest.count("<details>") - rest.count("</details>")
+                chunk.append(rest)
                 i += 1
-                while i < len(lines) and "</details>" not in lines[i]:
-                    chunk.append(lines[i])
-                    i += 1
-                if i < len(lines):
-                    chunk.append(lines[i].split("</details>", 1)[0])
+                while i < len(lines) and depth > 0:
+                    line = lines[i]
+                    if depth == 1 and "</details>" in line:
+                        chunk.append(line.split("</details>", 1)[0])
+                        i += 1
+                        depth = 0
+                        break
+                    chunk.append(line)
+                    depth += line.count("<details>") - line.count("</details>")
                     i += 1
             inner_raw = "\n".join(chunk)
             sm = re.search(r"<summary>(.*?)</summary>", inner_raw, re.S)
             summary = sm.group(1).strip() if sm else ""
             body = inner_raw[sm.end() :] if sm else inner_raw
-            # 递归: 内部可能是段落/媒体/图集 —— 媒体占位符照样要换成打码块
+            # 递归: 内部可能是段落/媒体/图集/嵌套折叠 —— 媒体占位符照样要换成打码块
             blocks.append(
                 InputRichBlockDetails(
                     parse_inline(summary),
