@@ -1,0 +1,39 @@
+{
+ "url": "https://linux.do/t/topic/3064284",
+ "markdown": "# 这下真动摇了，手里的5090要出吗\n\n**<a href=\"https://linux.do/u/Donquixote\">@Donquixote</a>** · #1\n\n---\n\n哥几个这下真动摇了，当时配的时候想的是不管涨跌自用无所谓\n\n  \n基本就用来打游戏（买的时候当然想的是绝对用来好好科研了hhhhh），训练模型都用的服务器（不是租的服务器，有充足的计算资源），做的大模型相关这5090也确实不够看  \n跌也就算了，完全没想到涨这么凶直接翻倍了，ber，这下真动摇了，因为确实也没那么刚需，神了，个人感觉也涨到顶了，要不要出啊\n\n<a href=\"https://linux.do/tag/%E7%BA%AF%E6%B0%B4\">#纯水</a> <a href=\"https://linux.do/tag/%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD\">#人工智能</a> <a href=\"https://linux.do/tag/%E6%98%BE%E5%8D%A1\">#显卡</a>\n\n---\n\n<footer><tg-time unix=\"1792741936\" format=\"Dt\">2026年10月23日 15:52</tg-time> · 1,871 查看 · 6 点赞 · <a href=\"https://linux.do/t/topic/3064284\">来源（linux.do）</a></footer>",
+ "blocks": [
+  {
+   "type": "InputRichBlockSectionHeading",
+   "text": "这下真动摇了，手里的5090要出吗",
+   "size": 1
+  },
+  {
+   "type": "InputRichBlockParagraph",
+   "text": "@Donquixote · #1"
+  },
+  {
+   "type": "InputRichBlockDivider"
+  },
+  {
+   "type": "InputRichBlockParagraph",
+   "text": "哥几个这下真动摇了，当时配的时候想的是不管涨跌自用无所谓"
+  },
+  {
+   "type": "InputRichBlockParagraph",
+   "text": "基本就用来打游戏（买的时候当然想的是绝对用来好好科研了hhhhh），训练模型都用的服务器（不是租的服务器，有充足的计算资源），做的大模型相关这5090也确实不够看  \n跌也就算了，完全没想到涨这么凶直接翻倍了，ber，这下真动摇了，因为确实也没那么刚需，神了，个人感觉也涨到顶了，要不要出啊"
+  },
+  {
+   "type": "InputRichBlockParagraph",
+   "text": "#纯水 #人工智能 #显卡"
+  },
+  {
+   "type": "InputRichBlockDivider"
+  },
+  {
+   "type": "InputRichBlockFooter",
+   "text": "2026年10月23日 15:52 · 1,871 查看 · 6 点赞 · 来源（linux.do）"
+  }
+ ],
+ "markdown_len": 635,
+ "block_count": 8
+}
