@@ -59,7 +59,7 @@ from ...types import (
     VideoRef,
 )
 from ...utils.downloader import download
-from ...utils.helpers import SecretCookie, image_ext_from_url, profile_url
+from ...utils.helpers import image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 #: 直播从**当前时刻**抓多久（秒）。直播的流没有时长, 取流靠墙钟停, 这里定义目标时长；
@@ -109,7 +109,16 @@ class YtbParse(BaseParser):
         return YtbVideoParseResult(
             info=video,
             selected=selected,
-            cookie=str(SecretCookie(cookie_value)) if cookie_value else None,
+            # ⚠️ 这里**必须**用真实值重建 cookie 串。
+            # 曾经写成 ``str(SecretCookie(cookie_value))`` —— 那走的是
+            # ``SecretCookie.__str__``，它故意返回**脱敏**形式
+            # （``SAPISID=**********``，防日志泄漏）。结果 SABR 工具收到一串
+            # 假 cookie，用它生成的 PO token 绑定了假身份 ⇒
+            # ``Stream protection attestation rejected``。
+            # 症状极具误导性：匿名视频照样能下（假 cookie 等于匿名），
+            # 只有需要登录态的视频才失败，于是看起来像"cookie 失效"或
+            # "SABR 协议变了"，实际是序列化掉了真值。
+            cookie="; ".join(f"{k}={v}" for k, v in cookie_value.items()) if cookie_value else None,
         )
 
     @staticmethod
