@@ -82,8 +82,88 @@ def is_login_state(cookies: dict[str, str]) -> tuple[bool, str]:
         return False, f"缺 {'/'.join(SAPISID_COOKIES)} 中的任一项"
     return True, "ok"
 
-#: curl 按域匹配；两套域都写（YouTube 与 Google 账号体系互相依赖）
-DOMAIN_SETS = (".youtube.com", ".google.com")
+#: 两套域：YouTube 自己的滚动令牌属于 ``.youtube.com``，Google 账号体系的
+#: 长期登录项（``SID`` / ``HSID`` / ``SSID`` / ``SAPISID``）属于 ``.google.com``。
+DOMAIN_YOUTUBE = ".youtube.com"
+DOMAIN_GOOGLE = ".google.com"
+
+#: ★ **属于 ``.google.com`` 的登录项**。这些**只**注入 ``.google.com``。
+#:
+#: 为什么这条是根因：以前给每个 cookie 都注**两个**域 —— 把 ``SAPISID`` 也注到
+#: ``.youtube.com``。Chromium 对 ``.google.com`` 专属项在别的域下会**直接丢弃**，
+#: 于是导出时 ``SAPISID`` / ``SID`` / ``HSID`` / ``SSID`` 全没了，只剩
+#: ``LOGIN_INFO`` + ``__Secure-3*``（会话令牌）。
+#:
+#: 后果是致命的：下一次刷新拿这份残缺 cookie 打开 youtube.com，``ytcfg LOGGED_IN``
+#: 是 ``false``，脚本正确地拒绝写回并 ``exit 1`` —— 但**长期项已经在上一次"成功"
+#: 的刷新里被洗掉了**，从此每 6 小时失败一次，直到有人发现。
+GOOGLE_ONLY_COOKIES = frozenset(
+    {
+        "SID",
+        "HSID",
+        "SSID",
+        "APISID",
+        "SAPISID",
+        "LSID",
+        "OSID",
+        "SIDCC",
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID",
+        "__Secure-1PSIDTS",
+        "__Secure-3PSIDTS",
+        "__Secure-1PSIDCC",
+        "__Secure-3PSIDCC",
+        "ACCOUNT_CHOOSER",
+        "NID",
+        "AEC",
+        "SOCS",
+        "CONSENT",
+        "SEARCH_SAMESITE",
+        "__Host-GAPS",
+        "LSOLH",
+    }
+)
+
+
+def domains_for(cookie_name: str) -> tuple[str, ...]:
+    """这个 cookie 该注入哪些域。
+
+    ★ **登录凭证必须两个域都注。** 这是实测出来的，别想当然：
+
+    | 注入方式 | ytcfg LOGGED_IN |
+    | --- | --- |
+    | 只注 ``.google.com`` | **False**（登录墙） |
+    | 只注 ``.youtube.com`` | False |
+    | **两个域都注 + sameSite=None** | **True** |
+
+    原因：``SAPISID``/``SID``/``__Secure-3PAPISID`` 属于 ``.google.com``，
+    浏览器按域规则**不会**把它们发到 ``www.youtube.com`` 的请求里；而 YouTube
+    的前端要靠这些凭证确认登录态。curl_cffi 不分域（整串塞 header）所以一直能用，
+    Playwright 严格按域过滤 ⇒ 页面看到的是匿名会话。
+
+    所以这里**故意**双注 —— 但属性必须对（见 ``cookie_attrs``）:
+    ``sameSite="None"`` + ``secure=True``，否则跨域时被 Chromium 丢掉
+    （这正是 2026-10-23 那次把 ``SAPISID`` 洗掉的机制：当时 secure=True 但
+    sameSite 缺省 Lax）。
+    """
+    if cookie_name in GOOGLE_ONLY_COOKIES:
+        return (DOMAIN_GOOGLE, DOMAIN_YOUTUBE)
+    return (DOMAIN_YOUTUBE,)
+
+
+def cookie_attrs(cookie_name: str) -> dict:
+    """注入一个 cookie 的属性。
+
+    ``sameSite`` 必须显式给：``__Secure-`` 前缀与跨域场景要求 ``None``，
+    缺省 Lax 会让跨域子请求丢掉它。
+    """
+    return {
+        "secure": True,
+        "httpOnly": False,
+        "sameSite": "None" if cookie_name in GOOGLE_ONLY_COOKIES else "Lax",
+    }
 
 
 def log(msg: str) -> None:
@@ -129,7 +209,8 @@ def write_netscape(cookies: dict[str, str], expires: dict[str, int], path: Path)
         exp = expires.get(k, 0)
         if not exp or exp < 0:
             exp = 0
-        for domain in DOMAIN_SETS:
+        # 登录凭证写两个域（curl 按域匹配，youtube.com 的请求要能看到它们）
+        for domain in domains_for(k):
             lines.append(f"{domain}\tTRUE\t/\tTRUE\t{exp}\t{k}\t{v}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.chmod(0o600)
@@ -177,6 +258,7 @@ async def refresh(*, headless: bool = True) -> dict[str, str]:
         # 这是真实踩过的坑（2026-10-16）, 分布写死不要改。
         # ``__Secure-`` 前缀必须 ``secure=True``, 否则 Chromium 直接拒收
         # (报 "Invalid cookie fields")。
+        # ★ 登录凭证双域注入 + sameSite=None（见 ``domains_for`` 的实测表）。
         await ctx.add_cookies(
             [
                 {
@@ -184,11 +266,10 @@ async def refresh(*, headless: bool = True) -> dict[str, str]:
                     "value": v,
                     "domain": domain,
                     "path": "/",
-                    "secure": True,
-                    "httpOnly": False,
+                    **cookie_attrs(k),
                 }
                 for k, v in seed.items()
-                for domain in DOMAIN_SETS
+                for domain in domains_for(k)
             ]
         )
         page = await ctx.new_page()
@@ -243,6 +324,26 @@ async def refresh(*, headless: bool = True) -> dict[str, str]:
     if gained:
         log(f"新增/变化项: {gained}")
     log(f"真实有效期: {expiry_report(fresh_raw)}")
+
+    # ★★ **写回前的守卫：长期登录项一件都不能少。**
+    #
+    # 这条守卫是因为真实事故加的：2026-10-23 那次刷新「成功」写回了 20 项，
+    # 但 ``SAPISID`` / ``SID`` / ``HSID`` / ``SSID`` 全都不见了（当时双域注入
+    # 让 Chromium 把这些 ``.google.com`` 专属项丢弃）。写回之后每 6 小时刷新
+    # 都 ``LOGGED_IN: false``，连续失败 60 次、两周无人知晓 —— 直到用户发
+    # YouTube 链接卡住才暴露。
+    #
+    # 宁可这次刷新失败（保留旧文件、报警），也不能把长期项写没。
+    lost = sorted(k for k in seed if k in GOOGLE_ONLY_COOKIES and k not in out)
+    if lost:
+        raise SystemExit(
+            f"刷新结果丢了长期登录项 {lost} —— 拒绝写回（否则下次刷新必然失败）。"
+            f"旧 cookie 保持原样；请检查注入的域分配（domain_for）。"
+        )
+    if len(out) < len(seed):
+        # 项数减少不一定是错（过期的条目会被浏览器清掉），但要留痕
+        dropped = sorted(set(seed) - set(out))
+        log(f"⚠️ 项数减少 {len(seed)} → {len(out)}，已消失: {dropped}")
 
     payload = {
         "captured_at": int(time.time()),
