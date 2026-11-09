@@ -125,6 +125,10 @@ class WatchdogSettings(BaseSettings):
     """重启失败几次后删除会话文件"""
     max_restart_count: int = Field(default=6)
     """意外断开连接时，最大重启次数"""
+    session_reset_count: int = Field(default=0)
+    """会话失效后自动重登的次数"""
+    max_session_reset_count: int = Field(default=3)
+    """自动重登上限 —— 超过说明 token 被重置或有实例在抢，需人工介入"""
     exit_flag: bool = Field(default=False)
     """退出标志"""
 
@@ -143,6 +147,14 @@ class WatchdogSettings(BaseSettings):
     def reset_bot_disconnect_count(self) -> None:
         self.disconnect_count = 0
         os.environ["WD_DISCONNECT_COUNT"] = "0"
+
+    def update_bot_session_reset_count(self) -> None:
+        self.session_reset_count += 1
+        os.environ["WD_SESSION_RESET_COUNT"] = str(self.session_reset_count)
+
+    def reset_bot_session_reset_count(self) -> None:
+        self.session_reset_count = 0
+        os.environ["WD_SESSION_RESET_COUNT"] = "0"
 
 
 bs = BotSettings()  # type: ignore[call-arg]

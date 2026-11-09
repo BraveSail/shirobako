@@ -7,7 +7,7 @@ from pyrogram import Client
 from pyrogram.handlers import ConnectHandler, DisconnectHandler
 from pyrogram.types import BotCommand
 
-from core import bs, on_connect, on_disconnect, ws
+from core import bs, heartbeat_task, on_connect, on_disconnect, ws
 from db.engine import close_db
 from db.init import init_db
 from i18n import ISO639_MAP
@@ -59,6 +59,12 @@ class Bot(Client):
 
         # 缓存换 Redis 后 TTL 由 redis 自己管, 不再需要进程内的定期清理任务
         await super().start(*args, **kwargs)
+
+        # ★ 主动探活：``AuthKeyNotFound`` 会让 pyrogram 的 recv_task 静默死掉，
+        # 且**不触发** disconnect 回调 —— 光靠回调会一直挂着（2026-11-07 挂了
+        # 40 小时）。这里起一个后台任务定期 GetState，死了就按类型处置。
+        asyncio.create_task(heartbeat_task(self))
+
         await self.set_menu()
         return self
 
