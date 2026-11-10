@@ -244,6 +244,9 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
         line.strip() in ("---", "***", "___")
         or _MEDIA_PLACEHOLDER_RE.match(line.strip())
         or _TABLE_ROW_RE.match(line.strip())
+        # 图集标签也是结构行：不认的话整段（含 `<tg-collage>`）会被并成一个
+        # 纯文本段落，标签原样显示给用户（真机实测就是这样）
+        or line.strip() in ("<tg-collage>", "</tg-collage>")
         for line in quoted
     )
     if not has_special:
@@ -271,12 +274,35 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
             # 像表格但没有分隔行 → 不是表格, 当普通文本 (与主循环的落点一致)
             buf.extend(rows)
 
-    for line in quoted:
+    _qidx = 0
+    while _qidx < len(quoted):
+        line = quoted[_qidx]
         stripped = line.strip()
         if stripped in ("---", "***", "___"):
             flush_table()
             flush_text()
             children.append(InputRichBlockDivider())
+        elif stripped == "<tg-collage>":
+            # 图集：把中间连续的媒体占位收成一个 Collage 块。
+            # 不认这对标签的话它们会跟正文一起进 buf，标签原样显示给用户。
+            flush_table()
+            flush_text()
+            collage: list[InputRichBlock] = []
+            _qidx += 1
+            while _qidx < len(quoted) and quoted[_qidx].strip() != "</tg-collage>":
+                inner = quoted[_qidx].strip()
+                if m2 := _MEDIA_PLACEHOLDER_RE.match(inner):
+                    if (blk := media_blocks.get(m2.group(1))) is not None:
+                        collage.append(blk)
+                _qidx += 1
+            # 此时 _qidx 指向 </tg-collage>（或越界）
+            if len(collage) > 1:
+                children.append(InputRichBlockCollage(collage))
+            else:
+                children.extend(collage)
+        elif stripped == "</tg-collage>":
+            # 没有开标签的孤立闭标签：忽略，绝不当文本
+            pass
         elif m := _MEDIA_PLACEHOLDER_RE.match(stripped):
             flush_table()
             flush_text()
@@ -288,6 +314,7 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
         else:
             flush_table()
             buf.append(line)
+        _qidx += 1
     flush_table()
     flush_text()
     # 首尾多余的分隔线去掉 (块边界不需要线)
@@ -386,7 +413,7 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
                 InputRichBlockDetails(
                     parse_inline(summary),
                     markdown_to_blocks(body, media_blocks=media_blocks),
-                )
+                ),
             )
             continue
 
