@@ -183,6 +183,11 @@ class TwitterParser(BaseParser):
         """
         if placeholder := TwitterParser._poll_placeholder(tweet, TwitterParser._poll_indexes(tweet).get("main")):
             body = f"{body}\n\n{placeholder}"
+        if trending := TwitterParser._trending_block(tweet):
+            # 卡片已带链接，正文那条裸链是同一个地址（X 上渲染成卡片不显示裸链），
+            # 去掉避免同一地址出现两次
+            body = TwitterParser._strip_trending_url(body, tweet)
+            body = f"{body}\n\n{trending}"
         reply_block = TwitterParser._append_inside_quote(TwitterParser._build_quote(tweet), reply_yt)
         text = f"{reply_block}{body}"
         # strip: 引用块自带末尾空行（``format_quote_block`` 的块结束约定），
@@ -191,6 +196,64 @@ class TwitterParser(BaseParser):
             TwitterParser._build_quoted_block(tweet), quoted_yt
         ).strip()
         return f"{text}\n\n{quoted_block}" if quoted_block else text
+
+    @staticmethod
+    def _trending_block(tweet: TwitterTweet) -> str:
+        """trending 卡片渲染成引用块（标题 + 摘要 + 可点链接）。
+
+        为什么是引用块: 它是**被这条推文引用的一块内容**（X 上也是卡片形态），
+        不是作者自己写的话。做成引用块既贴合原形态，又能和正文分开。
+
+        链接必须保留 —— 卡片的意义就是指向那个 trending 页；没有链接时只出文案。
+        """
+        card = getattr(tweet, "trending", None)
+        if card is None:
+            return ""
+        lines: list[str] = []
+        if card.title:
+            lines.append(f"> **{card.title}**")
+        if card.subtitle:
+            # 摘要可能有多段换行，逐行加引用前缀，保持块连续
+            for line in card.subtitle.splitlines():
+                lines.append(f"> {line}" if line.strip() else ">")
+        if card.url:
+            if lines:
+                lines.append(">")
+            lines.append(f"> [查看原話題]({card.url})")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _strip_trending_url(body: str, tweet: TwitterTweet) -> str:
+        """去掉正文里指向 trending 的那条链接**本身**，保留同一行的其它文字。
+
+        那条链接就是卡片本身的 ``destination``（X 上渲染成卡片，不显示裸链）。
+        正文里留着它 + 卡片里再给一次 = 同一地址出现两遍。
+
+        ⚠️ 只删 URL，不要按整行删 —— 实测这条推文的正文把「…いきたい！ですので…」
+        和 URL 挤在**同一行**，整行过滤会把末尾那句原文一起吞掉。
+        """
+        card = getattr(tweet, "trending", None)
+        if card is None or not card.url:
+            return body
+        trending_id = card.url.rstrip("/").rsplit("/", 1)[-1]
+        if not trending_id:
+            return body
+        needle = f"/i/trending/{trending_id}"
+        cleaned: list[str] = []
+        for line in body.splitlines():
+            if needle not in line:
+                cleaned.append(line)
+                continue
+            # 只摘掉那个 token（t.co 短链 / 展开后的 URL 都算），行内其它文字保留
+            tokens = [
+                tok
+                for tok in line.split()
+                if not (tok.startswith("http") and (needle in tok or tok.startswith("https://t.co/")))
+            ]
+            remainder = " ".join(tokens).rstrip()
+            if remainder:
+                cleaned.append(remainder)
+        return "\n".join(cleaned).rstrip()
 
     @staticmethod
     def _append_inside_quote(block: str, extra: str) -> str:

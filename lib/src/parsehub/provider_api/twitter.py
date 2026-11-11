@@ -219,7 +219,72 @@ class Twitter:
             is_sensitive=bool(legacy.get("possibly_sensitive")),
             hashtags=hashtags,
             poll=poll,
+            trending=self._parse_trending_card(node),
         )
+
+    @staticmethod
+    def _parse_trending_card(node: dict) -> TrendingCard | None:
+        """X 的 trending 卡片 —— 标题/摘要在 ``unified_card`` 的 ``topic_detail`` 里。
+
+        ``unified_card`` 的 ``binding_values`` 里那段 JSON 有两个用途：媒体
+        （``media_entities``，已有 ``_parse_unified_card_media`` 在读）和**卡片文案**
+        （``component_objects.*.data.topic_detail``）。以前只读前者，于是这条推文
+        发出来只剩一张封面图，标题与摘要全丢 —— 用户报「是个 X 图片，不是 trending
+        里的图」，因为真正的 trending 内容（标题/摘要/链接）一个字都没渲染。
+
+        不是 trending 的 unified_card（外链预览等）没有 ``topic_detail``，此时返回
+        ``None``，行为与以前完全一致。
+        """
+        card = ((node.get("card") or {}).get("legacy")) or {}
+        if (card.get("name") or "") != "unified_card":
+            return None
+        raw = next(
+            (
+                (b.get("value") or {}).get("string_value")
+                for b in (card.get("binding_values") or [])
+                if b.get("key") == "unified_card"
+            ),
+            None,
+        )
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return None
+        if not isinstance(data, dict):
+            return None
+
+        detail = None
+        for component in (data.get("component_objects") or {}).values():
+            if not isinstance(component, dict):
+                continue
+            body = component.get("data") or {}
+            if isinstance(body.get("topic_detail"), dict):
+                detail = body["topic_detail"]
+                break
+        if detail is None:
+            return None
+
+        def content_of(key: str) -> str:
+            block = detail.get(key) or {}
+            return (block.get("content") or "").strip() if isinstance(block, dict) else ""
+
+        title = content_of("title")
+        subtitle = content_of("subtitle")
+        if not (title or subtitle):
+            return None
+
+        url = ""
+        for dest in (data.get("destination_objects") or {}).values():
+            if not isinstance(dest, dict):
+                continue
+            url_data = (dest.get("data") or {}).get("url_data") or {}
+            if isinstance(url_data, dict) and url_data.get("url"):
+                url = str(url_data["url"])
+                break
+
+        return TrendingCard(title=title, subtitle=subtitle, url=url)
 
     @staticmethod
     def _parse_poll(node: dict) -> TwitterPoll | None:
@@ -589,6 +654,27 @@ class TwitterPoll:
     """票数是否为最终结果 (``counts_are_final``), 即投票是否已结束。"""
 
 
+class TrendingCard:
+    """X 的 trending 卡片。
+
+    形态是一张 ``unified_card``：``component_objects.<x>.data.topic_detail`` 里有
+    ``title`` / ``subtitle``（各含 ``content``），``destination_objects`` 里有目标链接，
+    ``media_entities`` 里是配图。
+
+    **为什么单独建模**：以前只从 ``unified_card`` 抽媒体，标题与摘要整个丢掉 ——
+    用户看到的只是一张孤零零的封面图（报「是个 X 图片，不是 trending 里的图」）。
+    卡片本身才是这条推文的内容，配图只是它的附图。
+    """
+
+    def __init__(self, *, title: str = "", subtitle: str = "", url: str = "") -> None:
+        self.title = title
+        """卡片标题 (``topic_detail.title.content``)。"""
+        self.subtitle = subtitle
+        """卡片摘要 (``topic_detail.subtitle.content``)。"""
+        self.url = url
+        """卡片指向的地址 (``destination_objects.*.data.url_data.url``)。"""
+
+
 class TwitterTweet:
     def __init__(
         self,
@@ -608,6 +694,7 @@ class TwitterTweet:
         like_count: int | None = None,
         hashtags: list[str] | None = None,
         poll: TwitterPoll | None = None,
+        trending: TrendingCard | None = None,
     ):
         self.tweet_id = tweet_id
         self.full_text = re.sub(r"\s*https://t\.co/[^\s,]+$", "", full_text or "") if media else full_text
@@ -633,6 +720,8 @@ class TwitterTweet:
         """点赞数 (legacy.favorite_count)"""
         self.poll = poll
         """推文附带的投票 (卡片 ``poll*choice*``), 没有则为 ``None``。"""
+        self.trending = trending
+        """X 的 trending 卡片（``unified_card`` 的 ``topic_detail``），没有则为 ``None``。"""
         self.hashtags = hashtags or []
         """正文里的标签 (不含 ``#``), 来自平台实体 ``entities.hashtags[].text``。
 
