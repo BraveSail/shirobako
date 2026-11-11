@@ -213,6 +213,10 @@ class TwitterParser(BaseParser):
         不是作者自己写的话。做成引用块既贴合原形态，又能和正文分开。
 
         链接必须保留 —— 卡片的意义就是指向那个 trending 页；没有链接时只出文案。
+
+        **封面图在块内**（用户：「图片应该在话题里面」）：用 ``{{media:N}}`` 占位符
+        表示，渲染层会把这张图塞进引用卡片内部（``attach_quote_media``）。
+        占位符紧跟在标题之后、摘要之前 —— 与 X 上卡片的形态一致（大图在上）。
         """
         card = getattr(tweet, "trending", None)
         if card is None:
@@ -220,6 +224,13 @@ class TwitterParser(BaseParser):
         lines: list[str] = []
         if card.title:
             lines.append(f"> **{card.title}**")
+        if card.cover:
+            # 作为引用块内的媒体。索引固定为 **0** —— 这是主帖媒体列表里
+            # ``media_parse`` 追加的那一张（见那里：``media.append(ImageRef(cover))``
+            # 排在主帖媒体末尾，而 trending 帖子主帖没有其它媒体）。
+            if lines:
+                lines.append(">")
+            lines.append("> {{media:0}}")
         if card.subtitle:
             # 摘要可能有多段换行，逐行加引用前缀，保持块连续
             for line in card.subtitle.splitlines():

@@ -74,10 +74,12 @@ class ResultRebuildUnavailable(RuntimeError):
 #: - 11 = twitter trending 卡片的话题封面（2026-11-11）：旧条目里 ``media_entities``
 #:   那张是 X 的**通用占位图**（1600×1600 黑底白 X）⇒ 命中就是用户报的「图片还是 X
 #:   那个图标」。真封面要从话题页 jetfuel payload 补取，只有重解析才有。
+#: - 12 = twitter trending 的封面**移进引用块**（2026-11-11）：v11 里它是块外的独立
+#:   媒体（排在消息末尾）⇒ 命中就是用户报的「图片应该在话题里面」。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
 #: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 11
+_CACHE_CONTENT_VERSION = 12
 _CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo", "bilibili"})
 
 

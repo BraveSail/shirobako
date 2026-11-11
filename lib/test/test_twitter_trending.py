@@ -118,7 +118,6 @@ class TestRenderTrending:
     def test_strip_url_keeps_same_line_text(self) -> None:
         """★ 实测踩过：正文和 URL 挤在同一行，整行过滤会吞掉原文。"""
         tweet = self._tweet()
-        body = "第一行\n１日１日を大切に！！！いきたい！ https://t.co/uT2C7ASW9N"
         # needle 在展开后的 URL 上，这里模拟已展开形态
         body_expanded = (
             "第一行\n１日１日を大切に！！！いきたい！ https://x.com/i/trending/2120353200146411925"
@@ -225,3 +224,49 @@ class TestTrendingCover:
         if tweet.trending and tweet.trending.cover:
             media.append(ImageRef(url=tweet.trending.cover))
         assert media == []
+
+
+class TestTrendingCoverInsideQuote:
+    """封面必须落在**话题引用块内部**（用户：「图片应该在话题里面」）。
+
+    实现是 `{{media:N}}` 占位符写在 `> ` 块里 —— 渲染层 `_quote_children` 遇到
+    媒体占位会去 `media_blocks` 取对应块 append 进引用块，于是图在块内而不在块外。
+    """
+
+    def _tweet(self, *, cover: str = "https://pbs.twimg.com/media/HWz.jpg?name=orig") -> TwitterTweet:
+        return TwitterTweet(
+            tweet_id="1",
+            full_text="作者感想",
+            trending=TrendingCard(
+                title="标题",
+                subtitle="摘要文字",
+                url="https://x.com/i/trending/2120353200146411925",
+                cover=cover,
+            ),
+        )
+
+    def test_cover_placeholder_is_inside_block(self) -> None:
+        block = TwitterParser._trending_block(self._tweet())
+        # 占位符每一行都带引用前缀 ⇒ 它在块内，不会被渲染层当成块外媒体
+        media_lines = [ln for ln in block.splitlines() if "{{media:" in ln]
+        assert media_lines, "封面占位符丢了"
+        for ln in media_lines:
+            assert ln.startswith(">"), f"占位符不在引用块内: {ln!r}"
+
+    def test_cover_placeholder_after_title_before_subtitle(self) -> None:
+        """位置与 X 上卡片一致：标题在上、图居中、摘要在下。"""
+        block = TwitterParser._trending_block(self._tweet())
+        idx_title = block.index("标题")
+        idx_media = block.index("{{media:")
+        idx_sub = block.index("摘要文字")
+        assert idx_title < idx_media < idx_sub
+
+    def test_no_cover_no_placeholder(self) -> None:
+        block = TwitterParser._trending_block(self._tweet(cover=""))
+        assert "{{media:" not in block
+        assert "标题" in block  # 文案照旧
+
+    def test_placeholder_index_matches_media_order(self) -> None:
+        """索引 0 = media_parse 追加的那张（主帖媒体末尾，trending 帖主帖无其它媒体）。"""
+        block = TwitterParser._trending_block(self._tweet())
+        assert "{{media:0}}" in block
