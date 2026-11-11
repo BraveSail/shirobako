@@ -67,6 +67,14 @@ class TwitterParser(BaseParser):
                     raise ParseError(str(e)) from e
             else:
                 raise ParseError(str(e)) from e
+
+        # trending 封面与话题时间线**需要登录态**（匿名请求拿不到 timelineId，
+        # 只会静默返回空）。首次解析成功时用的是无 cookie 客户端，所以这里补一次：
+        # 只有 trending 且缺封面时才走，失败不影响主解析。
+        if tweet.trending and not tweet.trending.cover:
+            if cookie := self.cookie.get_value():
+                x3 = Twitter(self.proxy, cookie=cookie)
+                tweet.trending.cover = await x3.fetch_trending_cover(tweet.trending.url)
         return tweet
 
     @staticmethod
@@ -353,6 +361,12 @@ class TwitterParser(BaseParser):
         # 里的图全部拿不到（用户报「图片呢」）。article 的正文就是主体，所以排在最前。
         if tweet.article:
             media = [*TwitterParser.to_media_refs(tweet.article.media), *media]
+
+        # trending 卡片的话题封面：**不在** ``tweet.media`` 里（那里的图是 X 的
+        # 通用占位图，已在 `_parse_unified_card_media` 里丢掉），由 provider 层
+        # 从话题页补取后放在 ``tweet.trending.cover``。排主帖媒体末尾。
+        if tweet.trending and tweet.trending.cover:
+            media.append(ImageRef(url=tweet.trending.cover))
 
         # 被**引用 / 被回复**推文正文里的 YouTube 链接 -> 引用卡片 (标题可点) + 封面。
         # 只有这两种推文才处理: 它们本来就渲染成引用卡片, 卡片里的链接该有封面。

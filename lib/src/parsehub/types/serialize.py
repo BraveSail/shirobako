@@ -69,10 +69,15 @@ class ResultRebuildUnavailable(RuntimeError):
 #:   510 字/4 图）⇒ 命中就是用户报的「这个怎么不全」。
 #: - 8 = bilibili 图文动态的板头图（banner）提到标题上方（2026-11-01）：旧条目没有
 #:   ``banner_media_count`` ⇒ banner 要么缺失要么混在正文里，与现场解析不一致。
+#: - 10 = twitter 长文（article）的媒体并进 media（2026-11-xx）：旧条目里 article 的图
+#:   全部缺失 ⇒ 命中就是用户报的「图片呢」。
+#: - 11 = twitter trending 卡片的话题封面（2026-11-11）：旧条目里 ``media_entities``
+#:   那张是 X 的**通用占位图**（1600×1600 黑底白 X）⇒ 命中就是用户报的「图片还是 X
+#:   那个图标」。真封面要从话题页 jetfuel payload 补取，只有重解析才有。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
 #: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 10
+_CACHE_CONTENT_VERSION = 11
 _CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo", "bilibili"})
 
 

@@ -1,6 +1,7 @@
 # mypy: disable-error-code=no-untyped-def
 from __future__ import annotations
 
+import base64
 import json
 import re
 from collections.abc import Callable
@@ -38,6 +39,8 @@ class Twitter:
             tweet.reply_to = await self._fetch_related(tweet.reply_to_id, "被回复推文")
         if tweet.quoted_status_id and tweet.quoted_status is None:
             tweet.quoted_status = await self._fetch_related(tweet.quoted_status_id, "被引用推文")
+        # trending 封面不在这里补：匿名客户端取不到（需要登录态），由解析器层用
+        # 带 cookie 的客户端补一次，避免这里白发一次无效请求。
         return tweet
 
     async def _fetch_related(self, tweet_id: str, label: str) -> TwitterTweet | None:
@@ -47,6 +50,158 @@ class Twitter:
         except Exception as e:
             logger.warning(f"获取{label}失败, 跳过引用: {e}")
             return None
+
+    #: trending 话题页里 ``AiTrendByRestId`` 的 query id（X 会随前端发布变化）。
+    _TREND_QUERY_ID = "qrhDEwcC6kB5TIalxd-4XA"
+    #: 话题时间线的 ``GenericTimelineById`` query id。
+    _TIMELINE_QUERY_ID = "UToImY30uYcerTaw8gu21w"
+
+    async def fetch_trending_cover(self, trend_url: str) -> str:
+        """取 trending 话题的**真封面图**。
+
+        这条链路是逆向出来的，值得记清楚为什么绕这一大圈：
+
+        1. ``unified_card`` 的 ``media_entities`` 里那张图是**通用占位图**
+           （1600×1600 黑底白 X，media id ``1683353770267234304``）。X 在
+           card 里复用它，而真封面（本条样例 640×915 人物照）压根不在这条推文的
+           响应里 —— 搜遍全部 API 响应都是 0 命中。
+        2. 真封面只出现在话题页 ``/i/trending/<id>``。但页面 HTML 是 SPA 外壳
+           （313KB，无图），图是 JS 渲染后才有。
+        3. 渲染数据来自 ``GenericTimelineById``，而封面藏在
+           ``entries[].itemContent.tweet_results.result.jetfuel_attachment.payload``
+           —— 一段 **base64 编码的 JetfuelV2 二进制**。URL 以明文形式嵌在字节流里，
+           所以能直接正则抓出来，不需要实现完整的 JetfuelV2 解码器。
+        4. 要调 ``GenericTimelineById`` 得先有 ``timelineId``，它由
+           ``AiTrendByRestId`` 根据 trendId 给出。
+
+        全程纯 HTTP，不需要浏览器。失败时返回空串（封图是锦上添花，不能拖垮整条解析）。
+        """
+        trend_id = self._trend_id_from_url(trend_url)
+        if not trend_id:
+            return ""
+        headers = {
+            "accept-language": "zh-CN,zh;q=0.9",
+            "authorization": self.authorization,
+            "content-type": "application/json",
+            "user-agent": UA,
+            "x-twitter-active-user": "yes",
+            "x-twitter-client-language": "zh-cn",
+            "referer": trend_url,
+        }
+        cookie = None
+        if self.cookie and self.check_cookie():
+            headers["x-csrf-token"] = self.cookie.get("ct0", "")
+            headers["x-twitter-auth-type"] = "OAuth2Session"
+            cookie = self.cookie
+
+        try:
+            async with http.AsyncClient(proxy=self.proxy) as client:
+                # 1) trendId -> timelineId
+                resp = await client.get(
+                    f"https://x.com/i/api/graphql/{self._TREND_QUERY_ID}/AiTrendByRestId",
+                    params={
+                        "variables": json.dumps(
+                            {
+                                "trendId": trend_id,
+                                "includePromotedContent": False,
+                                "withVoice": False,
+                                "withCommunity": False,
+                            }
+                        ),
+                        "features": "{}",
+                    },
+                    headers=headers,
+                    cookies=cookie,
+                )
+                resp.raise_for_status()
+                page = (
+                    (resp.json().get("data") or {})
+                    .get("ai_trend_by_rest_id", {})
+                    .get("result", {})
+                    or {}
+                ).get("page") or {}
+                timelines = page.get("post_timelines") or []
+                if not timelines:
+                    return ""
+                timeline_id = ((timelines[0].get("post_timeline") or {}).get("id")) or ""
+                if not timeline_id:
+                    return ""
+
+                # 2) timelineId -> 该话题下的推文条目（含 jetfuel_attachment）
+                resp = await client.get(
+                    f"https://x.com/i/api/graphql/{self._TIMELINE_QUERY_ID}/GenericTimelineById",
+                    params={
+                        "variables": json.dumps(
+                            {"timelineId": timeline_id, "count": 20, "includePromotedContent": False}
+                        ),
+                        "features": json.dumps(
+                            {
+                                "responsive_web_jetfuel_frame": True,
+                                "rweb_video_screen_enabled": False,
+                                "payments_enabled": False,
+                                "verified_phone_label_enabled": False,
+                                "creator_subscriptions_tweet_preview_api_enabled": True,
+                                "responsive_web_graphql_timeline_navigation_enabled": True,
+                                "communities_web_enable_tweet_community_results_fetch": True,
+                                "longform_notetweets_consumption_enabled": True,
+                                "responsive_web_edit_tweet_api_enabled": True,
+                                "view_counts_everywhere_api_enabled": True,
+                                "longform_notetweets_rich_text_read_enabled": True,
+                                "longform_notetweets_inline_media_enabled": True,
+                                "responsive_web_enhance_cards_enabled": False,
+                            }
+                        ),
+                    },
+                    headers=headers,
+                    cookies=cookie,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:
+            logger.warning(f"取 trending 封面失败, 跳过封面: {e}")
+            return ""
+
+        instructions = (
+            (data.get("data") or {}).get("timeline", {}).get("timeline", {}) or {}
+        ).get("instructions") or []
+        for instruction in instructions:
+            for entry in instruction.get("entries") or []:
+                result = (
+                    ((entry.get("content") or {}).get("itemContent") or {})
+                    .get("tweet_results", {})
+                    .get("result", {})
+                )
+                cover = self._cover_from_jetfuel((result.get("jetfuel_attachment") or {}).get("payload"))
+                if cover:
+                    return cover
+        return ""
+
+    @staticmethod
+    def _trend_id_from_url(url: str) -> str:
+        """从 ``https://x.com/i/trending/<id>`` 里取 trendId。"""
+        match = re.search(r"/i/trending/(\d+)", url or "")
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def _cover_from_jetfuel(payload: str | None) -> str:
+        """从 JetfuelV2 payload（base64）里抠出 trending 封面图 URL。
+
+        不实现完整解码器：这段二进制里字符串以明文＋长度前缀存放，直接在整个
+        字节流上搜 ``pbs.twimg.com/media/`` 即可。``trending-card`` 作为身份校验，
+        避免把普通推文的 jetfuel（回复建议、社区注记等）误当成封面。
+        """
+        if not payload:
+            return ""
+        try:
+            raw = base64.b64decode(payload + "=" * (-len(payload) % 4), validate=False)
+        except Exception:
+            return ""
+        text = raw.decode("latin-1")
+        if "trending-card" not in text:
+            return ""
+        for match in re.finditer(r"https://pbs\.twimg\.com/media/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png)", text):
+            return f"{match.group(0)}?name=orig"
+        return ""
 
     async def _fetch_result(self, tweet_id: str) -> dict:
         headers = {
@@ -429,8 +584,17 @@ class Twitter:
         entities = data.get("media_entities") or {}
         values = entities.values() if isinstance(entities, dict) else entities
         out: list[TwitterPhoto | TwitterVideo | TwitterAni] = []
+        # trending 卡片的 media_entities 是**通用占位图**（1600×1600 黑底白 X，
+        # media id 1683353770267234304），不是这个话题的封面。真机实测：发出去用户
+        # 只看到一个孤零零的 X 图标（报「图片还是 X 那个图标」）。真封面由
+        # `Twitter.fetch_trending_cover` 从话题页补取，这里一律跳过占位图。
+        is_trending = cls._parse_trending_card(node) is not None
         for i in values:
-            if isinstance(i, dict) and (parsed := cls._media_from_dict(i)):
+            if not isinstance(i, dict):
+                continue
+            if is_trending and (i.get("type") or "") == "photo":
+                continue
+            if parsed := cls._media_from_dict(i):
                 out.append(parsed)
         return out
 
@@ -666,13 +830,23 @@ class TrendingCard:
     卡片本身才是这条推文的内容，配图只是它的附图。
     """
 
-    def __init__(self, *, title: str = "", subtitle: str = "", url: str = "") -> None:
+    def __init__(
+        self, *, title: str = "", subtitle: str = "", url: str = "", cover: str = ""
+    ) -> None:
         self.title = title
         """卡片标题 (``topic_detail.title.content``)。"""
         self.subtitle = subtitle
         """卡片摘要 (``topic_detail.subtitle.content``)。"""
         self.url = url
         """卡片指向的地址 (``destination_objects.*.data.url_data.url``)。"""
+        self.cover = cover
+        """话题封面图 URL。
+
+        **不在推文响应里** —— ``unified_card`` 的 ``media_entities`` 给的是通用
+        占位图（1600×1600 黑底白 X），不是这个话题的封面。真封面只出现在话题页
+        ``/i/trending/<id>`` 的 ``jetfuel_attachment.payload`` 里（JetfuelV2 二进制，
+        base64 编码），由 `Twitter.fetch_trending_cover` 补取。
+        """
 
 
 class TwitterTweet:

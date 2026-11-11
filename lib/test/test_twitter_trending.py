@@ -19,10 +19,12 @@ X 在客户端把它渲染成一张**卡片**（标题 + 摘要 + 配图），�
 
 from __future__ import annotations
 
+import base64
 import json
 
 from parsehub.provider_api.twitter import TrendingCard, Twitter, TwitterTweet
 from parsehub.parsers.parser.twitter import TwitterParser
+from parsehub.types import ImageRef
 
 
 def _node_with_trending(
@@ -137,3 +139,89 @@ class TestRenderTrending:
         tweet = TwitterTweet(tweet_id="1", full_text="x")
         body = "原样 https://x.com/i/trending/123"
         assert TwitterParser._strip_trending_url(body, tweet) == body
+
+
+class TestTrendingCover:
+    """话题封面藏在 JetfuelV2 二进制里 —— 见 `Twitter._cover_from_jetfuel`。
+
+    真机证据：``unified_card.media_entities`` 给的 ``F1x5VdQX0AA9Sgt.jpg`` 是
+    1600×1600 的**通用占位图**（黑底白 X），不是话题封面。用户报「图片还是 X 那个
+    图标」。真封面 ``HWz-eo3awAEbWQN.jpg``（640×915 人物照）只在话题页的
+    ``jetfuel_attachment.payload`` 里出现，其余所有 API 响应搜遍都是 0 命中。
+    """
+
+    @staticmethod
+    def _payload(*segments: str) -> str:
+        """按 JetfuelV2 的实际形态拼一段 payload：字符串以明文+长度前缀存放。"""
+        raw = b"\x11\x00\x0b" + b"\x00".join(s.encode() for s in segments)
+        return base64.b64encode(raw).decode()
+
+    def test_extract_cover_from_jetfuel(self) -> None:
+        payload = self._payload(
+            "trending-card",
+            "https://pbs.twimg.com/media/HWz-eo3awAEbWQN.jpg?name=orig",
+        )
+        cover = Twitter._cover_from_jetfuel(payload)
+        assert cover == "https://pbs.twimg.com/media/HWz-eo3awAEbWQN.jpg?name=orig"
+
+    def test_ignores_non_trending_jetfuel(self) -> None:
+        """普通推文的 jetfuel（回复建议等）不能当成封面。"""
+        payload = self._payload(
+            "reply-nudge",
+            "https://pbs.twimg.com/media/AAAAAAAAAAA.jpg",
+        )
+        assert Twitter._cover_from_jetfuel(payload) == ""
+
+    def test_profile_image_is_not_cover(self) -> None:
+        """话题 payload 里同时有作者头像，必须只取 /media/ 而非 /profile_images/。"""
+        payload = self._payload(
+            "trending-card",
+            "https://pbs.twimg.com/profile_images/18918540839/xe_WmNQP_normal.jpg",
+            "https://pbs.twimg.com/media/HWz-eo3awAEbWQN.jpg",
+        )
+        cover = Twitter._cover_from_jetfuel(payload)
+        assert "profile_images" not in cover
+        assert "HWz-eo3awAEbWQN" in cover
+
+    def test_empty_and_garbage_payload(self) -> None:
+        assert Twitter._cover_from_jetfuel(None) == ""
+        assert Twitter._cover_from_jetfuel("") == ""
+        assert Twitter._cover_from_jetfuel("!!!not-base64!!!") == ""
+
+    def test_trend_id_from_url(self) -> None:
+        assert Twitter._trend_id_from_url("https://x.com/i/trending/2120353200146411925") == (
+            "2120353200146411925"
+        )
+        assert Twitter._trend_id_from_url("https://x.com/i/trending/") == ""
+        assert Twitter._trend_id_from_url("https://x.com/foo/status/123") == ""
+
+    def test_cover_goes_into_media(self) -> None:
+        """解析层必须把 trending.cover 放进 media —— 否则图还是出不来。"""
+        tweet = TwitterTweet(
+            tweet_id="1",
+            full_text="感想",
+            trending=TrendingCard(
+                title="标题",
+                subtitle="摘要",
+                url="https://x.com/i/trending/2120353200146411925",
+                cover="https://pbs.twimg.com/media/HWz-eo3awAEbWQN.jpg?name=orig",
+            ),
+        )
+        media = TwitterParser.to_media_refs(tweet.media)
+        # 模拟 media_parse 的追加逻辑
+        if tweet.trending and tweet.trending.cover:
+            media.append(ImageRef(url=tweet.trending.cover))
+        assert len(media) == 1
+        assert "HWz-eo3awAEbWQN" in media[0].url
+
+    def test_no_cover_means_no_media(self) -> None:
+        """补取失败时不能塞空图 —— 宁可不发图。"""
+        tweet = TwitterTweet(
+            tweet_id="1",
+            full_text="感想",
+            trending=TrendingCard(title="标题", subtitle="摘要", url="https://x.com/i/trending/1"),
+        )
+        media = TwitterParser.to_media_refs(tweet.media)
+        if tweet.trending and tweet.trending.cover:
+            media.append(ImageRef(url=tweet.trending.cover))
+        assert media == []

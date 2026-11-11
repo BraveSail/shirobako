@@ -293,10 +293,15 @@ FOOTER_META_FIELDS_VERSION = 1
 #: - 8 = bilibili 动态的板头图（banner）提到标题上方（2026-11-01）：旧条目没有
 #:   ``banner_media_count`` ⇒ banner 缺失或混在正文里。
 #: - 9 = twitter 长文的媒体与封面接上（2026-11-02）：旧条目零图。
+#: - 10 = twitter 长文（article）自身的媒体并进 ``media``（2026-11-xx）：旧条目里
+#:   article 的图全缺 ⇒ 命中就是「图片呢」。
+#: - 11 = twitter trending 卡片的话题封面（2026-11-11）：旧条目里那张是 X 的**通用
+#:   占位图**（黑底白 X）⇒ 命中就是「图片还是 X 那个图标」。真封面要从话题页
+#:   ``jetfuel_attachment.payload`` 补取，只有重解析才有。
 #:
 #: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
 #: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 10
+CONTENT_VERSION = 11
 
 #: 正文格式变过、需要按 ``content_version`` 作废老缓存的平台（与 lib 侧
 #: ``parsehub.types.serialize._CONTENT_VERSION_PLATFORMS`` 是同一份清单，改动要同步）。
