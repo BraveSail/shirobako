@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import aiofiles
+from curl_cffi import CurlOpt
 from loguru import logger
 
 from ..errors import DownloadError
@@ -67,6 +68,36 @@ def _retry_delay(attempt: int, *, status_code: int | None = None) -> float:
 
 def _is_retryable_status(status_code: int) -> bool:
     return status_code == 429 or 500 <= status_code < 600
+
+
+#: curl 报「不认识的 content-encoding」时的错误标记（curl 错误码 61）。
+#:
+#: 有些图床把 ``Content-Encoding: base64`` 当普通响应头乱发（实测
+#: ``i.meee.com.tw``），而 body 其实是**原始 JPEG**（``ff d8 ff``）。libcurl 见到
+#: 不认识的编码就直接失败，抛的是 ``RequestException``（本项目别名
+#: ``HTTPStatusError``）**不是** TRANSPORT_ERRORS，于是被状态码分支接住 —— 而那时
+#: 响应头已经收到（206/200），最终拼出的错误是 **「HTTP错误: 206」**，把排查方向
+#: 全带到「状态码被判错」上。
+#:
+#: 正确的处理是**关掉 curl 的内容解码**（``CurlOpt.HTTP_CONTENT_DECODING = 0``），
+#: 让字节原样出来 —— 不能全局关（gzip 响应会拿到压缩字节），所以只在这种错误出现
+#: 后降级重试。
+_UNKNOWN_ENCODING_MARKERS = ("curl: (61)", "Unrecognized content encoding")
+
+
+def _is_unknown_encoding_error(exc: BaseException) -> bool:
+    """是不是 curl 的「不认识的 content-encoding」错误（错误码 61）。"""
+    text = str(exc)
+    return any(marker in text for marker in _UNKNOWN_ENCODING_MARKERS)
+
+
+def _unknown_encoding_name(exc: BaseException) -> str:
+    """从异常携带的响应头里取实际的 ``content-encoding`` 值（取不到就给空串）。"""
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    try:
+        return str(headers.get("Content-Encoding") or "")
+    except Exception:
+        return ""
 
 
 def _describe_transport_error(error: BaseException) -> str:
@@ -146,6 +177,11 @@ class SegmentDownloader:
         #: 备用地址是**换地址**才动，所以要单独记：用它才能判「是否真的回退过」
         self._attempts_on_current_url = 0
 
+        #: 关掉 curl 的内容解码（见 ``_is_unknown_encoding_error``）。
+        #: 只在真的撞上「不认识的 content-encoding」之后才置位 —— 全局关掉会让
+        #: gzip 响应拿到压缩字节。
+        self._disable_content_decoding = False
+
         self.resolved_path: Path | None = None
         self.temp_dir: Path | None = None
         self.complete_path: Path | None = None
@@ -205,6 +241,28 @@ class SegmentDownloader:
                 if attempt == self.max_retries:
                     return DownloadError(f"传输中断: {_describe_transport_error(e)}")
             except http.HTTPStatusError as e:
+                # ⚠️ 先判「curl 不认识的 content-encoding」：它不是状态码问题。libcurl
+                # 在收到响应头后解码失败，抛的是 RequestException（别名 HTTPStatusError），
+                # 而 `e.response.status_code` 是个**成功码**（206/200）—— 直接走下面的状态
+                # 分支就会拼出「HTTP错误: 206」，把排查全程带偏（见 _UNKNOWN_ENCODING_MARKERS）。
+                if _is_unknown_encoding_error(e):
+                    if not self._disable_content_decoding:
+                        self._disable_content_decoding = True
+                        logger.warning(
+                            f"服务器发了 curl 不认识的 content-encoding, 关闭内容解码后重试: "
+                            f"url={self.url} attempt={attempt + 1}/{self.max_retries + 1} "
+                            f"err={e}"
+                        )
+                        continue
+                    # 已经关掉解码还报同样的错 —— 这次是真失败，别伪装成「HTTP 206」
+                    last_error = e
+                    logger.warning(
+                        f"关闭内容解码后仍无法读取: url={self.url} "
+                        f"attempt={attempt + 1}/{self.max_retries + 1} err={e}"
+                    )
+                    if attempt == self.max_retries:
+                        return DownloadError(f"响应编码无法解析: {_unknown_encoding_name(e) or '未知'}")
+                    continue
                 status = e.response.status_code
                 last_error = e
                 rate_limited = _is_rate_limited(status)
@@ -244,6 +302,10 @@ class SegmentDownloader:
         }
         if self.timeout is not None:
             kwargs["timeout"] = self.timeout
+        if self._disable_content_decoding:
+            # 服务器发了 curl 不认识的 content-encoding（如 i.meee.com.tw 的 `base64`
+            # —— body 其实是原始 JPEG）。关掉解码，字节原样出来。
+            kwargs["curl_options"] = {CurlOpt.HTTP_CONTENT_DECODING: 0}
         return http.AsyncClient(**kwargs)
 
     async def _resolve_path(self, client: http.AsyncClient) -> Path:
