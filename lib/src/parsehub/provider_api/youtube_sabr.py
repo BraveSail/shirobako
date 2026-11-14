@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
@@ -47,6 +48,12 @@ SABR_TOOL_DIR = Path(os.environ.get("PARSEHUB_YT_SABR_DIR") or _default_tool_dir
 
 _SCRIPT_NAME = "sabr.mjs"
 
+#: PO token 的跨进程缓存目录 —— **必须与 ``tools/yt-sabr/sabr.mjs`` 里那个常量一致**
+#: （那里写死 ``/tmp/yt-pot-cache``，文件名是 ``<videoId>.<sha256(cookie)[:8]>.json``）。
+#: 这里要能定位并删掉「当前身份 + 当前视频」那一份缓存，用于 attestation 被拒后的重试。
+#: 可用 ``PARSEHUB_YT_POT_CACHE`` 覆盖（测试用）。
+_POT_CACHE_DIR = Path(os.environ.get("PARSEHUB_YT_POT_CACHE") or "/tmp/yt-pot-cache")
+
 #: 单次取流的总超时（秒）—— 45MB 级视频 + 重试余量。慢网络下可放宽。
 DEFAULT_TIMEOUT = 900.0
 
@@ -63,6 +70,42 @@ def _runtime() -> str:
     if not runtime:
         raise SabrFetchError("找不到 bun 运行时（SABR 取流需要它）")
     return runtime
+
+
+#: 工具判定「attestation 被服务端拒绝」时 stdout 里的错误文本特征。
+#:
+#: 两个变体都见过：``attestation required``（根本没带 token）与
+#: ``attestation rejected after N attempts``（token 带了但服务端不认）。
+_ATTESTATION_MARKERS = ("attestation rejected", "attestation required")
+
+
+def _is_attestation_rejected(stdout: str, stderr: str) -> bool:
+    """这次失败是不是「attestation 被拒」（⇒ 值得清缓存重生成 token 再试）。"""
+    blob = f"{stdout}\n{stderr}"
+    return any(marker in blob for marker in _ATTESTATION_MARKERS)
+
+
+def _clear_pot_cache(video_id: str, cookie: str) -> str:
+    """删掉该视频的 PO token 缓存文件，返回被删的文件名（没有则空串）。
+
+    **为什么必须按 videoId + cookie 身份定位**：缓存文件名是
+    ``<videoId>.<sha256(cookie)[:8]>.json``（见 ``sabr.mjs``）。只删当前身份那一份 ——
+    别的身份的文件本来就复用不上，删了反而会让别人下次多生成一次。
+    这里**不能**用 ``rm -rf`` 整个目录：那会把其他视频的有效 token 一起清掉，
+    它们本来还能用。
+    """
+    if not video_id:
+        return ""
+    tag = hashlib.sha256(cookie.encode()).hexdigest()[:8] if cookie else "anon"
+    cache_file = _POT_CACHE_DIR / f"{video_id}.{tag}.json"
+    try:
+        cache_file.unlink()
+        return cache_file.name
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        logger.warning(f"清 PO token 缓存失败: {cache_file} err={exc}")
+        return ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,77 +215,100 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     input_path = output_dir / "_sabr_input.json"
-    input_path.write_text(
-        json.dumps(
-            _build_input_payload(
-                video_id,
-                abr_url=abr_url,
-                ustreamer_config=ustreamer_config,
-                adaptive_formats=adaptive_formats,
-                cookie=cookie,
-                video_quality=video_quality,
-                codec_priority=codec_priority,
-                video_itag=video_itag,
-                audio_itag=audio_itag,
-                is_live=is_live,
-                live_seconds=live_seconds,
-                user_agent=user_agent,
-            ),
-            ensure_ascii=False,
+
+    payload_text = json.dumps(
+        _build_input_payload(
+            video_id,
+            abr_url=abr_url,
+            ustreamer_config=ustreamer_config,
+            adaptive_formats=adaptive_formats,
+            cookie=cookie,
+            video_quality=video_quality,
+            codec_priority=codec_priority,
+            video_itag=video_itag,
+            audio_itag=audio_itag,
+            is_live=is_live,
+            live_seconds=live_seconds,
+            user_agent=user_agent,
         ),
-        encoding="utf-8",
+        ensure_ascii=False,
     )
+    input_path.write_text(payload_text, encoding="utf-8")
+
+    async def _run_tool() -> tuple[int, str, str]:
+        """跑一次工具，返回 ``(退出码, stdout, stderr)``。"""
+        proc = await asyncio.create_subprocess_exec(  # pylint: disable=no-member  # pylint 解析不到 asyncio.subprocess
+            runtime,
+            str(script),
+            "--input",
+            str(input_path),
+            "--outdir",
+            str(output_dir),
+            cwd=str(SABR_TOOL_DIR),
+            stdout=asyncio.subprocess.PIPE,  # pylint: disable=no-member
+            stderr=asyncio.subprocess.PIPE,  # pylint: disable=no-member
+        )
+
+        async def _watch_progress() -> None:
+            """轮询产物大小回报进度（子进程结束时由外层取消）。
+
+            ``progress_total`` 为 0 时**照样回调** —— 渲染层把它当「不确定态」（显示
+            "下载中..." 而不是 0%）。SABR 的数据在 googlevideo 内部缓冲、整段落地才写
+            文件，所以 current 在前几秒恒为 0，报百分比只会卡在 0%。
+            """
+            if not progress_callback:
+                return
+            try:
+                while True:
+                    await asyncio.sleep(2.0)
+                    current = 0
+                    for candidate in output_dir.glob("video.*"):
+                        current += candidate.stat().st_size
+                    for candidate in output_dir.glob("audio.*"):
+                        current += candidate.stat().st_size
+                    await progress_callback(current, progress_total)
+            except asyncio.CancelledError:
+                return
+
+        watcher = asyncio.create_task(_watch_progress())
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError as exc:
+            proc.kill()
+            raise SabrFetchError(f"SABR 取流超时（{timeout:.0f}s）") from exc
+        finally:
+            watcher.cancel()
+
+        return (
+            proc.returncode or 0,
+            (stdout or b"").decode("utf-8", "replace").strip(),
+            (stderr or b"").decode("utf-8", "replace").strip(),
+        )
 
     logger.info(f"SABR 取流: {video_id} (itag 素材 {len(adaptive_formats)} 条, 产物目录 {output_dir})")
-    proc = await asyncio.create_subprocess_exec(  # pylint: disable=no-member  # pylint 解析不到 asyncio.subprocess
-        runtime,
-        str(script),
-        "--input",
-        str(input_path),
-        "--outdir",
-        str(output_dir),
-        cwd=str(SABR_TOOL_DIR),
-        stdout=asyncio.subprocess.PIPE,  # pylint: disable=no-member
-        stderr=asyncio.subprocess.PIPE,  # pylint: disable=no-member
-    )
+    returncode, stdout_text, stderr_text = await _run_tool()
 
-    async def _watch_progress() -> None:
-        """轮询产物大小回报进度（子进程结束时由外层取消）。
+    # ★ attestation 被拒时清掉该视频的 token 缓存并重试一次。
+    #
+    # 为什么需要: ``sabr.mjs`` 只要缓存文件存在且 ``expiresAt`` 未过期就**无条件复用**
+    # （见那里的注释），而 token 可能已经**在服务端失效** —— 实测同一条视频、
+    # 身份指纹与当前 cookie 完全匹配、expiresAt 还在两天后，仍被
+    # ``attestation rejected after 10 attempts`` 拒掉 10 次后放弃；把那个文件删掉让
+    # 工具重新生成，同一个视频立刻下载成功（1080p h264，3.4MB/15s）。
+    # 工具自己没有「被拒 → 重生成」的回退，所以这条兜底放在这里。
+    if returncode != 0 and _is_attestation_rejected(stdout_text, stderr_text):
+        cleared = _clear_pot_cache(video_id, cookie)
+        if cleared:
+            logger.warning(
+                f"SABR attestation 被拒, 已清掉 token 缓存 {cleared}, 重新生成后重试一次: {video_id}"
+            )
+            returncode, stdout_text, stderr_text = await _run_tool()
 
-        ``progress_total`` 为 0 时**照样回调** —— 渲染层把它当「不确定态」（显示
-        "下载中..." 而不是 0%）。SABR 的数据在 googlevideo 内部缓冲、整段落地才写
-        文件，所以 current 在前几秒恒为 0，报百分比只会卡在 0%。
-        """
-        if not progress_callback:
-            return
-        try:
-            while True:
-                await asyncio.sleep(2.0)
-                current = 0
-                for candidate in output_dir.glob("video.*"):
-                    current += candidate.stat().st_size
-                for candidate in output_dir.glob("audio.*"):
-                    current += candidate.stat().st_size
-                await progress_callback(current, progress_total)
-        except asyncio.CancelledError:
-            return
-
-    watcher = asyncio.create_task(_watch_progress())
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError as exc:
-        proc.kill()
-        raise SabrFetchError(f"SABR 取流超时（{timeout:.0f}s）") from exc
-    finally:
-        watcher.cancel()
-
-    stderr_text = (stderr or b"").decode("utf-8", "replace").strip()
-    stdout_text = (stdout or b"").decode("utf-8", "replace").strip()
-    if proc.returncode != 0:
+    if returncode != 0:
         # ⚠️ 报错必须带上**工具自己的 stdout/stderr** —— 只报「退出码 N」会让现场
         # 无法定位（工具把错误写成一行 JSON 到 stdout；node/bun 的报错在 stderr）。
-        detail = stdout_text[-500:] or stderr_text[-500:] or f"退出码 {proc.returncode}"
-        raise SabrFetchError(f"SABR 工具失败(退出码 {proc.returncode}): {detail}")
+        detail = stdout_text[-500:] or stderr_text[-500:] or f"退出码 {returncode}"
+        raise SabrFetchError(f"SABR 工具失败(退出码 {returncode}): {detail}")
 
     payload: dict = {}
     for line in reversed(stdout_text.splitlines()):
