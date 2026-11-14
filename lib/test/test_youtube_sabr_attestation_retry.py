@@ -87,3 +87,20 @@ class TestClearPotCache:
         monkeypatch.setattr(ys, "_POT_CACHE_DIR", tmp_path)
         (tmp_path / "VID1.anon.json").write_text("{}")
         assert ys._clear_pot_cache("VID1", "") == "VID1.anon.json"
+
+
+class TestRetryBudget:
+    """重试上限：**3 次**，不是 1 次。
+
+    实测（2026-11-14）：每次先植入坏 token 逼工具走重生成路径，连跑 5 次，
+    **单次重试的成功率只有 3/5** —— 新生成的 token 有时也被拒（容器里 BotGuard
+    偶发给出不合格 attestation）。给到 3 次能覆盖，但不能无限。
+    """
+
+    def test_budget_is_three(self) -> None:
+        assert ys._MAX_TOKEN_REGENERATIONS == 3
+
+    def test_capped(self) -> None:
+        """上限必须存在 —— cookie 已死这类持续失败不能无限循环。"""
+        assert isinstance(ys._MAX_TOKEN_REGENERATIONS, int)
+        assert 0 < ys._MAX_TOKEN_REGENERATIONS <= 5

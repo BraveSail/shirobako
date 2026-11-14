@@ -37,6 +37,32 @@ import yaml
 
 CONFIG = Path("data/config/platform_config.yaml")
 
+#: 保留最近几份 ``.bak-yt-*`` 备份。
+#:
+#: 定时器改成 3–10 分钟一次后，一天会写上百份备份；配置里还有别的平台凭据，
+#: 不能不留备份，但也不需要留全量历史。3 份足够覆盖「刚写坏 → 上一版 → 上上版」。
+BACKUP_KEEP = 3
+
+
+def _prune_backups(keep: int = BACKUP_KEEP) -> list[str]:
+    """只留最近 ``keep`` 份 ``.bak-yt-*``，返回被删掉的文件名。
+
+    排序按文件名里的时间戳（``%Y%m%d%H%M%S`` 定长，字典序即时间序），
+    不依赖 mtime —— 拷贝会保留源文件的 mtime，用它排序会错。
+    """
+    backups = sorted(CONFIG.parent.glob(f"{CONFIG.name}.bak-yt-*"), key=lambda p: p.name)
+    stale = backups[:-keep] if keep > 0 else backups
+    removed: list[str] = []
+    for path in stale:
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError as exc:
+            print(f"⚠️ 删旧备份失败: {path.name} err={exc}", file=sys.stderr)
+    if removed:
+        print(f"已清理旧备份 {len(removed)} 份（保留最近 {keep} 份）")
+    return removed
+
 #: 登录态判据（**与 `scripts/yt-cookie/refresh_cookie.py` 同源**，也和 yt-dlp 一致）：
 #: ``LOGIN_INFO`` 存在 **且** 至少一个 SAPISID 系。
 #:
@@ -176,6 +202,7 @@ def main() -> int:
     backup = CONFIG.with_name(f"{CONFIG.name}.bak-yt-{datetime.now():%Y%m%d%H%M%S}")
     shutil.copy2(CONFIG, backup)
     print(f"已备份: {backup.name}")
+    _prune_backups()
 
     _write_atomically(CONFIG, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
 

@@ -54,6 +54,13 @@ _SCRIPT_NAME = "sabr.mjs"
 #: 可用 ``PARSEHUB_YT_POT_CACHE`` 覆盖（测试用）。
 _POT_CACHE_DIR = Path(os.environ.get("PARSEHUB_YT_POT_CACHE") or "/tmp/yt-pot-cache")
 
+#: attestation 被拒后最多重新生成几次 token。
+#:
+#: 实测（2026-11-14）：容器里 BotGuard 偶发给出服务端不认的 token，**单次重试**
+#: 的成功率只有 3/5；给到 3 次能覆盖这种偶发。上限必须存在 —— cookie 已死这类
+#: 持续性失败不能无限重试。
+_MAX_TOKEN_REGENERATIONS = 3
+
 #: 单次取流的总超时（秒）—— 45MB 级视频 + 重试余量。慢网络下可放宽。
 DEFAULT_TIMEOUT = 900.0
 
@@ -296,13 +303,25 @@ async def fetch_sabr_streams(  # noqa: PLR0913 - 素材字段本来就多, 平�
     # ``attestation rejected after 10 attempts`` 拒掉 10 次后放弃；把那个文件删掉让
     # 工具重新生成，同一个视频立刻下载成功（1080p h264，3.4MB/15s）。
     # 工具自己没有「被拒 → 重生成」的回退，所以这条兜底放在这里。
-    if returncode != 0 and _is_attestation_rejected(stdout_text, stderr_text):
+    #
+    # 为什么是**最多 3 次**而不是 1 次：新生成的 token 也可能被拒 —— 实测连跑 5 次
+    # （每次先植入坏 token 逼它走重生成路径）时，1 次重试的成功率只有 3/5。
+    # BotGuard 的 challenge 在容器里偶发拿到不合格的 attestation，多试几次就能过；
+    # 幂等代价只是「多生成一个 token + 一次 SABR 请求」，远小于让用户重发链接。
+    # 仍设上限：真·持续失败（cookie 已死等）不能无限循环。
+    replaced = 0
+    while returncode != 0 and _is_attestation_rejected(stdout_text, stderr_text) and replaced < _MAX_TOKEN_REGENERATIONS:
         cleared = _clear_pot_cache(video_id, cookie)
-        if cleared:
-            logger.warning(
-                f"SABR attestation 被拒, 已清掉 token 缓存 {cleared}, 重新生成后重试一次: {video_id}"
-            )
-            returncode, stdout_text, stderr_text = await _run_tool()
+        if not cleared and replaced == 0:
+            # 首次就没有缓存文件可删 ⇒ 说明工具是「新生成也被拒」，照样重试
+            # （新生成可能只是这一次撞上了 BotGuard 的坏运气）。
+            cleared = "（无缓存可清）"
+        replaced += 1
+        logger.warning(
+            f"SABR attestation 被拒, 清掉 token 缓存 {cleared}, 重新生成后重试 "
+            f"({replaced}/{_MAX_TOKEN_REGENERATIONS}): {video_id}"
+        )
+        returncode, stdout_text, stderr_text = await _run_tool()
 
     if returncode != 0:
         # ⚠️ 报错必须带上**工具自己的 stdout/stderr** —— 只报「退出码 N」会让现场
