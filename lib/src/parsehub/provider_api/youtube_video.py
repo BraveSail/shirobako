@@ -547,13 +547,35 @@ def _ext_of(mime_type: str) -> str:
     return "mp4"
 
 
+def _sabr_tier(item: dict) -> int:
+    """从 ``qualityLabel`` 取画质档位（拿不到返回 0）。
+
+    ⚠️ **不能用 ``height`` 判档位**（2026-11-14 实测）：竖屏视频里
+
+    - ``1080x1920`` → label ``1080p``（真 1080p）
+    - ``608x1080``  → label ``480p``，但 **height 也是 1080**
+
+    ``height <= 1080`` 会把 1080x1920 排除掉、只留 608x1080 —— 用户拿到 608 宽的图。
+    横屏视频 height 恰好等于档位值，所以这个 bug 只在竖屏（Shorts）暴露。
+
+    用 ``qualityLabel`` 而不是 ``qualityOrdinal``：两者实测在最高档等价
+    （都选中 1080x1920），label 更直观、与用户说的「1080p」是同一个词。
+    608P 在 label 里同属 ``480p`` 档 —— 那是 YouTube 自己的档位命名。
+    """
+    match = re.match(r"(\d+)", str(item.get("qualityLabel") or ""))
+    return int(match.group(1)) if match else 0
+
+
 def _sabr_best_quality(sabr: SabrSource, max_height: int = DEFAULT_MAX_HEIGHT) -> tuple[int, int] | None:
     """SABR 素材里最高画质视频的 ``(width, height)``（纯函数）。
 
     只用于填充 ``SelectedStreams`` 的画质（文件名 / 渲染层用）—— 真正的选流由
     bun 工具内的 SabrStream 按 ``video_quality`` 做。
+
+    档位判据用 ``qualityOrdinal``（竖屏才准），拿不到时退回 ``height``。
     """
     best: tuple[int, int] | None = None
+    best_tier = -1
     for item in sabr.adaptive_formats:
         mime = str(item.get("mimeType") or "")
         if not mime.startswith("video/"):
@@ -561,10 +583,12 @@ def _sabr_best_quality(sabr: SabrSource, max_height: int = DEFAULT_MAX_HEIGHT) -
         height = int(item.get("height") or 0)
         if height <= 0:
             continue
-        if max_height > 0 and height > max_height:
+        tier = _sabr_tier(item) or height
+        if max_height > 0 and tier > max_height:
             continue
         width = int(item.get("width") or 0)
-        if best is None or height > best[1]:
+        if tier > best_tier:
+            best_tier = tier
             best = (width, height)
     return best
 

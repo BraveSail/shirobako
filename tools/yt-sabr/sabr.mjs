@@ -118,16 +118,44 @@ const CODEC_AUDIO = {
   h264: { container: 'mp4', audio: 'mp4a' },
 };
 
+/**
+ * 从 ``qualityLabel`` 取画质档位数值（**不是 height**）。
+ *
+ * ★★ 竖屏视频（Shorts）不能用 ``height`` 当档位判据（2026-11-14 实测）:
+ *
+ *   1080x1920  label=1080p              ← 真 1080p
+ *    608x1080  label=480p              ← 低档，但 height 也是 1080
+ *
+ * 按「height ≤ 1080」过滤会**同时排除** 1080x1920（height=1920）并保留
+ * 608x1080 —— 用户拿到 608 宽的图还以为是 1080p。横屏视频 height 碰巧等于档位值，
+ * 所以这个 bug 只在竖屏暴露。
+ *
+ * **为什么用 qualityLabel 而不是 qualityOrdinal**：两者实测在最高档等价
+ * （都选中 1080x1920），label 更直观、与用户说的「1080p」是同一个词。
+ * `608P` 在 label 里同属 `480p` 档 —— 那是 YouTube 自己的档位命名，不是错误。
+ *
+ * 解析只取前导数字（`1080p` → 1080、`2160p60` → 2160、`144p` → 144）。
+ * 返回 0 表示认不出（缺字段 / 格式变了）—— 调用方回退到 height。
+ */
+function labelTier(f) {
+  const m = String(f.qualityLabel || '').match(/^(\d+)/);
+  return m ? Number(m[1]) : 0;
+}
+
 function pickByCodecPriority(priority) {
   const wanted = priority.map((c) => String(c).toLowerCase());
-  const videos = formats.filter(
-    (f) => f.mimeType?.startsWith('video/') && (f.height || 0) > 0 && (f.height || 0) <= maxHeight
-  );
+  // 只在「有视频轨」的格式里挑；档位上限按 label（拿不到时回退 height）
+  const allVideos = formats.filter((f) => f.mimeType?.startsWith('video/') && (f.height || 0) > 0);
+  const videos = allVideos.filter((f) => {
+    const tier = labelTier(f) || (f.height || 0);
+    return !(maxHeight > 0) || tier <= maxHeight;
+  });
   if (!videos.length) return null;
 
-  // ① 最高分辨率档（分辨率优先 —— 不能为了编码牺牲画质）
-  const topHeight = Math.max(...videos.map((f) => f.height || 0));
-  const topTier = videos.filter((f) => (f.height || 0) === topHeight);
+  // ① 最高分辨率档 —— 按 label 排（竖屏/横屏都对），拿不到 label 时才退回 height。
+  //    同档内有多条编码，它们属于同一画质，按下面的编码优先级挑。
+  const topTierValue = Math.max(...videos.map((f) => labelTier(f) || (f.height || 0)));
+  const topTier = videos.filter((f) => (labelTier(f) || (f.height || 0)) === topTierValue);
 
   // ② 该档内按 codecPriority 挑；都没有就取这一档码率最高的
   let video = null;
