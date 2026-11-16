@@ -102,9 +102,23 @@ class XiaoHeiHeAPI:
         else:
             use_concept_type = link.get("use_concept_type", False)
             text_list = json.loads(text)
+            body_image_urls: list[str] = []
             if text_list[0]["type"] == "html":
                 html = text_list[0]["text"]
                 content = XHHConverter(heading_style="ATX").convert(html)
+                # ★ 正文里的图用 ``data-original``（懒加载属性），转出来是原图 URL:
+                #   ``https://imgheybox.max-c.com/...``
+                #   而 ``text_list[1:]`` 里的 img 节点给的是**另一个 CDN 域名**
+                #   ``https://imgheybox1.max-c.com/...`` + 图片处理参数
+                #   （``?imageMogr2/...thumbnail/850x1450``）。
+                #
+                #   两者 **path 完全相同、host 与 query 不同** ⇒ 渲染层
+                #   ``rewrite_external_images`` 按「URL 是否在 media_urls 里」匹配时
+                #   对不上，正文图会被**剥掉**（日志：`正文外链图不在媒体列表里, 已剥掉`）,
+                #   用户看到的就是「怎么没图？」。
+                #
+                #   ⇒ 统一用**正文那批 URL** 建 media，两边逐字一致才不会被剥。
+                body_image_urls = re.findall(r"!\[\]\(([^)\s]+)\)", content)
             else:
                 content = text_list[0]["text"]
             post_type = XiaoHeiHePostType.IMAGE if use_concept_type else XiaoHeiHePostType.ARTICLE
@@ -121,6 +135,13 @@ class XiaoHeiHeAPI:
                             width=int(float(image.get("width", 0))),
                         )
                     )
+            # 正文图与 media 逐位对齐时，用正文 URL 覆盖（顺序一致：两边都是正文里
+            # 那几张图，只是域名/参数不同）。数量对不上就各自保留 —— 宁可少换，
+            # 也不要错位把 A 图当 B 图。
+            if body_image_urls and len(body_image_urls) == len(images):
+                for media, url in zip(images, body_image_urls, strict=True):
+                    media.url = url
+                    media.thumb_url = url
             return XiaoHeiHePost(
                 type=post_type, title=title, content=content, media=images, author_name=author_name, **meta
             )

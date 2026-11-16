@@ -15,6 +15,25 @@ from ...types import (
 from ...utils.helpers import image_ext_from_url, profile_url
 
 
+class XiaoHeiHeRichTextParseResult(RichTextParseResult):
+    """小黑盒长文（ARTICLE）。
+
+    ``requires_media_download`` **必须为 True**：正文里的 ``![](https://imgheybox…)``
+    会被渲染层 ``rewrite_external_images`` **无条件**改写成上传媒体引用，对不上
+    ``media_urls`` 的直接剥掉（见 ``plugins/helpers.py`` 那段的注释：外链图交给
+    Telegram 抓会因防盗链/404 整条 400，所以宁可剥）。
+
+    于是「正文里有外链图」并不等于「Telegram 会自己抓」——
+    ``RichTextParseResult`` 基类注释里那条旧假设在这里不成立。不下载 ⇒ ``media_urls``
+    为空 ⇒ 5 张图全被剥掉，用户看到的就是「怎么没图？」。
+
+    ⚠️ 属性必须加在 **result 类**上：``should_skip_richtext_download`` 读的是
+    ``parse_result.requires_media_download``，加在 parser 类上不生效（PTT 踩过）。
+    """
+
+    requires_media_download = True
+
+
 class XiaoHeiHeParser(BaseParser):
     __platform__ = Platform.XIAOHEIHE
     __supported_type__ = ["视频", "图文"]
@@ -60,7 +79,7 @@ class XiaoHeiHeParser(BaseParser):
                     **meta,
                 )
             case XiaoHeiHePostType.ARTICLE:
-                return RichTextParseResult(
+                return XiaoHeiHeRichTextParseResult(
                     title=xhh.title,
                     author_name=xhh.author_name,
                     media=self.__parse_images(xhh),
