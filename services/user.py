@@ -9,13 +9,31 @@ from repo.user import UserRepo
 def locale_for(language_code: str | None, default: str | None = None) -> str:
     """把 Telegram 上报的语言码归一成项目 locale。
 
-    Telegram 用 ISO 639-1 (``ja`` / ``zh-hant``) 且**大小写不定** (``zh-Hant``)，
-    这里统一小写后再查表; 查不到就退回 ``default``(默认 bot 全局语言)。
+    Telegram 的形态**不统一**：同一套代码里实测过 ``ja``（短码）与 ``en-us``
+    （BCP-47 全码）。所以这里做**两级查找**：
+
+    1. 整串小写后查 ``ISO639_MAP``（``en-us`` / ``zh-hant`` 走这层）；
+    2. 查不到就取主语言（``en-GB`` 之类未登记的地区变体 → ``en``）。
+
+    都没有才退回 ``default``（bot 全局语言）。
+
+    ⚠️ **别再只查一层**：只查整串时 ``en-us`` 会掉进 fallback（简中），
+    症状就是「TG 是英语但 i18n 是中文」，而日语用户因为报的是短码恰好正常
+    —— 这种不对称极具误导性（当年就是这么漏掉的）。
     """
     fallback = default or bs.language
     if not language_code:
         return fallback
-    return ISO639_MAP.get(language_code.strip().lower(), fallback)
+    normalized = language_code.strip().lower().replace("_", "-")
+    if not normalized:
+        return fallback
+    if (locale := ISO639_MAP.get(normalized)) is not None:
+        return locale
+    # 二级：去掉地区/书写系统，只留主语言（``en-gb`` → ``en``、``sr-latn-rs`` → ``sr``）
+    primary = normalized.split("-", 1)[0]
+    if primary and (locale := ISO639_MAP.get(primary)) is not None:
+        return locale
+    return fallback
 
 
 class UserNotFoundError(Exception):
