@@ -48,7 +48,6 @@ COMMANDS = {
     "raw": t_("发送原文件, 避免画质压缩"),
     "zip": t_("打包发送, 附带解析信息"),
     "jxjx": t_("绕过缓存解析"),
-    "lang": t_("语言"),
     "cfg": t_("配置"),
 }
 
@@ -64,7 +63,6 @@ def build_start_text() -> LocaleContent:
         f"/raw <链接> - 发送原文件, 避免画质压缩\n"
         f"/zip <链接> - 打包发送, 附带解析信息\n"
         f"/jxjx <链接> - 绕过缓存解析\n"
-        f"/lang - 语言\n"
         f"/cfg - 配置\n"
         f"/cfg <频道用户名/链接/id> - 频道配置\n"
         f"</blockquote>\n\n"
