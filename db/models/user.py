@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import BigInteger, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core import bs
 from db.base import Base
 
 if TYPE_CHECKING:
@@ -28,11 +27,6 @@ if TYPE_CHECKING:
 ROLE_USER = "user"
 #: 管理员（``/promote`` 提升），能调管理命令
 ROLE_ADMIN = "admin"
-
-#: ``lang_source`` 取值：语言由 Telegram 上报的语言码自动归一出（可被重新同步）
-LANG_SOURCE_TG = "tg"
-#: ``lang_source`` 取值：用户在 ``/lang`` 里手动选的（**任何自动同步都不能覆盖**）
-LANG_SOURCE_MANUAL = "manual"
 
 
 class User(Base):
@@ -44,25 +38,6 @@ class User(Base):
         autoincrement=True,
     )
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
-
-    language_code: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=bs.language, server_default=bs.language
-    )
-
-    #: 这个语言是怎么来的：``tg`` = 首次出现时由 Telegram 上报的语言自动归一出;
-    #: ``manual`` = 用户自己用 ``/lang`` 选的。
-    #:
-    #: **为什么要区分**：``ensure_lang`` 对已有用户不读 Telegram 语言（否则会冲掉
-    #: 手动选择）。但这样一来，早期因为「只认短码、不认 BCP-47」被误存成简中的用户
-    #: （TG 是 ``en-us`` 却被归一成 ``zh-hans``）就永远纠不回来。
-    #: 有了这个字段就能只更新 ``tg`` 那些行 —— 手动选过的坚决不动。
-    #:
-    #: 存量行一律视为 ``tg``：2026-11-18 之前的 ``set_lang`` 只有 ``/lang``
-    #: 一个入口（``ensure_lang`` 初始化也走它），没法区分，但把存量当 ``tg``
-    #: 重新同步一次 Telegram 语言是**用户当时要求的行为**（"加个source批量修"）。
-    lang_source: Mapped[str] = mapped_column(
-        String(8), nullable=False, default=LANG_SOURCE_TG, server_default=LANG_SOURCE_TG
-    )
 
     #: 白名单角色: ``None`` = 无授权（路人）; ``user`` = 白名单普通用户; ``admin`` = 管理员。
     #: 超管不在这里 —— 只认配置（``.env`` 的 ``ADMIN_USERS``）。

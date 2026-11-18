@@ -29,7 +29,7 @@ LANG_MAP = {
     "id-id": "Bahasa Indonesia",
 }
 
-#: Telegram 上报的用户语言码 (``User.language_code``) -> 本项目 locale。
+#: Telegram 上报的语言码 -> 本项目 locale。
 #:
 #: ⚠️ **必须同时登记 ISO 639-1 短码和 BCP-47 全码**：Telegram 上报的形态
 #: **因客户端和版本而异** —— 实测同一套代码里，日语用户报 ``ja``、英语用户报

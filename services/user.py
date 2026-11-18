@@ -1,8 +1,7 @@
-from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import bs
-from db.models.user import LANG_SOURCE_MANUAL, LANG_SOURCE_TG, User
+from db.models.user import User
 from i18n import ISO639_MAP
 from repo.user import UserRepo
 
@@ -61,55 +60,29 @@ class UserService:
             return await self.add(telegram_user_id)
         return user
 
-    async def ensure_lang(self, telegram_user_id: int, telegram_language_code: str | None = None) -> str:
-        """取用户语言; 用户**首次出现**时按其 Telegram 语言初始化。
+    @staticmethod
+    def lang_for(telegram_language_code: str | None) -> str:
+        """按 Telegram 上报的语言码算出界面语言。**纯函数，不碰数据库。**
 
-        以前只有"建表默认值 + 手动 /lang"两个来源, Telegram 上报的语言从没被用上,
-        于是所有新用户一律是 bot 全局语言 (简中) —— 表现为"日语/繁体用户收到的还是简中"。
+        用户指令（2026-11-18）：语言每次按 Telegram 语言适配，不入库 —— 没有手动选择，
+        也就没有要持久化的"用户偏好"。这样 Telegram 里改了语言，下一条消息立刻生效，
+        不存在「缓存了旧语言」这种状态。
 
-        **已有用户**：
-        - ``lang_source == manual``（用户自己 /lang 选过）→ 原样返回，**绝不覆盖**；
-        - ``lang_source == tg``（当初自动归一的）→ 拿本次 Telegram 上报的值重新归一一遍，
-          变了就更新。这一条是为了修掉「只认短码不认 BCP-47」时被误存成简中的那批人：
-          他们下次发消息就自动纠正，不需要手动 /lang。
-
-        拿不到 Telegram 语言（``None``/空）时不动库里的值 —— 不能因为一次缺失就退回默认。
+        拿不到语言码时用 bot 全局语言（``bs.language``）—— 这是**唯一**的兜底，
+        因为它不是"用户偏好"，而是"这次拿不到任何线索"。
         """
-        locale_hint = locale_for(telegram_language_code, default="") if telegram_language_code else ""
+        return locale_for(telegram_language_code)
 
-        if user := await self.get(telegram_user_id):
-            if user.lang_source == LANG_SOURCE_MANUAL or not locale_hint:
-                return user.language_code
-            if locale_hint != user.language_code:
-                user.language_code = locale_hint
-                logger.info(
-                    f"用户语言按 Telegram 重新同步: tg={telegram_user_id} "
-                    f"{user.language_code!r} <- {telegram_language_code!r}"
-                )
-            return user.language_code
+    async def ensure_lang(self, telegram_user_id: int, telegram_language_code: str | None = None) -> str:
+        """取用户语言 —— **纯计算，不读也不写库**。
 
-        locale = locale_for(telegram_language_code)
-        await self.set_lang(telegram_user_id, locale, source=LANG_SOURCE_TG)
-        return locale
+        参数 ``telegram_user_id`` 保留只是为了不改 15 个调用点（它们手里都有这个值）。
+        以后清账时可以去掉，但那是纯机械重构，不必和本改动混在一起。
+        """
+        del telegram_user_id  # 未使用；语言不再与用户记录绑定
+        return self.lang_for(telegram_language_code)
 
     async def get_lang(self, telegram_user_id: int) -> str:
-        if user := await self.get(telegram_user_id):
-            return user.language_code
+        """兼容旧调用点：没有持久化的语言可查，直接给 bot 全局语言。"""
+        del telegram_user_id
         return bs.language
-
-    async def set_lang(
-        self,
-        telegram_user_id: int,
-        language_code: str,
-        *,
-        source: str = LANG_SOURCE_MANUAL,
-    ) -> User:
-        """设置语言。
-
-        ``source`` 默认 ``manual`` —— 唯一的手动入口是 ``/lang``，默认值取更保守的那个，
-        免得哪天新加一个调用点忘了传就把它当成「可自动覆盖」。
-        """
-        user = await self.ensure(telegram_user_id)
-        user.language_code = language_code
-        user.lang_source = source
-        return user
