@@ -1,7 +1,8 @@
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import bs
-from db.models.user import User
+from db.models.user import LANG_SOURCE_MANUAL, LANG_SOURCE_TG, User
 from i18n import ISO639_MAP
 from repo.user import UserRepo
 
@@ -65,12 +66,30 @@ class UserService:
 
         以前只有"建表默认值 + 手动 /lang"两个来源, Telegram 上报的语言从没被用上,
         于是所有新用户一律是 bot 全局语言 (简中) —— 表现为"日语/繁体用户收到的还是简中"。
-        已有用户不会被覆盖 (手动 /lang 的选择要保留)。
+
+        **已有用户**：
+        - ``lang_source == manual``（用户自己 /lang 选过）→ 原样返回，**绝不覆盖**；
+        - ``lang_source == tg``（当初自动归一的）→ 拿本次 Telegram 上报的值重新归一一遍，
+          变了就更新。这一条是为了修掉「只认短码不认 BCP-47」时被误存成简中的那批人：
+          他们下次发消息就自动纠正，不需要手动 /lang。
+
+        拿不到 Telegram 语言（``None``/空）时不动库里的值 —— 不能因为一次缺失就退回默认。
         """
+        locale_hint = locale_for(telegram_language_code, default="") if telegram_language_code else ""
+
         if user := await self.get(telegram_user_id):
+            if user.lang_source == LANG_SOURCE_MANUAL or not locale_hint:
+                return user.language_code
+            if locale_hint != user.language_code:
+                user.language_code = locale_hint
+                logger.info(
+                    f"用户语言按 Telegram 重新同步: tg={telegram_user_id} "
+                    f"{user.language_code!r} <- {telegram_language_code!r}"
+                )
             return user.language_code
+
         locale = locale_for(telegram_language_code)
-        await self.set_lang(telegram_user_id, locale)
+        await self.set_lang(telegram_user_id, locale, source=LANG_SOURCE_TG)
         return locale
 
     async def get_lang(self, telegram_user_id: int) -> str:
@@ -78,7 +97,19 @@ class UserService:
             return user.language_code
         return bs.language
 
-    async def set_lang(self, telegram_user_id: int, language_code: str) -> User:
+    async def set_lang(
+        self,
+        telegram_user_id: int,
+        language_code: str,
+        *,
+        source: str = LANG_SOURCE_MANUAL,
+    ) -> User:
+        """设置语言。
+
+        ``source`` 默认 ``manual`` —— 唯一的手动入口是 ``/lang``，默认值取更保守的那个，
+        免得哪天新加一个调用点忘了传就把它当成「可自动覆盖」。
+        """
         user = await self.ensure(telegram_user_id)
         user.language_code = language_code
+        user.lang_source = source
         return user
