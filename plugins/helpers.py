@@ -591,7 +591,7 @@ def replace_translatable_fragments(text: str, lang: str = "") -> str:
     return _TRANSLATABLE_FRAGMENT_RE.sub(lambda m: _translate_fragment(m.group(1), lang), text)
 
 
-def fold_for_show_more(body: str, summary: str = "") -> str:
+def fold_for_show_more(body: str, summary: str = "", *, keep_out: str = "") -> str:
     """可见部分超过客户端"显示更多"阈值时，把整段内容再折一层 ``<details>``。
 
     Telegram 客户端对**可见**字符超过约 7500 的长富文本会自动折叠（"显示更多"），
@@ -599,11 +599,29 @@ def fold_for_show_more(body: str, summary: str = "") -> str:
     引用/评论通常已各自折进 ``<details>``，这里做兜底: 仍然超阈值就整体再折一层，
     页脚永远落在折叠之外。
 
+    :param keep_out: 这一段的**原文**（已经拼在 ``body`` 尾部）不进折叠 ——
+        用来把 PTT 的推文段留在「展开全文」外面。用户要求「推文不要放进正文折叠里，
+        分出来」：推文段自己已经是 ``<details>``，再套外层折叠等于它还被关在正文里。
+
     嵌套 ``<details>`` 是允许的（服务端上限 16 层），所以不必先拆已有折叠。
     """
     if visible_length(body) <= SHOW_MORE_VISIBLE_LIMIT:
         return body
     label = summary or "展开全文"
+    # 有要留在外面的段落: 只折它**之前**的部分，它自己和之后的内容平级留在外面。
+    # 用 rfind 而不是 split —— 同一段文本在正文里也可能出现（正文引用推文时），
+    # 必须切在真正的尾部那一次。
+    if keep_out:
+        at = body.rfind(keep_out)
+        if at > 0:
+            head = body[:at].rstrip()
+            tail = body[at:]
+            if not head:
+                return body
+            if visible_length(head) <= SHOW_MORE_VISIBLE_LIMIT:
+                # 正文本身不长，只有推文把它撑超了 —— 那就不折，推文已自己折
+                return body
+            return f"<details><summary>{label}</summary>\n\n{head}\n\n</details>\n\n{tail}"
     return f"<details><summary>{label}</summary>\n\n{body}\n\n</details>"
 
 
@@ -708,6 +726,12 @@ def build_rich_markdown(
     parts: list[str] = []
     # 被回复的卡片在正文前、被引用的卡片在正文后, 各自的媒体留在自己的块里
     reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
+    # 末尾的 <details> 块 (PTT 的推文段) 拆出来, **不参与正文折叠** ——
+    # 用户要求「推文不要放进正文折叠里，分出来」: 正文该折就折, 推文段自己折自己,
+    # 两者平级。否则展开「展开全文」后看到的还是又一个要点的「推文（N 條）」。
+    trailing_details = ""
+    if body_text:
+        body_text, trailing_details = split_trailing_details(body_text)
     fold_summary = t_[lang]("展开全文") if lang else ""
     # 手动遮住时的摘要: ⚠️ + **用户自己写的那个标记** (#nsfw / #spoiler)。
     # 不写「展开全文」—— 折叠按钮的文字对"被藏起来"这件事没有信息量, 而标记本身
@@ -787,6 +811,13 @@ def build_rich_markdown(
         # 截断会把长正文变成省略号, 折叠也就轮不上了
         # (手动遮住时不在这里折 —— 整组内容会在下面一起进 details)
         parts.append(body_text if hide_content else format_text(body_text, fold_summary=fold_summary))
+    if trailing_details and not config.hide_desc:
+        # **推文段/尾部折叠块独立于正文折叠**（用户要求「推文不要放进正文折叠里，分出来」）。
+        # 它自己就是一个 <details>，不套 format_text —— 折两次会让用户点开「展开全文」
+        # 之后又看到一个「推文（N 條）」，等于推文仍被关在正文折叠里。
+        # 也不做 escape：内容由我们自己的 parser 生成（blockquote + text），
+        # 走 blocks 通道后本来就是字面量。手动打码时它已经在下面整组进 details，不重复加。
+        parts.append(trailing_details)
     if custom_content:
         parts.append(custom_content)
 
@@ -871,7 +902,7 @@ def build_rich_markdown(
         href = html.escape(parse_result.raw_url, quote=True)
         footer_parts.append(f'<a href="{href}">{html.escape(label)}</a>')
 
-    body = fold_for_show_more(body, fold_summary)
+    body = fold_for_show_more(body, fold_summary, keep_out=trailing_details)
     if not footer_parts:
         return body
     footer = f"<footer>{_METADATA_SEPARATOR.join(footer_parts)}</footer>"
@@ -1314,6 +1345,48 @@ def split_trailing_quote(content: str) -> tuple[str, str]:
     head, middle, tail = split_quote_blocks(content)
     body = f"{head}\n\n{middle}".strip() if head else middle
     return body, tail
+
+
+def split_trailing_details(content: str) -> tuple[str, str]:
+    """把正文**末尾**的 ``<details>`` 块拆出来: 返回 (正文, 尾部 details 块)。
+
+    为什么需要: ``<details>`` 块本身就是「收起來」的, 再被整篇折叠包一层, 用户
+    展开「展开全文」之后看到的第一个东西还是一个要再点一次的「推文（N 條）」——
+    而且**推文被算进了正文折叠里**, 折叠摘要显示的长度也把推文算了进去。
+
+    真正的诉求是「推文独立于正文折叠」: 正文该折就折, 推文段自己折自己, 两者平级。
+
+    只认**末尾**那一块 (前面主动找 ``<details>`` 起头、后面必须一直到底),
+    正文中间的 details (比如打码/图集) 不会被误拆。
+
+    嵌套安全: 从后往前扫, 用深度计数配对, 只找**最外层**的开标签 —— 只找第一个
+    ``<details>`` 会截错 (推文段里可能还有一层)。
+    """
+    end = len(content.rstrip())
+    if end == 0 or not content[:end].rstrip().endswith("</details>"):
+        return content, ""
+
+    # 从末尾往前数 <details> / </details>, 深度归零时那个位置就是最外层开标签
+    depth = 0
+    open_at = -1
+    for m in reversed(list(re.finditer(r"<details>|</details>", content[:end]))):
+        if m.group() == "</details>":
+            depth += 1
+        else:
+            depth -= 1
+            if depth == 0:
+                open_at = m.start()
+                break
+
+    if open_at <= 0:
+        return content, ""
+
+    # 前面必须紧贴正文 (中间只允许空行), 否则说明它是正文的一部分而不是尾部块
+    body = content[:open_at].strip()
+    if not body:
+        # 整篇就是一个 details: 不拆, 拆了就没有正文了
+        return content, ""
+    return body, content[open_at:end].strip()
 
 
 def attach_quote_media(quote: str, placeholders: Sequence[str]) -> str:
