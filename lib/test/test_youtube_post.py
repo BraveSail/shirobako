@@ -122,10 +122,18 @@ def test_single_image_post():
     assert post.video is None and post.poll is None
 
 
-def test_single_image_url_keeps_the_size_suffix_off():
-    """配图取原图 —— 页面给的最大档带 ``=sNNN…`` 尺寸/裁剪修饰, 拿它当原图会丢边。"""
+def test_single_image_url_requests_the_original_size():
+    """配图取原图 —— 尺寸修饰必须换成 ``=s0``。
+
+    ⚠️ **旧断言是「去掉整个 ``=…`` 后缀」**，而那正是 bug 的来源：实测同一张图
+    无后缀只有 **512×288 / 241 KB**，``=s0`` 才是 **1280×720 / 1.13 MB** 原图。
+    「不带后缀」≠「原图」，服务端会退回默认小图（用户报「抓的不是高清图」）。
+    """
     post = parse_post_page(_html("youtube_post_single_image.html"))
-    assert "=" not in post.images[0].url
+    url = post.images[0].url
+    assert url.endswith("=s0"), f"应请求原图 =s0，实际: {url}"
+    # 不带 -c（方形裁剪）—— 裁过的不是原比例
+    assert "-c" not in url.rsplit("=", 1)[-1]
     assert post.images[0].thumb_url  # 最小档留着当缩略图
 
 

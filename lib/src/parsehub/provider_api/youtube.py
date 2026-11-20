@@ -78,15 +78,26 @@ def find_youtube_links(text: str | None) -> list[str]:
 
 
 def trim_cover(url: str) -> str:
-    """去掉尺寸后缀取原图。
+    """把 ``yt3.ggpht.com`` 的尺寸修饰换成 **``=s0``（原图）**。
 
-    ``…=s900-c-k-c0x00ffffff-no-rj`` 这类尾巴是 YouTube 的尺寸修饰, 截掉 ``=`` 后
-    的部分拿到原图 —— 让下载器按自己要的尺寸处理, 而不是被 s900 钉死。
+    ⚠️ **不能简单截掉 ``=`` 之后的部分**（旧实现就是那么做的）：
+    实测同一条帖子配图
+    - 无后缀 → **512×288 / 241 KB**（服务端默认小图，比原图小得多）
+    - ``=s0`` → **1280×720 / 1.13 MB**（原图）
+    - ``=s288-rw-nd-v1``（页面给的 thumb）→ 288×162
 
-    帖子配图同理: ``…=s1080-c-fcrop64=1,00001999ffffe666-rw-nd-v1`` 截掉后拿到的是
-    **未经方形裁剪的原图**（页面给的最大档是被裁过的正方形, 拿它当原图会丢边）。
+    也就是说「去掉修饰」拿到的是默认缩略图，不是原图 —— 用户报「抓的不是高清图」
+    就是这条。正确做法是保留 ``=`` 并把尺寸段换成 ``s0``。
+
+    顺带解决方形裁剪：``=s1280-c`` 会裁成 1280×1280，``=s0`` 不带 ``-c``，
+    拿到的是未裁剪的原比例图。
+
+    非 ggpht 域名（其它图床）原样返回 —— 它们的 ``=`` 未必是尺寸语义。
     """
-    return url.split("=", 1)[0] if "=" in url else url
+    if "yt3.ggpht.com" not in url and "yt3.googleusercontent.com" not in url:
+        return url
+    base = url.split("=", 1)[0]
+    return f"{base}=s0"
 
 
 async def _fetch_page(url: str, *, proxy=None) -> str:
