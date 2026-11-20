@@ -1,7 +1,6 @@
 024738655610: Opcja „Inline 'Oryginalny URL'"
 047ddf74eb5e: To nie jest twoja konfiguracja
-04f706887b08: Bot nie dołączył do tego kanału, najpierw dodaj bota do kanału, a następnie
-  skonfiguruj
+04f706887b08: Bot nie dołączył do tego kanału, najpierw dodaj bota do kanału, a następnie skonfiguruj
 059880e54bc6: Dodano do białej listy (zwykły użytkownik)
 06778dbf05d5: Zarządzanie platformą
 091d3a0665fa: Konfiguracja kanału
@@ -10,9 +9,19 @@
 0d3d68e32996: Już trwa analiza tego samego zadania, czekaj na zakończenie analizy...
 0f6c4353601e: Wyślij oryginalny plik, aby uniknąć kompresji jakości obrazu
 0f6cedccc5d3: Zbyt wiele GIF-ów, pomijanie przesyłania, proszę pobrać samodzielnie
+1080fafe7253: '/jx <link> - przetwórz i pokaż podgląd
+
+  /raw <link> - wyślij oryginalny plik bez kompresji
+
+  /zip <link> - wyślij jako archiwum z informacjami
+
+  /jxjx <link> - przetwórz z pominięciem pamięci podręcznej
+
+  /cfg - ustawienia
+
+  /cfg <nazwa/link/id kanału> - ustawienia kanału'
 139669c83cc6: Już jest administratorem
-1a603ac4b55c: Proszę wysłać `/cfg` lub użyć `/cfg <nazwa_użytkownika_kanalu/link/id>`
-  w prywatnej rozmowie, grupie lub temacie, aby skonfigurować
+1a603ac4b55c: Proszę wysłać `/cfg` lub użyć `/cfg <nazwa_użytkownika_kanalu/link/id>` w prywatnej rozmowie, grupie lub temacie, aby skonfigurować
 1d30c358e2a1: Domyślny tryb analizy
 1edff073d48e: Odpowiedzi
 1f3c920d087b: Przetwarzanie...
@@ -67,6 +76,7 @@
 
 
   **Adres źródłowy: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Wyślij link do udostępnienia, aby go przetworzyć**'
 4e9ce9dfe13d: Ukryj tytuł
 4fb5f29ee802: Proszę dołączyć link lub odpowiedzieć na wiadomość
 5348dcac296c: Nie udało się przeanalizować
@@ -77,21 +87,21 @@
 5b943dc87178: Link do pobrania GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: Nie kanał
+5f3b5d4e0055: '**Polecenia:**'
 5f411223ca5a: Powrót
 607e7a4f377f: wyświetleń
 6740d8c7b274: Odpowiedz na wiadomość
-6769c172299c: Nie jesteś administratorem tego czatu, nie masz uprawnień do zmiany
-  konfiguracji
+6769c172299c: Nie jesteś administratorem tego czatu, nie masz uprawnień do zmiany konfiguracji
 68957ac274c5: Pobieranie... | {current * 100 / total:.0f}%
-'734176584215': Nie jesteś właścicielem tego kanału, nie masz uprawnień do zmiany
-  konfiguracji kanału
 6c3cc1a489b2: Nie jest administratorem
 6c6a39ac8cf3: Dodano do listy dozwolonych
+'734176584215': Nie jesteś właścicielem tego kanału, nie masz uprawnień do zmiany konfiguracji kanału
 7527da8954f3: Zwykły użytkownik
 75f0fa966d82: polubień
 769d88e425e0: Zakończono
 77274b54a324: 'Błąd {stage}:'
 777ab5422d34: Superadministrator
+7a425880c8d8: 'Wyczyszczono wszystkie pamięci podręczne (Redis): {persistent} trwałych · {result} wyników'
 7b000c997e5e: 📊 Ankieta
 7d9d43d89239: Awansowano na administratora
 7eafd0a497bd: '
@@ -101,9 +111,11 @@
 816de50b9e0e: Wpisz link w polu czatu
 8472b9d2a8a9: Głosy
 868afb493654: Wybierz cel konfiguracji
+876f8af3d499: '**Źródło: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Nieobsługiwany element konfiguracji
 91f015aa09bc: Odpowiedz na czyjąś wiadomość lub podaj ID użytkownika
 945599b91845: Wyłącz postęp analizy
+968e5675d74c: '**Obsługiwane platformy:**'
 9b3dbf3e3f85: Ukryj dolny „Źródło”
 a3e3b88377c8: Start
 a4acafd79982: Już na liście dozwolonych
@@ -128,20 +140,16 @@ d34addb9b2f0: Pamięć podręczna wyczyszczona
 d4b153707c28: Tylko dla użytkowników z białej listy
 d5631690265c: Nie można rozpoznać celu konfiguracji
 d5a73b0c7f2f: Przesyłanie
-7a425880c8d8: 'Wyczyszczono wszystkie pamięci podręczne (Redis): {persistent} trwałych · {result} wyników'
 d9d060bed1f0: Łącznie {total:,} głosów
 da86ae7e75fe: Dyskusja
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
 
-  >**Aby zapewnić dobrą jakość korzystania wszystkim użytkownikom, obecnie włączono
-  ograniczenie szybkości**
+  >**Aby zapewnić dobrą jakość korzystania wszystkim użytkownikom, obecnie włączono ograniczenie szybkości**
 
 
-  >Projekt jest otwartoźródłowy, jeśli masz potrzeby częstego lub masowego przetwarzania,
-  zalecamy samodzielne uruchomienie instancji, aby uniknąć globalnych ograniczeń szybkości
-  API Telegrama
+  >Projekt jest otwartoźródłowy, jeśli masz potrzeby częstego lub masowego przetwarzania, zalecamy samodzielne uruchomienie instancji, aby uniknąć globalnych ograniczeń szybkości API Telegrama
 
 
   **Repozytorium otwartego źródła: [GitHub](https://github.com/BraveSail/shirobako)**'

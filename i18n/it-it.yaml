@@ -1,7 +1,6 @@
 024738655610: Opzione "URL originale" inline
 047ddf74eb5e: Questa non è la tua configurazione
-04f706887b08: Il Bot non è stato aggiunto a questo canale, aggiungi prima il Bot al
-  canale e poi configura
+04f706887b08: Il Bot non è stato aggiunto a questo canale, aggiungi prima il Bot al canale e poi configura
 059880e54bc6: Aggiunto alla whitelist (utente normale)
 06778dbf05d5: Gestione piattaforma
 091d3a0665fa: Configurazione canale
@@ -10,9 +9,19 @@
 0d3d68e32996: Un'attività identica è già in fase di analisi, attendere il completamento...
 0f6c4353601e: Invia il file originale per evitare la compressione della qualità
 0f6cedccc5d3: Troppi GIF, caricamento saltato, si prega di scaricare manualmente
+1080fafe7253: '/jx <link> - analizza e mostra anteprima
+
+  /raw <link> - invia il file originale, senza compressione
+
+  /zip <link> - invia come archivio con le info di analisi
+
+  /jxjx <link> - analizza ignorando la cache
+
+  /cfg - impostazioni
+
+  /cfg <nome/link/id del canale> - impostazioni del canale'
 139669c83cc6: Già amministratore
-1a603ac4b55c: Invia `/cfg` in chat privata, gruppo o argomento oppure usa `/cfg <nome
-  utente/link/id del canale>` per configurare
+1a603ac4b55c: Invia `/cfg` in chat privata, gruppo o argomento oppure usa `/cfg <nome utente/link/id del canale>` per configurare
 1d30c358e2a1: Modalità di analisi predefinita
 1edff073d48e: Risposte
 1f3c920d087b: In elaborazione...
@@ -67,6 +76,7 @@
 
 
   **Codice sorgente: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Invia un link condiviso per analizzarlo**'
 4e9ce9dfe13d: Nascondi titolo
 4fb5f29ee802: Per favore aggiungi un link o rispondi a un messaggio
 5348dcac296c: Analisi non riuscita
@@ -77,21 +87,21 @@
 5b943dc87178: Link per il download GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: Non è un canale
+5f3b5d4e0055: '**Comandi:**'
 5f411223ca5a: Indietro
 607e7a4f377f: visualizzazioni
 6740d8c7b274: Rispondi al messaggio
-6769c172299c: Non sei un amministratore di questa chat, non hai il permesso di modificare
-  la configurazione
+6769c172299c: Non sei un amministratore di questa chat, non hai il permesso di modificare la configurazione
 68957ac274c5: Download in corso... | {current * 100 / total:.0f}%
-'734176584215': Non sei il proprietario di questo canale, non hai il permesso di modificare
-  la configurazione del canale
 6c3cc1a489b2: Non è amministratore
 6c6a39ac8cf3: Aggiunto alla whitelist
+'734176584215': Non sei il proprietario di questo canale, non hai il permesso di modificare la configurazione del canale
 7527da8954f3: Utente normale
 75f0fa966d82: Mi piace
 769d88e425e0: Completato
 77274b54a324: 'Errore {stage}:'
 777ab5422d34: Super amministratore
+7a425880c8d8: 'Tutte le cache svuotate (Redis): {persistent} persistenti · {result} di risultato'
 7b000c997e5e: 📊 Sondaggio
 7d9d43d89239: Promosso ad amministratore
 7eafd0a497bd: '
@@ -101,9 +111,11 @@
 816de50b9e0e: Inserisci il link nella chat
 8472b9d2a8a9: Voti
 868afb493654: Seleziona obiettivo configurazione
+876f8af3d499: '**Sorgente: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Opzione di configurazione non supportata
 91f015aa09bc: Rispondi al messaggio di qualcuno, oppure indica un ID utente
 945599b91845: Disabilita progresso analisi
+968e5675d74c: '**Piattaforme supportate:**'
 9b3dbf3e3f85: Nascondi "Fonte" in basso
 a3e3b88377c8: Inizia
 a4acafd79982: Già nella whitelist
@@ -128,20 +140,16 @@ d34addb9b2f0: Cache cancellata
 d4b153707c28: Solo per gli utenti in whitelist
 d5631690265c: Obiettivo di configurazione non riconosciuto
 d5a73b0c7f2f: Carica
-7a425880c8d8: 'Tutte le cache svuotate (Redis): {persistent} persistenti · {result} di risultato'
 d9d060bed1f0: '{total:,} voti totali'
 da86ae7e75fe: Discussione
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
 
-  >**Per garantire un''esperienza d''uso ottimale a tutti gli utenti, è stato attivato
-  un limite di velocità**
+  >**Per garantire un''esperienza d''uso ottimale a tutti gli utenti, è stato attivato un limite di velocità**
 
 
-  >Questo progetto è open source; se hai bisogno di analisi ad alta frequenza o in
-  batch, si consiglia di distribuire un''istanza autonoma per evitare di attivare
-  il limite di velocità globale dell''API di Telegram
+  >Questo progetto è open source; se hai bisogno di analisi ad alta frequenza o in batch, si consiglia di distribuire un''istanza autonoma per evitare di attivare il limite di velocità globale dell''API di Telegram
 
 
   **Codice sorgente: [GitHub](https://github.com/BraveSail/shirobako)**'

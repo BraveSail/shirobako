@@ -1,7 +1,6 @@
 024738655610: Opsi "URL Asli" Inline
 047ddf74eb5e: Ini bukan konfigurasi Anda
-04f706887b08: Bot belum bergabung dengan saluran ini, silakan tambahkan Bot ke saluran
-  terlebih dahulu sebelum mengonfigurasi
+04f706887b08: Bot belum bergabung dengan saluran ini, silakan tambahkan Bot ke saluran terlebih dahulu sebelum mengonfigurasi
 059880e54bc6: Ditambahkan ke daftar putih (pengguna biasa)
 06778dbf05d5: Manajemen Platform
 091d3a0665fa: Konfigurasi Saluran
@@ -10,9 +9,19 @@
 0d3d68e32996: Tugas yang sama sedang diproses, tunggu hingga selesai...
 0f6c4353601e: Kirim file asli, hindari kompresi kualitas gambar
 0f6cedccc5d3: GIF terlalu banyak, lewati pengunggahan, silakan unduh sendiri
+1080fafe7253: '/jx <tautan> - urai dan pratinjau
+
+  /raw <tautan> - kirim file asli, tanpa kompresi
+
+  /zip <tautan> - kirim sebagai arsip dengan info urai
+
+  /jxjx <tautan> - urai dengan melewati cache
+
+  /cfg - pengaturan
+
+  /cfg <nama/tautan/id kanal> - pengaturan kanal'
 139669c83cc6: Sudah menjadi admin
-1a603ac4b55c: Silakan kirim `/cfg` atau gunakan `/cfg <nama pengguna/link/id saluran>`
-  dalam obrolan pribadi, grup, atau topik untuk konfigurasi
+1a603ac4b55c: Silakan kirim `/cfg` atau gunakan `/cfg <nama pengguna/link/id saluran>` dalam obrolan pribadi, grup, atau topik untuk konfigurasi
 1d30c358e2a1: Mode parsing default
 1edff073d48e: Balasan
 1f3c920d087b: Sedang diproses...
@@ -67,6 +76,7 @@
 
 
   **Sumber terbuka: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Kirim tautan berbagi untuk diurai**'
 4e9ce9dfe13d: Sembunyikan judul
 4fb5f29ee802: Harap sertakan tautan atau balas pesan
 5348dcac296c: Gagal mengurai
@@ -77,20 +87,21 @@
 5b943dc87178: Tautan unduhan GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: Bukan saluran
+5f3b5d4e0055: '**Perintah:**'
 5f411223ca5a: Kembali
 607e7a4f377f: tayangan
 6740d8c7b274: Balas pesan
 6769c172299c: Anda bukan admin obrolan ini, tidak berwenang mengubah konfigurasi
 68957ac274c5: Sedang mengunduh... | {current * 100 / total:.0f}%
-'734176584215': Anda bukan pemilik saluran ini, tidak berwenang mengubah konfigurasi
-  saluran
 6c3cc1a489b2: Bukan admin
 6c6a39ac8cf3: Ditambahkan ke daftar putih
+'734176584215': Anda bukan pemilik saluran ini, tidak berwenang mengubah konfigurasi saluran
 7527da8954f3: Pengguna biasa
 75f0fa966d82: suka
 769d88e425e0: Selesai
 77274b54a324: 'Kesalahan {stage}:'
 777ab5422d34: Super admin
+7a425880c8d8: 'Semua cache dibersihkan (Redis): {persistent} persisten · {result} hasil'
 7b000c997e5e: 📊 Polling
 7d9d43d89239: Dipromosikan menjadi admin
 7eafd0a497bd: '
@@ -100,9 +111,11 @@
 816de50b9e0e: Silakan masukkan tautan di kotak obrolan
 8472b9d2a8a9: Suara
 868afb493654: Pilih target konfigurasi
+876f8af3d499: '**Sumber: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Opsi konfigurasi tidak didukung
 91f015aa09bc: Balas pesan seseorang, atau berikan ID pengguna
 945599b91845: Nonaktifkan progres parsing
+968e5675d74c: '**Platform yang didukung:**'
 9b3dbf3e3f85: Sembunyikan "Sumber" di bagian bawah
 a3e3b88377c8: Mulai
 a4acafd79982: Sudah ada di daftar putih
@@ -111,8 +124,7 @@ ad4fff48f141: Tidak ada izin
 ad66098d7867: Simpan log kesalahan
 aef1e20b40db: '"{title}"'
 b1dae9bc5cab: Admin
-b3bbb48dcb10: Analisis terlalu sering, silakan coba lagi setelah {e.retry_after:.1f}
-  detik
+b3bbb48dcb10: Analisis terlalu sering, silakan coba lagi setelah {e.retry_after:.1f} detik
 b6aaf8f2a2be: Konfigurasi pribadi dalam grup
 b765e4eb1844: Tautan asli
 be6f406c8f81: Konfigurasi pribadi
@@ -128,20 +140,16 @@ d34addb9b2f0: Cache dihapus
 d4b153707c28: Hanya untuk pengguna daftar putih
 d5631690265c: Target konfigurasi tidak dikenali
 d5a73b0c7f2f: Unggah
-7a425880c8d8: 'Semua cache dibersihkan (Redis): {persistent} persisten · {result} hasil'
 d9d060bed1f0: Total {total:,} suara
 da86ae7e75fe: Diskusi
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
 
-  >**Untuk memastikan pengalaman penggunaan semua pengguna, saat ini pembatasan kecepatan
-  telah diaktifkan**
+  >**Untuk memastikan pengalaman penggunaan semua pengguna, saat ini pembatasan kecepatan telah diaktifkan**
 
 
-  >Proyek ini adalah proyek sumber terbuka, jika ada kebutuhan parsing yang sering
-  atau dalam jumlah besar, disarankan untuk mengatur instance sendiri, agar tidak
-  memicu pembatasan kecepatan global API Telegram
+  >Proyek ini adalah proyek sumber terbuka, jika ada kebutuhan parsing yang sering atau dalam jumlah besar, disarankan untuk mengatur instance sendiri, agar tidak memicu pembatasan kecepatan global API Telegram
 
 
   **Alamat sumber terbuka: [GitHub](https://github.com/BraveSail/shirobako)**'

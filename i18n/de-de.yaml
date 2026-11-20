@@ -1,19 +1,27 @@
 024738655610: Inline-Option "Original URL"
 047ddf74eb5e: Das ist nicht deine Konfiguration
-04f706887b08: Bot ist diesem Kanal nicht beigetreten, bitte fügen Sie den Bot zuerst
-  dem Kanal hinzu und konfigurieren Sie ihn dann.
+04f706887b08: Bot ist diesem Kanal nicht beigetreten, bitte fügen Sie den Bot zuerst dem Kanal hinzu und konfigurieren Sie ihn dann.
 059880e54bc6: Zur Whitelist hinzugefügt (normaler Benutzer)
 06778dbf05d5: Plattformverwaltung
 091d3a0665fa: Kanal-Konfiguration
 09f6a39f78df: Zum normalen Benutzer herabgestuft
 0a87f26596ed: Quelle ({display})
-0d3d68e32996: Eine identische Aufgabe wird bereits analysiert, bitte warten Sie, bis
-  die Analyse abgeschlossen ist...
+0d3d68e32996: Eine identische Aufgabe wird bereits analysiert, bitte warten Sie, bis die Analyse abgeschlossen ist...
 0f6c4353601e: Originaldatei senden, um Qualitätsverlust zu vermeiden
 0f6cedccc5d3: Zu viele GIFs, Upload übersprungen, bitte selbst herunterladen
+1080fafe7253: '/jx <Link> - parsen und Vorschau anzeigen
+
+  /raw <Link> - Originaldatei senden, ohne Kompression
+
+  /zip <Link> - als Archiv mit Parse-Infos senden
+
+  /jxjx <Link> - unter Umgehung des Caches parsen
+
+  /cfg - Einstellungen
+
+  /cfg <Kanalname/Link/ID> - Kanaleinstellungen'
 139669c83cc6: Ist bereits Administrator
-1a603ac4b55c: Bitte senden Sie `/cfg` oder verwenden Sie `/cfg <Kanal-Benutzername/Link/ID>`
-  im privaten Chat, in der Gruppe oder im Thema zur Konfiguration.
+1a603ac4b55c: Bitte senden Sie `/cfg` oder verwenden Sie `/cfg <Kanal-Benutzername/Link/ID>` im privaten Chat, in der Gruppe oder im Thema zur Konfiguration.
 1d30c358e2a1: Standard-Parsing-Modus
 1edff073d48e: Antworten
 1f3c920d087b: In Bearbeitung...
@@ -68,6 +76,7 @@
 
 
   **Open-Source-Adresse: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Senden Sie einen Freigabelink zum Parsen**'
 4e9ce9dfe13d: Titel ausblenden
 4fb5f29ee802: Bitte füge einen Link hinzu oder antworte auf eine Nachricht
 5348dcac296c: Parsing fehlgeschlagen
@@ -78,21 +87,21 @@
 5b943dc87178: GIF-Download-Link
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: Kein Kanal
+5f3b5d4e0055: '**Befehle:**'
 5f411223ca5a: Zurück
 607e7a4f377f: Aufrufe
 6740d8c7b274: Nachricht beantworten
-6769c172299c: Sie sind kein Administrator dieses Chats und dürfen die Konfiguration
-  nicht ändern.
+6769c172299c: Sie sind kein Administrator dieses Chats und dürfen die Konfiguration nicht ändern.
 68957ac274c5: Herunterladen... | {current * 100 / total:.0f}%
-'734176584215': Sie sind nicht der Besitzer dieses Kanals und dürfen die Kanal-Konfiguration
-  nicht ändern.
 6c3cc1a489b2: Ist kein Administrator
 6c6a39ac8cf3: Zur Whitelist hinzugefügt
+'734176584215': Sie sind nicht der Besitzer dieses Kanals und dürfen die Kanal-Konfiguration nicht ändern.
 7527da8954f3: Normaler Benutzer
 75f0fa966d82: Likes
 769d88e425e0: Fertig
 77274b54a324: '{stage} Fehler:'
 777ab5422d34: Super-Admin
+7a425880c8d8: 'Alle Caches geleert (Redis): {persistent} persistent · {result} Ergebnis'
 7b000c997e5e: 📊 Umfrage
 7d9d43d89239: Zum Administrator befördert
 7eafd0a497bd: '
@@ -102,9 +111,11 @@
 816de50b9e0e: Bitte geben Sie den Link im Chatfenster ein
 8472b9d2a8a9: Stimmen
 868afb493654: Konfigurationsziel wählen
+876f8af3d499: '**Quellcode: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Nicht unterstützte Konfigurationsoption
 91f015aa09bc: Antworte auf die Nachricht von jemandem oder gib eine Benutzer-ID an
 945599b91845: Parsing-Fortschritt deaktivieren
+968e5675d74c: '**Unterstützte Plattformen:**'
 9b3dbf3e3f85: Untere "Quelle" ausblenden
 a3e3b88377c8: Start
 a4acafd79982: Bereits in der Whitelist
@@ -113,8 +124,7 @@ ad4fff48f141: Keine Berechtigung
 ad66098d7867: Fehlerprotokolle behalten
 aef1e20b40db: „{title}“
 b1dae9bc5cab: Administrator
-b3bbb48dcb10: Zu häufige Analyse, bitte versuche es nach {e.retry_after:.1f} Sekunden
-  erneut
+b3bbb48dcb10: Zu häufige Analyse, bitte versuche es nach {e.retry_after:.1f} Sekunden erneut
 b6aaf8f2a2be: Persönliche Konfiguration in der Gruppe
 b765e4eb1844: Original-Link
 be6f406c8f81: Persönliche Konfiguration
@@ -130,20 +140,16 @@ d34addb9b2f0: Cache gelöscht
 d4b153707c28: Nur für Nutzer auf der Whitelist
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d5a73b0c7f2f: Hochladen
-7a425880c8d8: 'Alle Caches geleert (Redis): {persistent} persistent · {result} Ergebnis'
 d9d060bed1f0: Insgesamt {total:,} Stimmen
 da86ae7e75fe: Diskussion
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
 
-  >**Um die Nutzungserfahrung aller Benutzer zu gewährleisten, ist derzeit eine Geschwindigkeitsbegrenzung
-  aktiviert**
+  >**Um die Nutzungserfahrung aller Benutzer zu gewährleisten, ist derzeit eine Geschwindigkeitsbegrenzung aktiviert**
 
 
-  >Dieses Projekt ist ein Open-Source-Projekt. Bei häufigen oder massenhaften Analyseanforderungen
-  wird empfohlen, eine eigene Instanz bereitzustellen, um globale Geschwindigkeitsbegrenzungen
-  der Telegram-API zu vermeiden.
+  >Dieses Projekt ist ein Open-Source-Projekt. Bei häufigen oder massenhaften Analyseanforderungen wird empfohlen, eine eigene Instanz bereitzustellen, um globale Geschwindigkeitsbegrenzungen der Telegram-API zu vermeiden.
 
 
   **Open-Source-Adresse: [GitHub](https://github.com/BraveSail/shirobako)**'

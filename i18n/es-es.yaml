@@ -1,7 +1,6 @@
 024738655610: Opción de "URL original" en línea
 047ddf74eb5e: Esta no es tu configuración
-04f706887b08: El bot no se ha unido a este canal, por favor añade el bot al canal
-  antes de configurar
+04f706887b08: El bot no se ha unido a este canal, por favor añade el bot al canal antes de configurar
 059880e54bc6: Añadido a la lista blanca (usuario normal)
 06778dbf05d5: Gestión de la plataforma
 091d3a0665fa: Configuración del canal
@@ -10,9 +9,19 @@
 0d3d68e32996: Ya hay una tarea igual en proceso de análisis, esperando a que termine...
 0f6c4353601e: Enviar archivo original para evitar compresión de calidad
 0f6cedccc5d3: Demasiados GIF, se omite la subida, por favor descarga manualmente
+1080fafe7253: '/jx <enlace> - analizar y previsualizar
+
+  /raw <enlace> - enviar el archivo original, sin compresión
+
+  /zip <enlace> - enviar como archivo con información del análisis
+
+  /jxjx <enlace> - analizar omitiendo la caché
+
+  /cfg - configuración
+
+  /cfg <nombre/enlace/id del canal> - configuración del canal'
 139669c83cc6: Ya es administrador
-1a603ac4b55c: Por favor, envía `/cfg` en chat privado, grupo o tema, o usa `/cfg <nombre
-  de usuario/enlace/id del canal>` para configurar
+1a603ac4b55c: Por favor, envía `/cfg` en chat privado, grupo o tema, o usa `/cfg <nombre de usuario/enlace/id del canal>` para configurar
 1d30c358e2a1: Modo de análisis predeterminado
 1edff073d48e: Respuestas
 1f3c920d087b: Procesando...
@@ -67,6 +76,7 @@
 
 
   **Código abierto: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Envía un enlace compartido para analizarlo**'
 4e9ce9dfe13d: Ocultar título
 4fb5f29ee802: Por favor añade un enlace o responde a un mensaje
 5348dcac296c: Error al analizar
@@ -77,21 +87,21 @@
 5b943dc87178: Enlace de descarga del GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: No es un canal
+5f3b5d4e0055: '**Comandos:**'
 5f411223ca5a: Volver
 607e7a4f377f: visualizaciones
 6740d8c7b274: Responder al mensaje
-6769c172299c: No eres administrador de este chat, no tienes permiso para modificar
-  la configuración
+6769c172299c: No eres administrador de este chat, no tienes permiso para modificar la configuración
 68957ac274c5: Descargando... | {current * 100 / total:.0f}%
-'734176584215': No eres el propietario de este canal, no tienes permiso para modificar
-  la configuración del canal
 6c3cc1a489b2: No es administrador
 6c6a39ac8cf3: Añadido a la lista blanca
+'734176584215': No eres el propietario de este canal, no tienes permiso para modificar la configuración del canal
 7527da8954f3: Usuario normal
 75f0fa966d82: Me gusta
 769d88e425e0: Completado
 77274b54a324: 'Error en {stage}:'
 777ab5422d34: Superadministrador
+7a425880c8d8: 'Todas las cachés vaciadas (Redis): {persistent} persistentes · {result} de resultado'
 7b000c997e5e: 📊 Encuesta
 7d9d43d89239: Ascendido a administrador
 7eafd0a497bd: '
@@ -101,9 +111,11 @@
 816de50b9e0e: Por favor, introduce un enlace en el chat
 8472b9d2a8a9: Votos
 868afb493654: Seleccionar objetivo de configuración
+876f8af3d499: '**Código: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Opción de configuración no soportada
 91f015aa09bc: Responde al mensaje de alguien, o indica un ID de usuario
 945599b91845: Desactivar progreso de análisis
+968e5675d74c: '**Plataformas compatibles:**'
 9b3dbf3e3f85: Ocultar "Fuente" en la parte inferior
 a3e3b88377c8: Iniciar
 a4acafd79982: Ya está en la lista blanca
@@ -128,20 +140,16 @@ d34addb9b2f0: Caché borrada
 d4b153707c28: Solo para usuarios en la lista blanca
 d5631690265c: No se puede reconocer el objetivo de configuración
 d5a73b0c7f2f: Subir
-7a425880c8d8: 'Todas las cachés vaciadas (Redis): {persistent} persistentes · {result} de resultado'
 d9d060bed1f0: '{total:,} votos en total'
 da86ae7e75fe: Discusión
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 
 
-  >**Para garantizar la experiencia de uso de todos los usuarios, actualmente se ha
-  activado una limitación de velocidad**
+  >**Para garantizar la experiencia de uso de todos los usuarios, actualmente se ha activado una limitación de velocidad**
 
 
-  >Este proyecto es de código abierto. Si tiene necesidades de análisis frecuentes
-  o en lote, se recomienda desplegar su propia instancia para evitar activar la limitación
-  global de velocidad de la API de Telegram.
+  >Este proyecto es de código abierto. Si tiene necesidades de análisis frecuentes o en lote, se recomienda desplegar su propia instancia para evitar activar la limitación global de velocidad de la API de Telegram.
 
 
   **Repositorio abierto: [GitHub](https://github.com/BraveSail/shirobako)**'

@@ -9,9 +9,19 @@
 0d3d68e32996: Aynı görev zaten çözülüyor, çözüm tamamlanana kadar bekleyin...
 0f6c4353601e: Orijinal dosyayı gönder, kalite sıkıştırmasını önle
 0f6cedccc5d3: GIF çok fazla, yükleme atlandı, lütfen kendiniz indirin
+1080fafe7253: '/jx <bağlantı> - ayrıştır ve önizle
+
+  /raw <bağlantı> - orijinal dosyayı sıkıştırmadan gönder
+
+  /zip <bağlantı> - ayrıştırma bilgisiyle arşiv olarak gönder
+
+  /jxjx <bağlantı> - önbelleği atlayarak ayrıştır
+
+  /cfg - ayarlar
+
+  /cfg <kanal kullanıcı adı/bağlantı/id> - kanal ayarları'
 139669c83cc6: Zaten yönetici
-1a603ac4b55c: Lütfen özel mesajda, grupta veya konularda `/cfg` komutunu gönderin
-  veya `/cfg <kanal kullanıcı adı/link/id>` ile yapılandırın
+1a603ac4b55c: Lütfen özel mesajda, grupta veya konularda `/cfg` komutunu gönderin veya `/cfg <kanal kullanıcı adı/link/id>` ile yapılandırın
 1d30c358e2a1: Varsayılan çözümleme modu
 1edff073d48e: Yanıtlar
 1f3c920d087b: İşleniyor...
@@ -66,6 +76,7 @@
 
 
   **Açık kaynak adresi: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Ayrıştırmak için bir paylaşım bağlantısı gönderin**'
 4e9ce9dfe13d: Başlığı Gizle
 4fb5f29ee802: Lütfen bir link ekleyin veya bir mesaja yanıt verin
 5348dcac296c: Ayrıştırma başarısız
@@ -76,21 +87,21 @@
 5b943dc87178: GIF indirme linki
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: Kanal değil
+5f3b5d4e0055: '**Komutlar:**'
 5f411223ca5a: Geri
 607e7a4f377f: görüntüleme
 6740d8c7b274: Mesaja yanıt ver
-6769c172299c: Bu sohbetin yöneticisi değilsiniz, yapılandırmayı değiştirme yetkiniz
-  yok
+6769c172299c: Bu sohbetin yöneticisi değilsiniz, yapılandırmayı değiştirme yetkiniz yok
 68957ac274c5: İndiriliyor... | {current * 100 / total:.0f}%
-'734176584215': Bu kanalın sahibi değilsiniz, kanal yapılandırmasını değiştirme yetkiniz
-  yok
 6c3cc1a489b2: Yönetici değil
 6c6a39ac8cf3: İzin listesine eklendi
+'734176584215': Bu kanalın sahibi değilsiniz, kanal yapılandırmasını değiştirme yetkiniz yok
 7527da8954f3: Normal kullanıcı
 75f0fa966d82: beğeni
 769d88e425e0: Tamamlandı
 77274b54a324: '{stage} hata:'
 777ab5422d34: Süper yönetici
+7a425880c8d8: 'Tüm önbellekler temizlendi (Redis): {persistent} kalıcı · {result} sonuç'
 7b000c997e5e: 📊 Anket
 7d9d43d89239: Yöneticiliğe yükseltildi
 7eafd0a497bd: '
@@ -100,9 +111,11 @@
 816de50b9e0e: Lütfen sohbet kutusuna bağlantı girin
 8472b9d2a8a9: Oy
 868afb493654: Yapılandırma hedefi seçin
+876f8af3d499: '**Kaynak: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Desteklenmeyen yapılandırma öğesi
 91f015aa09bc: Birinin mesajını yanıtlayın veya bir kullanıcı ID'si verin
 945599b91845: Çözümleme ilerlemesini devre dışı bırak
+968e5675d74c: '**Desteklenen platformlar:**'
 9b3dbf3e3f85: Alt "Kaynak"u gizle
 a3e3b88377c8: Başlat
 a4acafd79982: Zaten izin listesinde
@@ -111,8 +124,7 @@ ad4fff48f141: Yetki yok
 ad66098d7867: Hata günlüklerini sakla
 aef1e20b40db: '"{title}"'
 b1dae9bc5cab: Yönetici
-b3bbb48dcb10: Çözümleme çok sık yapılıyor, lütfen {e.retry_after:.1f} saniye sonra
-  tekrar deneyin
+b3bbb48dcb10: Çözümleme çok sık yapılıyor, lütfen {e.retry_after:.1f} saniye sonra tekrar deneyin
 b6aaf8f2a2be: Grup içi kişisel yapılandırma
 b765e4eb1844: Orijinal bağlantı
 be6f406c8f81: Kişisel yapılandırma
@@ -128,7 +140,6 @@ d34addb9b2f0: Önbellek temizlendi
 d4b153707c28: Yalnızca beyaz listedeki kullanıcılar için
 d5631690265c: Yapılandırma hedefi tanınamadı
 d5a73b0c7f2f: Yükle
-7a425880c8d8: 'Tüm önbellekler temizlendi (Redis): {persistent} kalıcı · {result} sonuç'
 d9d060bed1f0: Toplam {total:,} oy
 da86ae7e75fe: Tartışma
 e14de27e8559: '{target_label}'
@@ -138,9 +149,7 @@ e3889d130a2f: '
   >**Tüm kullanıcıların deneyimini korumak için, şu anda hız sınırı etkinleştirilmiştir**
 
 
-  >Bu proje açık kaynaklıdır, yüksek frekanslı veya toplu çözümleme ihtiyaçlarınız
-  varsa, Telegram API''nin genel hız sınırını tetiklememek için kendi örneğinizi kurmanız
-  önerilir
+  >Bu proje açık kaynaklıdır, yüksek frekanslı veya toplu çözümleme ihtiyaçlarınız varsa, Telegram API''nin genel hız sınırını tetiklememek için kendi örneğinizi kurmanız önerilir
 
 
   **Açık kaynak adresi: [GitHub](https://github.com/BraveSail/shirobako)**'

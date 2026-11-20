@@ -1,19 +1,27 @@
 024738655610: Inline "Original URL" option
 047ddf74eb5e: This is not your configuration
-04f706887b08: Bot has not joined this channel, please add the Bot to the channel before
-  configuring
+04f706887b08: Bot has not joined this channel, please add the Bot to the channel before configuring
 059880e54bc6: Added to the whitelist (regular user)
 06778dbf05d5: Platform Management
 091d3a0665fa: Channel Configuration
 09f6a39f78df: Demoted to regular user
 0a87f26596ed: Source ({display})
-0d3d68e32996: A task with the same content is already being parsed, waiting for parsing
-  to complete...
+0d3d68e32996: A task with the same content is already being parsed, waiting for parsing to complete...
 0f6c4353601e: Send original file to avoid quality compression
 0f6cedccc5d3: Too many GIFs, skipping upload, please download manually
+1080fafe7253: '/jx <link> - parse and preview the content
+
+  /raw <link> - send the original file, avoiding compression
+
+  /zip <link> - send as an archive with parse info
+
+  /jxjx <link> - parse bypassing the cache
+
+  /cfg - settings
+
+  /cfg <channel username/link/id> - channel settings'
 139669c83cc6: Already an administrator
-1a603ac4b55c: Please send `/cfg` in private chat, group, or topic, or use `/cfg <channel
-  username/link/id>` to configure
+1a603ac4b55c: Please send `/cfg` in private chat, group, or topic, or use `/cfg <channel username/link/id>` to configure
 1d30c358e2a1: Default parsing mode
 1edff073d48e: Replies
 1f3c920d087b: Processing...
@@ -68,6 +76,7 @@
 
 
   **Open source: [GitHub](https://github.com/BraveSail/shirobako)**'
+4a95dc279e92: '**Send a share link to parse it**'
 4e9ce9dfe13d: Hide Title
 4fb5f29ee802: Please add a link or reply to a message
 5348dcac296c: Parsing failed
@@ -78,20 +87,21 @@
 5b943dc87178: GIF download link
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
 5e788d9e0992: Non-channel
+5f3b5d4e0055: '**Commands:**'
 5f411223ca5a: Back
 607e7a4f377f: views
 6740d8c7b274: Reply to message
 6769c172299c: You are not an admin of this chat, no permission to modify configuration
 68957ac274c5: Downloading... | {current * 100 / total:.0f}%
-'734176584215': You are not the owner of this channel, no permission to modify channel
-  configuration
 6c3cc1a489b2: Not an administrator
 6c6a39ac8cf3: Added to the whitelist
+'734176584215': You are not the owner of this channel, no permission to modify channel configuration
 7527da8954f3: Regular user
 75f0fa966d82: likes
 769d88e425e0: Done
 77274b54a324: '{stage} error:'
 777ab5422d34: Super admin
+7a425880c8d8: 'Cleared all caches (Redis): {persistent} persistent · {result} result'
 7b000c997e5e: 📊 Poll
 7d9d43d89239: Promoted to administrator
 7eafd0a497bd: '
@@ -101,9 +111,11 @@
 816de50b9e0e: Please enter the link in the chat box
 8472b9d2a8a9: Votes
 868afb493654: Select configuration target
+876f8af3d499: '**Source: [GitHub](https://github.com/BraveSail/shirobako)**'
 8a8672da4ab7: Unsupported configuration item
 91f015aa09bc: Reply to someone's message, or give a user ID
 945599b91845: Disable parsing progress
+968e5675d74c: '**Supported platforms:**'
 9b3dbf3e3f85: Hide bottom "Source"
 a3e3b88377c8: Start
 a4acafd79982: Already in the whitelist
@@ -128,17 +140,13 @@ d34addb9b2f0: Cache cleared
 d4b153707c28: Available to whitelisted users only
 d5631690265c: Unrecognized configuration target
 d5a73b0c7f2f: Upload
-7a425880c8d8: 'Cleared all caches (Redis): {persistent} persistent · {result} result'
 d9d060bed1f0: '{total:,} votes total'
 da86ae7e75fe: Discussion
 e14de27e8559: '{target_label}'
-e3889d130a2f: '>**To ensure a good experience for all users, rate limiting is currently
-  enabled**
+e3889d130a2f: '>**To ensure a good experience for all users, rate limiting is currently enabled**
 
 
-  >This project is open source. If you have high-frequency or bulk parsing needs,
-  it is recommended to deploy your own instance to avoid triggering Telegram API global
-  rate limits.
+  >This project is open source. If you have high-frequency or bulk parsing needs, it is recommended to deploy your own instance to avoid triggering Telegram API global rate limits.
 
 
   **Open source repository: [GitHub](https://github.com/BraveSail/shirobako)**'

@@ -14,7 +14,7 @@ from parsehub.types import AnyParseResult, RichTextParseResult
 from parsehub.utils.helpers import SPOILER_FOLD_SUMMARY, format_author_label, format_author_link
 from pyrogram.types import Message
 
-from i18n import t_
+from i18n import LANG_MAP, t_
 from log import logger
 from repo.settings import SettingsConfig
 
@@ -52,21 +52,96 @@ COMMANDS = {
 }
 
 
+class _ComposedLocaleContent(LocaleContent[str]):
+    """把一个**按语言动态拼接**的文案包装成 ``LocaleContent``。
+
+    为什么需要它：``t_()`` 只能翻译**静态字面量**，而欢迎语里嵌了
+    ``get_supported_platforms()``（运行期扫描注册表得到的平台清单）——
+    整条文案因此进不了词条表，``t_[lang]`` 任何语言都回退成源文本。
+
+    这里换个做法：静态句子各自 ``t_()``（能进词条表），动态内容在
+    ``compose(lang)`` 里按语言拼接，结果包装成同样支持 ``[lang]`` 的对象，
+    调用点（``build_start_text()[lang]``）一行都不用改。
+    """
+
+    def __new__(
+        cls,
+        compose: Callable[[str], str],
+        *,
+        source: LocaleContent[str],
+        locales: Sequence[str],
+    ) -> "_ComposedLocaleContent":
+        obj = str.__new__(cls, compose(str(source)))
+        obj._compose = compose
+        obj._available = tuple(locales)
+        obj._default = str(source)
+        return obj
+
+    def __init__(
+        self,
+        compose: Callable[[str], str],
+        *,
+        source: LocaleContent[str],
+        locales: Sequence[str],
+    ) -> None:
+        # 父类的 __init__ 需要一堆内部字段；这里不复用，全部自己维护。
+        pass
+
+    def __getitem__(self, locale: str) -> str:  # type: ignore[override]
+        if locale not in self._available:
+            return self._compose(self._default_locale())
+        return self._compose(locale)
+
+    def __call__(self, locale: str | None = None) -> str:  # type: ignore[override]
+        return self[locale] if locale else self._default
+
+    def _default_locale(self) -> str:
+        """取 bot 全局语言，作为未知 locale 的兜底。"""
+        from core import bs
+
+        return bs.language
+
+    def __str__(self) -> str:
+        return self._default
+
+
 def build_start_text() -> LocaleContent:
-    return t_(
-        f"**发送分享链接以进行解析**\n\n"
-        f"**支持的平台:**\n"
-        f"<blockquote expandable>{get_supported_platforms()}</blockquote>\n\n"
-        f"**命令列表:**\n"
-        f"<blockquote expandable>"
-        f"/jx <链接> - 解析并预览内容\n"
-        f"/raw <链接> - 发送原文件, 避免画质压缩\n"
-        f"/zip <链接> - 打包发送, 附带解析信息\n"
-        f"/jxjx <链接> - 绕过缓存解析\n"
-        f"/cfg - 配置\n"
-        f"/cfg <频道用户名/链接/id> - 频道配置\n"
-        f"</blockquote>\n\n"
-        f"**开源地址: [GitHub](https://github.com/BraveSail/shirobako)**"
+    """欢迎语。
+
+    ⚠️ **整段不能只有一个 ``t_()``**：里面有 ``{get_supported_platforms()}`` 这种
+    运行期才有的动态内容，i18n 的静态提取抓不到它 —— 整条文案因此进不了词条表，
+    ``t_[lang]`` 取任何语言都回退成源文本（实测四种语言输出完全一致，全是简中）。
+
+    拆法：**静态句子各自 ``t_()``，动态内容在渲染时拼接**。
+    拼接要按语言分别做，因为句子顺序不同（英文是 "Supported platforms" 在前）。
+    """
+    head = t_("**发送分享链接以进行解析**")
+    platforms_label = t_("**支持的平台:**")
+    commands_label = t_("**命令列表:**")
+    cmd_lines = t_(
+        "/jx <链接> - 解析并预览内容\n"
+        "/raw <链接> - 发送原文件, 避免画质压缩\n"
+        "/zip <链接> - 打包发送, 附带解析信息\n"
+        "/jxjx <链接> - 绕过缓存解析\n"
+        "/cfg - 配置\n"
+        "/cfg <频道用户名/链接/id> - 频道配置"
+    )
+    repo = t_("**开源地址: [GitHub](https://github.com/BraveSail/shirobako)**")
+
+    def compose(lang: str) -> str:
+        return (
+            f"{head[lang]}\n\n"
+            f"{platforms_label[lang]}\n"
+            f"<blockquote expandable>{get_supported_platforms()}</blockquote>\n\n"
+            f"{commands_label[lang]}\n"
+            f"<blockquote expandable>{cmd_lines[lang]}</blockquote>\n\n"
+            f"{repo[lang]}"
+        )
+
+    return _ComposedLocaleContent(
+        compose,
+        source=head,
+        locales=tuple(LANG_MAP),
     )
 
 
