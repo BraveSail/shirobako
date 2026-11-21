@@ -435,6 +435,10 @@ def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = 
             text = re.sub(rf"@{re.escape(name)}\b", " ", text)
     # 手动开关 (/s) 也要先剔掉, 否则 "<链接> /s" 永远不算纯链接
     text, _ = strip_spoiler_flag(text)
+    # ``#t`` 同理 —— 它是和 ``#剧透`` 同一层的开关，不剥掉的话群里的
+    # ``<链接> #t`` 永远不满足「整条消息就是链接」，自动解析根本不会触发
+    # （实测：群里发 ``<链接> #t`` 完全没反应）。
+    text, _ = strip_translate_flag(text)
     tokens = [token.rstrip(_TRAILING_PUNCTUATION) for token in text.split()]
     if not tokens or any(not token for token in tokens):
         return []

@@ -380,3 +380,48 @@ class TestLanguageMapping:
         from plugins.translate import x_lang_for
 
         assert x_lang_for("xx-yy") == "en"
+
+
+class TestGroupAutoParse:
+    """群里的自动解析要求「整条消息就是链接」—— ``#t`` 不算链接，会让它整个失效。
+
+    用户报「群里自动回复不会识别」：``<链接> #t`` 因为多了一个 token，
+    ``url_only_message_urls`` 判定失败 ⇒ 自动解析根本不触发（不是翻译没生效，
+    是消息压根没进解析流程）。
+    """
+
+    def test_flag_is_stripped_before_url_check(self) -> None:
+        from parsehub.utils.helpers import url_only_message_urls
+
+        url = "https://x.com/AlertaNews24/status/2124094722234892461"
+        assert url_only_message_urls(f"{url} #t") == [url]
+
+    def test_flag_before_url_also_works(self) -> None:
+        from parsehub.utils.helpers import url_only_message_urls
+
+        url = "https://x.com/AlertaNews24/status/2124094722234892461"
+        assert url_only_message_urls(f"#t {url}") == [url]
+
+    def test_coexists_with_spoiler_flag(self) -> None:
+        from parsehub.utils.helpers import url_only_message_urls
+
+        url = "https://x.com/a/status/1"
+        assert url_only_message_urls(f"{url} #t #剧透") == [url]
+
+    def test_text_around_url_still_disqualifies(self) -> None:
+        """剥开关不能放松「纯链接」这条硬规则 —— 闲聊里提链接仍不该被解析。"""
+        from parsehub.utils.helpers import url_only_message_urls
+
+        assert url_only_message_urls("看看这个 https://x.com/a/status/1 #t") == []
+
+    def test_bare_url_unaffected(self) -> None:
+        from parsehub.utils.helpers import url_only_message_urls
+
+        url = "https://x.com/a/status/1"
+        assert url_only_message_urls(url) == [url]
+
+    def test_trailing_punctuation_still_trimmed(self) -> None:
+        from parsehub.utils.helpers import url_only_message_urls
+
+        url = "https://x.com/a/status/1"
+        assert url_only_message_urls(f"{url}。 #t") == [url]

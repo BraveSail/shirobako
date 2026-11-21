@@ -16,7 +16,7 @@ guest 是 bot 自己在群里发一条 —— 后者要求"只能被允许的人
 from __future__ import annotations
 
 from easy_ai18n import PreLocaleSelector
-from parsehub.utils.helpers import strip_spoiler_flag, url_only_message_urls
+from parsehub.utils.helpers import strip_spoiler_flag, strip_translate_flag, url_only_message_urls
 from pyrogram import Client
 from pyrogram.types import (
     InlineQueryResultArticle,
@@ -30,6 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
+from plugins.translate import apply_translation
 from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
@@ -205,6 +206,7 @@ async def _answer(
     user_id: int,
     locale: str,
     spoiler_tag: str = "",
+    translate: bool = False,
 ) -> bool:
     """解析一条链接并回答 guest 查询, 返回是否真的发出。
 
@@ -300,6 +302,15 @@ async def _answer(
             return None
 
         parse_result = result.parse_result
+
+        # ``#t``: 在发送前把正文换成平台译文（作者/计数/媒体/页脚不动）。
+        # 失败保持原文 —— 开关不该让 guest 消息发不出去。
+        if translate:
+            try:
+                await apply_translation(parse_result, url, locale)
+            except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住发送
+                logger.warning(f"guest #t 翻译失败, 用原文: url={url} err={e}")
+
         media_refs = to_list(parse_result.media)
         video_thumbs = (
             await prepare_video_thumbs(media_refs, platform=parse_result.platform)
@@ -396,4 +407,6 @@ async def guest_parse(cli: Client, msg: Message) -> None:
     # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
     # 手动打码开关同样适用: 剥掉 /s 并传下去
     _, spoiler_tag = strip_spoiler_flag(msg.text or msg.caption)
-    await _answer(cli, guest_query_id, urls[0], user_id or 0, locale, spoiler_tag=spoiler_tag)
+    # ``#t`` 与 ``#剧透`` 同一层：guest 路径也要认（群里 @bot 加链接时同样可能带它）
+    _, translate = strip_translate_flag(msg.text or msg.caption)
+    await _answer(cli, guest_query_id, urls[0], user_id or 0, locale, spoiler_tag=spoiler_tag, translate=translate)
