@@ -28,10 +28,20 @@ _RATE_LIMIT_STATUS = frozenset({403, 429})
 #: 限流退避序列 (秒)。**故意比普通故障长**: 限流窗口通常几十秒, 2**attempt 那种
 #: 1s/2s 的节奏在结构上就等不到恢复。
 #:
-#: 403 与 429 分开: 429 是明确的限流信号, 值得多等; 403 也可能是**稳定**的拒绝
-#: (比如 Referer 不对), 等太久会让真正的错误延迟一分钟才报出来。
-_BACKOFF_429 = (5.0, 15.0, 45.0)
+#: 403 与 429 分开: 403 也可能是**稳定**的拒绝 (比如 Referer 不对), 等太久会让真正的
+#: 错误延迟一分钟才报出来。
+#:
+#: **429 只留一档**：imgur 这类图床是按 **出口 IP** 封的（实测 152、161 都 429，
+#: 换 WARP 出口立刻 200），退避 65 秒再试只是把整条解析拖到一分多钟，重试本身
+#: 不会改变结果。给一次短等待是为了放过偶发窗口，剩下的交给上层降级成链接。
+_BACKOFF_429 = (5.0,)
 _BACKOFF_403 = (3.0, 10.0)
+
+#: 429 **最多再试几次**（不计首次）。1 = 第一次失败后只补一次。
+#:
+#: 独立于 ``max_retries``：普通网络故障值得试满，而按 IP 的封禁不值得 ——
+#: 一次 5 秒的等待足够放过偶发窗口，再多就是纯延迟。
+_MAX_RETRIES_429 = 1
 
 
 def _is_rate_limited(status_code: int) -> bool:
@@ -274,6 +284,11 @@ class SegmentDownloader:
                     f"    请求头 = {_request_headers_of(e.response)}\n"
                     f"    响应头 = {_response_headers_of(e.response)}"
                 )
+                # **429 不跟普通故障共用重试次数**：它多半是按出口 IP 封的（imgur 实测
+                # 152/161 全 429、换 WARP 立刻 200），多试几次只是把整条解析拖长。
+                # 给一次机会放过偶发窗口就够，剩下的交给上层把这一项降级成链接。
+                if status == 429 and attempt >= _MAX_RETRIES_429:
+                    return DownloadError(f"HTTP错误: {status}")
                 if attempt == self.max_retries or not (_is_retryable_status(status) or rate_limited):
                     return DownloadError(f"HTTP错误: {status}")
             except (http.TimeoutException, http.NetworkError, http.RemoteProtocolError, http.ReadError) as e:
