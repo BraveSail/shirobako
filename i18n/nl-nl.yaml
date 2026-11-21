@@ -20,6 +20,7 @@
   /cfg - instellingen
 
   /cfg <kanaalnaam/link/id> - kanaalinstellingen'
+12c8ffb4c410: 'Gebruik: /t <link naar bericht>'
 139669c83cc6: Is al beheerder
 1a603ac4b55c: Stuur `/cfg` in een privébericht, groep of onderwerp, of gebruik `/cfg <kanaal gebruikersnaam/link/id>` om te configureren
 1d30c358e2a1: Standaard parseermodus
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Onbekende configuratieoptie
 3fea7ca76cde: Reacties
 405ba1795958: Topicconfiguratie
+41470f9ce30a: Vertaling mislukt, probeer het later opnieuw
 421687e6f757: '{target} staat in de configuratie (ADMIN_USERS); bewerk .env om te verwijderen'
 460ce129a523: Bezig met downloaden...
 4833c4c22f97: '**Stuur een deel-link om te parseren**
@@ -117,6 +119,7 @@
 945599b91845: Parsing voortgang uitschakelen
 968e5675d74c: '**Ondersteunde platforms:**'
 9b3dbf3e3f85: Verberg "Bron" onderaan
+9f2179d61e09: X-vertaling vereist een ingelogde sessie (auth_token / ct0 ontbreken)
 a3e3b88377c8: Start
 a4acafd79982: Staat al in de whitelist
 ab480060abb1: Foutlogboeken niet weergeven
@@ -135,6 +138,7 @@ c2236f70c559: Cache-omzeiling parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Verwijderd van de whitelist
 c909e6eb65aa: Aandeel
+d147c9a262cf: X gaf geen vertaling terug (dit bericht is mogelijk niet vertaalbaar)
 d2282636abc7: Configuratiepaneel
 d34addb9b2f0: Cache gewist
 d4b153707c28: Alleen voor gebruikers op de whitelist
@@ -158,6 +162,7 @@ e4f6307e1c4f: 'Gewisseld naar: {LANG_MAP[selected]}'
 e7f40ca894a3: Peiling
 ea15ae2b7fba: Optie
 eaa3cd851501: Aangepaste tekst
+edc9eddc4462: Een bericht vertalen
 f047ff589a7a: Verpak en stuur, inclusief parseer informatie
 f1d192b54c3b: Volledige tekst weergeven
 f6f18e097963: Whitelist

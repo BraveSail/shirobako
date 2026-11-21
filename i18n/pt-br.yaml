@@ -20,6 +20,7 @@
   /cfg - configurações
 
   /cfg <nome/link/id do canal> - configurações do canal'
+12c8ffb4c410: 'Uso: /t <link da publicação>'
 139669c83cc6: Já é administrador
 1a603ac4b55c: Por favor, envie `/cfg` em chat privado, grupo ou tópico, ou use `/cfg <nome de usuário/link/id do canal>` para configurar
 1d30c358e2a1: Modo de análise padrão
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Opção de configuração desconhecida
 3fea7ca76cde: Reações
 405ba1795958: Configuração do tópico
+41470f9ce30a: Falha na tradução, tente novamente mais tarde
 421687e6f757: '{target} está na configuração (ADMIN_USERS); edite o .env para removê-lo'
 460ce129a523: Baixando...
 4833c4c22f97: '**Envie o link para compartilhar para análise**
@@ -117,6 +119,7 @@
 945599b91845: Desativar progresso de análise
 968e5675d74c: '**Plataformas suportadas:**'
 9b3dbf3e3f85: Ocultar "Source" na parte inferior
+9f2179d61e09: A tradução do X requer sessão iniciada (auth_token / ct0 ausentes)
 a3e3b88377c8: Iniciar
 a4acafd79982: Já está na lista de permissões
 ab480060abb1: Não mostrar logs de erro
@@ -135,6 +138,7 @@ c2236f70c559: Ignorar análise de cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Removido da lista de permissões
 c909e6eb65aa: Proporção
+d147c9a262cf: O X não retornou tradução (talvez esta publicação não seja traduzível)
 d2282636abc7: Painel de configuração
 d34addb9b2f0: Cache limpo
 d4b153707c28: Apenas para usuários na lista de permissões
@@ -149,6 +153,7 @@ e4f6307e1c4f: 'Alterado para: {LANG_MAP[selected]}'
 e7f40ca894a3: Enquete
 ea15ae2b7fba: Opção
 eaa3cd851501: Texto personalizado
+edc9eddc4462: Traduzir uma publicação
 f047ff589a7a: Enviar em pacote, com informações de análise
 f1d192b54c3b: Mostrar o texto completo
 f6f18e097963: Lista de permissões

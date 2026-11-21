@@ -20,6 +20,7 @@
   /cfg - ustawienia
 
   /cfg <nazwa/link/id kanału> - ustawienia kanału'
+12c8ffb4c410: 'Użycie: /t <link do posta>'
 139669c83cc6: Już jest administratorem
 1a603ac4b55c: Proszę wysłać `/cfg` lub użyć `/cfg <nazwa_użytkownika_kanalu/link/id>` w prywatnej rozmowie, grupie lub temacie, aby skonfigurować
 1d30c358e2a1: Domyślny tryb analizy
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Nieznana opcja konfiguracji
 3fea7ca76cde: Reakcje
 405ba1795958: Konfiguracja tematu
+41470f9ce30a: Tłumaczenie nie powiodło się, spróbuj później
 421687e6f757: '{target} jest w konfiguracji (ADMIN_USERS); aby usunąć, zmień .env'
 460ce129a523: Pobieranie...
 4833c4c22f97: '**Wyślij link do udostępnienia, aby przeanalizować**
@@ -117,6 +119,7 @@
 945599b91845: Wyłącz postęp analizy
 968e5675d74c: '**Obsługiwane platformy:**'
 9b3dbf3e3f85: Ukryj dolny „Źródło”
+9f2179d61e09: Tłumaczenie X wymaga zalogowania (brak auth_token / ct0)
 a3e3b88377c8: Start
 a4acafd79982: Już na liście dozwolonych
 ab480060abb1: Nie pokazuj dziennika błędów
@@ -135,6 +138,7 @@ c2236f70c559: Omijanie analizy pamięci podręcznej
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Usunięto z listy dozwolonych
 c909e6eb65aa: Udział
+d147c9a262cf: X nie zwrócił tłumaczenia (ten post może być nieprzetłumaczalny)
 d2282636abc7: Panel konfiguracji
 d34addb9b2f0: Pamięć podręczna wyczyszczona
 d4b153707c28: Tylko dla użytkowników z białej listy
@@ -158,6 +162,7 @@ e4f6307e1c4f: 'Przełączono na: {LANG_MAP[selected]}'
 e7f40ca894a3: Ankieta
 ea15ae2b7fba: Opcja
 eaa3cd851501: Niestandardowy tekst
+edc9eddc4462: Przetłumacz post
 f047ff589a7a: Wyślij jako paczkę, z informacjami o analizie
 f1d192b54c3b: Pokaż cały tekst
 f6f18e097963: Lista dozwolonych

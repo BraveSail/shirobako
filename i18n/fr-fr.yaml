@@ -20,6 +20,7 @@
   /cfg - paramètres
 
   /cfg <nom/lien/id de la chaîne> - paramètres de la chaîne'
+12c8ffb4c410: 'Utilisation : /t <lien de la publication>'
 139669c83cc6: Déjà administrateur
 1a603ac4b55c: Veuillez envoyer `/cfg` en message privé, groupe ou sujet, ou utiliser `/cfg <nom d'utilisateur/lien/id du canal>` pour configurer
 1d30c358e2a1: Mode d'analyse par défaut
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Élément de configuration inconnu
 3fea7ca76cde: Réactions
 405ba1795958: Configuration du sujet
+41470f9ce30a: Échec de la traduction, veuillez réessayer plus tard
 421687e6f757: '{target} figure dans la configuration (ADMIN_USERS) ; modifiez .env pour le retirer'
 460ce129a523: Téléchargement en cours...
 4833c4c22f97: '**Envoyez un lien de partage pour analyse**
@@ -117,6 +119,7 @@
 945599b91845: Désactiver la progression de l'analyse
 968e5675d74c: '**Plateformes prises en charge :**'
 9b3dbf3e3f85: Masquer le « Source » en bas
+9f2179d61e09: La traduction X nécessite une session connectée (auth_token / ct0 manquants)
 a3e3b88377c8: Démarrer
 a4acafd79982: Déjà dans la liste blanche
 ab480060abb1: Ne pas afficher les journaux d'erreurs
@@ -135,6 +138,7 @@ c2236f70c559: Contourner l'analyse du cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Retiré de la liste blanche
 c909e6eb65aa: Part
+d147c9a262cf: X n'a renvoyé aucune traduction (cette publication n'est peut-être pas traduisible)
 d2282636abc7: Panneau de configuration
 d34addb9b2f0: Cache effacé
 d4b153707c28: Réservé aux utilisateurs sur la liste blanche
@@ -158,6 +162,7 @@ e4f6307e1c4f: 'Passé à : {LANG_MAP[selected]}'
 e7f40ca894a3: Sondage
 ea15ae2b7fba: Option
 eaa3cd851501: Texte personnalisé
+edc9eddc4462: Traduire une publication
 f047ff589a7a: Envoyer en paquet, avec informations d'analyse
 f1d192b54c3b: Afficher tout le texte
 f6f18e097963: Liste blanche

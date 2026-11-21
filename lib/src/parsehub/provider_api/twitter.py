@@ -11,6 +11,7 @@ from typing import Literal, NamedTuple
 
 from loguru import logger
 
+from ..errors import TranslationUnavailable
 from ..types import ParseError
 from ..utils import http
 from ..utils.helpers import UA, to_datetime, to_int
@@ -800,6 +801,61 @@ class Twitter:
             logger.warning("cookie 缺少必要参数: auth_token")
             return False
         return True
+
+    #: Grok 翻译端点。**不在 GraphQL 里** —— 从 X 12.44.0 的 APK 反编译得到
+    #: （``com.x.http.translation.a`` 上 ``@POST("/2/grok/translation.json")``），
+    #: 所以在 web 端的 GraphQL 文档里搜「translate」永远搜不到它。
+    _TRANSLATE_ENDPOINT = "https://x.com/2/grok/translation.json"
+
+    async def translate_tweet(self, tweet_id: str, dst_lang: str) -> str:
+        """用 **X 自己的翻译**（Grok）把一条推文译成 ``dst_lang``，返回译文正文。
+
+        请求体形状来自 APK 里的 ``com.x.ai.grok.c``（字段名直接取自它的
+        ``toString``：``GrokTranslateRequest(id=, contentType=, dstLang=)``），
+        响应字段来自 ``ApiGrokTranslateResult``：``text`` / ``entities`` /
+        ``rich_text_entities`` / ``index`` / ``content_type``。
+
+        Args:
+            tweet_id: 推文 id（从 ``get_id_by_url`` 取）。
+            dst_lang: 目标语言，BCP-47 小写形式（如 ``zh-cn`` / ``ja`` / ``en``）。
+
+        Raises:
+            TranslationUnavailable: 没有登录态、或平台拒绝（401/403）。**翻译
+                必须带登录 cookie** —— 匿名调用一律 401 空 body。
+        """
+        if not self.check_cookie():
+            raise TranslationUnavailable("X 翻译需要登录态（auth_token / ct0 缺失）")
+
+        cookie = self.cookie or {}
+        headers = {
+            "authorization": self.authorization,
+            "content-type": "application/json",
+            "x-csrf-token": str(cookie.get("ct0") or ""),
+            "x-twitter-active-user": "yes",
+            "x-twitter-auth-type": "OAuth2Session",
+        }
+        body = {"id": str(tweet_id), "contentType": "post", "dstLang": dst_lang}
+
+        async with http.AsyncClient(proxy=self.proxy) as client:
+            response = await client.post(
+                self._TRANSLATE_ENDPOINT,
+                json=body,
+                headers=headers,
+                cookies=cookie,
+            )
+
+        if response.status_code in (401, 403):
+            raise TranslationUnavailable(f"X 翻译被拒（HTTP {response.status_code}），登录态可能已失效")
+        response.raise_for_status()
+
+        payload = response.json()
+        if error := payload.get("error"):
+            raise TranslationUnavailable(f"X 翻译失败: {error}")
+        value = payload.get("value") or {}
+        text_value = str(value.get("text") or "").strip()
+        if not text_value:
+            raise TranslationUnavailable("X 没有返回译文（该推文可能不可翻译）")
+        return text_value
 
 
 @dataclass

@@ -27,3 +27,9 @@ class UnknownPlatform(ParseHubError):
     """不支持的平台"""
 
     MSG = __doc__
+
+
+class TranslationUnavailable(ParseHubError):
+    """翻译不可用（缺登录态 / 平台拒绝 / 没有译文）"""
+
+    MSG = __doc__

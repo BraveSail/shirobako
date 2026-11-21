@@ -20,6 +20,7 @@
   /cfg - Einstellungen
 
   /cfg <Kanalname/Link/ID> - Kanaleinstellungen'
+12c8ffb4c410: 'Verwendung: /t <Beitragslink>'
 139669c83cc6: Ist bereits Administrator
 1a603ac4b55c: Bitte senden Sie `/cfg` oder verwenden Sie `/cfg <Kanal-Benutzername/Link/ID>` im privaten Chat, in der Gruppe oder im Thema zur Konfiguration.
 1d30c358e2a1: Standard-Parsing-Modus
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Unbekannte Konfigurationsoption
 3fea7ca76cde: Reaktionen
 405ba1795958: Themen-Konfiguration
+41470f9ce30a: Übersetzung fehlgeschlagen, bitte später erneut versuchen
 421687e6f757: '{target} steht in der Konfiguration (ADMIN_USERS); zum Entfernen .env bearbeiten'
 460ce129a523: Herunterladen...
 4833c4c22f97: '**Senden Sie einen Freigabelink zur Analyse**
@@ -117,6 +119,7 @@
 945599b91845: Parsing-Fortschritt deaktivieren
 968e5675d74c: '**Unterstützte Plattformen:**'
 9b3dbf3e3f85: Untere "Quelle" ausblenden
+9f2179d61e09: Die X-Übersetzung erfordert eine Anmeldung (auth_token / ct0 fehlen)
 a3e3b88377c8: Start
 a4acafd79982: Bereits in der Whitelist
 ab480060abb1: Fehlerprotokolle nicht anzeigen
@@ -135,6 +138,7 @@ c2236f70c559: Cache-Parsing umgehen
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Von der Whitelist entfernt
 c909e6eb65aa: Anteil
+d147c9a262cf: X hat keine Übersetzung geliefert (dieser Beitrag ist evtl. nicht übersetzbar)
 d2282636abc7: Konfigurationspanel
 d34addb9b2f0: Cache gelöscht
 d4b153707c28: Nur für Nutzer auf der Whitelist
@@ -158,6 +162,7 @@ e4f6307e1c4f: 'Wechsel zu: {LANG_MAP[selected]}'
 e7f40ca894a3: Umfrage
 ea15ae2b7fba: Option
 eaa3cd851501: Benutzerdefinierter Text
+edc9eddc4462: Beitrag übersetzen
 f047ff589a7a: Paket senden, inklusive Analyseinformationen
 f1d192b54c3b: Vollständigen Text anzeigen
 f6f18e097963: Whitelist

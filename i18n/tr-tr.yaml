@@ -20,6 +20,7 @@
   /cfg - ayarlar
 
   /cfg <kanal kullanıcı adı/bağlantı/id> - kanal ayarları'
+12c8ffb4c410: 'Kullanım: /t <gönderi bağlantısı>'
 139669c83cc6: Zaten yönetici
 1a603ac4b55c: Lütfen özel mesajda, grupta veya konularda `/cfg` komutunu gönderin veya `/cfg <kanal kullanıcı adı/link/id>` ile yapılandırın
 1d30c358e2a1: Varsayılan çözümleme modu
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Bilinmeyen yapılandırma öğesi
 3fea7ca76cde: Tepkiler
 405ba1795958: Konu yapılandırması
+41470f9ce30a: Çeviri başarısız oldu, lütfen daha sonra tekrar deneyin
 421687e6f757: '{target} yapılandırmada (ADMIN_USERS); kaldırmak için .env dosyasını düzenleyin'
 460ce129a523: İndiriliyor...
 4833c4c22f97: '**Çözümleme için paylaşım bağlantısı gönderin**
@@ -117,6 +119,7 @@
 945599b91845: Çözümleme ilerlemesini devre dışı bırak
 968e5675d74c: '**Desteklenen platformlar:**'
 9b3dbf3e3f85: Alt "Kaynak"u gizle
+9f2179d61e09: X çevirisi oturum açmayı gerektirir (auth_token / ct0 yok)
 a3e3b88377c8: Başlat
 a4acafd79982: Zaten izin listesinde
 ab480060abb1: Hata günlüklerini gösterme
@@ -135,6 +138,7 @@ c2236f70c559: Önbellek çözümlemesini atla
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: İzin listesinden çıkarıldı
 c909e6eb65aa: Oran
+d147c9a262cf: X çeviri döndürmedi (bu gönderi çevrilemiyor olabilir)
 d2282636abc7: Yapılandırma paneli
 d34addb9b2f0: Önbellek temizlendi
 d4b153707c28: Yalnızca beyaz listedeki kullanıcılar için
@@ -158,6 +162,7 @@ e4f6307e1c4f: '{LANG_MAP[selected]} olarak değiştirildi'
 e7f40ca894a3: Anket
 ea15ae2b7fba: Seçenek
 eaa3cd851501: Özel metin
+edc9eddc4462: Gönderiyi çevir
 f047ff589a7a: Paket halinde gönder, çözümleme bilgisi ile birlikte
 f1d192b54c3b: Tüm metni göster
 f6f18e097963: İzin listesi

@@ -20,6 +20,7 @@
   /cfg - settings
 
   /cfg <channel username/link/id> - channel settings'
+12c8ffb4c410: 'Usage: /t <post link>'
 139669c83cc6: Already an administrator
 1a603ac4b55c: Please send `/cfg` in private chat, group, or topic, or use `/cfg <channel username/link/id>` to configure
 1d30c358e2a1: Default parsing mode
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Unknown configuration item
 3fea7ca76cde: Reactions
 405ba1795958: Topic Configuration
+41470f9ce30a: Translation failed, please try again later
 421687e6f757: '{target} is in the config (ADMIN_USERS); edit .env to remove them'
 460ce129a523: Downloading...
 4833c4c22f97: '**Send share link for parsing**
@@ -117,6 +119,7 @@
 945599b91845: Disable parsing progress
 968e5675d74c: '**Supported platforms:**'
 9b3dbf3e3f85: Hide bottom "Source"
+9f2179d61e09: X translation requires a login session (auth_token / ct0 missing)
 a3e3b88377c8: Start
 a4acafd79982: Already in the whitelist
 ab480060abb1: Do not display error logs
@@ -135,6 +138,7 @@ c2236f70c559: Bypass cache parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Removed from the whitelist
 c909e6eb65aa: Share
+d147c9a262cf: X returned no translation (this post may not be translatable)
 d2282636abc7: Configuration panel
 d34addb9b2f0: Cache cleared
 d4b153707c28: Available to whitelisted users only
@@ -155,6 +159,7 @@ e4f6307e1c4f: 'Switched to: {LANG_MAP[selected]}'
 e7f40ca894a3: Poll
 ea15ae2b7fba: Option
 eaa3cd851501: Custom Copy
+edc9eddc4462: Translate a post
 f047ff589a7a: Pack and send with parsing information
 f1d192b54c3b: Show full text
 f6f18e097963: Whitelist

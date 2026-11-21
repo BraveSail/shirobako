@@ -20,6 +20,7 @@
   /cfg - pengaturan
 
   /cfg <nama/tautan/id kanal> - pengaturan kanal'
+12c8ffb4c410: 'Penggunaan: /t <tautan postingan>'
 139669c83cc6: Sudah menjadi admin
 1a603ac4b55c: Silakan kirim `/cfg` atau gunakan `/cfg <nama pengguna/link/id saluran>` dalam obrolan pribadi, grup, atau topik untuk konfigurasi
 1d30c358e2a1: Mode parsing default
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Item konfigurasi tidak dikenal
 3fea7ca76cde: Reaksi
 405ba1795958: Konfigurasi topik
+41470f9ce30a: Terjemahan gagal, silakan coba lagi nanti
 421687e6f757: '{target} ada di konfigurasi (ADMIN_USERS); ubah .env untuk menghapusnya'
 460ce129a523: Sedang mengunduh...
 4833c4c22f97: '**Kirim tautan berbagi untuk parsing**
@@ -117,6 +119,7 @@
 945599b91845: Nonaktifkan progres parsing
 968e5675d74c: '**Platform yang didukung:**'
 9b3dbf3e3f85: Sembunyikan "Sumber" di bagian bawah
+9f2179d61e09: Terjemahan X memerlukan sesi masuk (auth_token / ct0 tidak ada)
 a3e3b88377c8: Mulai
 a4acafd79982: Sudah ada di daftar putih
 ab480060abb1: Jangan tampilkan log kesalahan
@@ -135,6 +138,7 @@ c2236f70c559: Melewati parsing cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Dihapus dari daftar putih
 c909e6eb65aa: Persentase
+d147c9a262cf: X tidak mengembalikan terjemahan (postingan ini mungkin tidak dapat diterjemahkan)
 d2282636abc7: Panel konfigurasi
 d34addb9b2f0: Cache dihapus
 d4b153707c28: Hanya untuk pengguna daftar putih
@@ -158,6 +162,7 @@ e4f6307e1c4f: 'Berhasil beralih ke: {LANG_MAP[selected]}'
 e7f40ca894a3: Polling
 ea15ae2b7fba: Opsi
 eaa3cd851501: Teks kustom
+edc9eddc4462: Terjemahkan postingan
 f047ff589a7a: Kirim paket, sertakan informasi parsing
 f1d192b54c3b: Tampilkan seluruh teks
 f6f18e097963: Daftar putih

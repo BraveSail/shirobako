@@ -20,6 +20,7 @@
   /cfg - configuración
 
   /cfg <nombre/enlace/id del canal> - configuración del canal'
+12c8ffb4c410: 'Uso: /t <enlace de la publicación>'
 139669c83cc6: Ya es administrador
 1a603ac4b55c: Por favor, envía `/cfg` en chat privado, grupo o tema, o usa `/cfg <nombre de usuario/enlace/id del canal>` para configurar
 1d30c358e2a1: Modo de análisis predeterminado
@@ -47,6 +48,7 @@
 3d3eeb2bc9cd: Opción de configuración desconocida
 3fea7ca76cde: Reacciones
 405ba1795958: Configuración del tema
+41470f9ce30a: Error de traducción, inténtalo más tarde
 421687e6f757: '{target} está en la configuración (ADMIN_USERS); edita .env para quitarlo'
 460ce129a523: Descargando...
 4833c4c22f97: '**Envía un enlace para analizar**
@@ -117,6 +119,7 @@
 945599b91845: Desactivar progreso de análisis
 968e5675d74c: '**Plataformas compatibles:**'
 9b3dbf3e3f85: Ocultar "Fuente" en la parte inferior
+9f2179d61e09: La traducción de X requiere sesión iniciada (faltan auth_token / ct0)
 a3e3b88377c8: Iniciar
 a4acafd79982: Ya está en la lista blanca
 ab480060abb1: No mostrar registros de errores
@@ -135,6 +138,7 @@ c2236f70c559: Analizar sin usar caché
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Eliminado de la lista blanca
 c909e6eb65aa: Porcentaje
+d147c9a262cf: X no devolvió traducción (puede que esta publicación no sea traducible)
 d2282636abc7: Panel de configuración
 d34addb9b2f0: Caché borrada
 d4b153707c28: Solo para usuarios en la lista blanca
@@ -158,6 +162,7 @@ e4f6307e1c4f: 'Cambiado a: {LANG_MAP[selected]}'
 e7f40ca894a3: Encuesta
 ea15ae2b7fba: Opción
 eaa3cd851501: Texto personalizado
+edc9eddc4462: Traducir una publicación
 f047ff589a7a: Enviar empaquetado con información de análisis
 f1d192b54c3b: Mostrar todo el texto
 f6f18e097963: Lista blanca
