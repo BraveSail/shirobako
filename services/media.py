@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from easy_ai18n import PreLocaleSelector
-from parsehub.types import AnyMediaFile, DownloadResult, ProgressUnit
+from parsehub.types import AnyMediaFile, BrokenMedia, DownloadResult, ProgressUnit
 from parsehub.utils.media_info import MediaInfoReader
 
 from log import logger
@@ -51,6 +51,14 @@ async def process_media_files(download_result: DownloadResult) -> list[Processed
     logger.debug(f"开始媒体处理: 文件数={len(media_files)}, output_dir={processed_dir}")
     processed_list: list[ProcessedMedia] = []
     for media_file in media_files:
+        # **下载失败的占位项直接透传**：`BrokenMedia` 没有文件（`path` 为空），
+        # 交给 `processor.process("")` 会抛 `Unsupported media type: `（冒号后空白，
+        # 排查时看不出是哪种媒体）。它不需要处理，只需要**占住位置**，
+        # 让渲染层把该处降级成原 URL 链接 —— 删掉它会让后面的媒体整体错位。
+        if isinstance(media_file, BrokenMedia):
+            logger.debug(f"跳过处理（下载失败，将降级为链接）: url={getattr(media_file, 'url', '')}")
+            processed_list.append(ProcessedMedia(media_file, None))
+            continue
         # 对于实况图片只处理图片, 不处理视频
         logger.debug(f"处理文件: {media_file.path}")
         result = await processor.process(media_file.path)

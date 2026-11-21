@@ -17,6 +17,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 from parsehub.types import BrokenMedia, ImageFile
@@ -92,3 +95,58 @@ def test_alignment_with_mixed_good_and_broken(n: int) -> None:
 
     _, placeholders, _, _, _, _ = build_rich_media(refs, processed)
     assert len(placeholders) == n
+
+
+class TestProcessMediaFiles:
+    """`process_media_files` 必须跳过 BrokenMedia，不能把空路径喂给 MediaProcessingUnit。
+
+    事故：linux.do 的一个主题里有一张下载失败的图，`_do_download` 正确地留下了
+    ``BrokenMedia(path="")``，但媒体处理阶段无条件调用
+    ``processor.process(media_file.path)`` —— 拿到空串后抛
+    ``ValueError: Unsupported media type: ``（冒号后面是空的，日志里根本看不出
+    是哪种媒体、也不知道是哪张图）。整条解析因此失败。
+    """
+
+    def test_broken_media_is_passed_through_untouched(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        import asyncio
+
+        from parsehub.types import DownloadResult
+        from services.media import process_media_files
+
+        broken = BrokenMedia(path="", url="https://example.com/gone.gif")
+        result = DownloadResult(media=[broken], output_dir=Path("/tmp"))
+
+        processor = MagicMock()
+        processor.process = AsyncMock()
+        with patch("services.media.MediaProcessingUnit", return_value=processor):
+            processed = asyncio.run(process_media_files(result))
+
+        # 关键：没有拿空路径去 process
+        processor.process.assert_not_awaited()
+        # 但这一项必须还在，否则后面会错位
+        assert len(processed) == 1
+        assert isinstance(processed[0].source, BrokenMedia)
+        assert processed[0].output_paths is None
+
+    def test_real_media_still_goes_through_the_processor(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        import asyncio
+
+        from parsehub.types import DownloadResult
+        from services.media import process_media_files
+
+        img = ImageFile(path=__file__)
+        result = DownloadResult(media=[img], output_dir=Path("/tmp"))
+
+        processor = MagicMock()
+        processor.process = AsyncMock(
+            return_value=MagicMock(output_paths=[Path(__file__)], temp_dir=None)
+        )
+        with patch("services.media.MediaProcessingUnit", return_value=processor):
+            processed = asyncio.run(process_media_files(result))
+
+        processor.process.assert_awaited_once()
+        assert isinstance(processed[0].source, ImageFile)
