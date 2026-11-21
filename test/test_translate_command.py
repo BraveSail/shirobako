@@ -32,11 +32,21 @@ class TestEndpointContract:
     """端点与请求体是反向工程的产物，改动必须有新证据。"""
 
     def test_endpoint_is_the_grok_translation_path(self) -> None:
-        assert Twitter._TRANSLATE_ENDPOINT == "https://x.com/2/grok/translation.json"
+        assert Twitter._TRANSLATE_ENDPOINT == "https://x.com/i/api/2/grok/translation.json"
 
     def test_endpoint_is_not_graphql(self) -> None:
         """它不在 GraphQL 里 —— 这就是在 GraphQL 文档里搜不到的原因。"""
         assert "/graphql/" not in Twitter._TRANSLATE_ENDPOINT
+
+    def test_endpoint_carries_the_internal_api_prefix(self) -> None:
+        """前缀必须是 /i/api。
+
+        实测三种写法：``x.com/2/...`` → 401（路径不存在，被当匿名）；
+        ``x.com/i/api/2/...`` → 500（路由存在、认证已过）；
+        ``api.twitter.com/i/api/2/...`` → 404（另一套 host）。
+        漏掉前缀会让人误判成「cookie 失效」。
+        """
+        assert "/i/api/" in Twitter._TRANSLATE_ENDPOINT
 
 
 class TestRequiresLogin:
@@ -96,9 +106,53 @@ class TestRequestShape:
         assert captured["url"] == Twitter._TRANSLATE_ENDPOINT
         assert captured["body"] == {
             "id": "1795284023",
-            "contentType": "post",
-            "dstLang": "zh-tw",
+            "content_type": "post",
+            "dst_lang": "zh-tw",
         }
+
+    def test_body_uses_snake_case_not_kotlin_property_names(self, monkeypatch) -> None:
+        """``toString`` 显示的 ``contentType``/``dstLang`` 是 Kotlin 属性名。
+
+        真实传输键名在 kotlinx.serialization 的描述符里（``com.x.ai.grok.a``）：
+        ``id`` / ``content_type`` / ``dst_lang``。照着 toString 写会得到 500/131。
+        """
+        import asyncio
+
+        captured: dict = {}
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json() -> dict:
+                return {"value": {"text": "ok"}}
+
+            @staticmethod
+            def raise_for_status() -> None:
+                return None
+
+        class _Client:
+            def __init__(self, *a, **kw) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a) -> None:
+                return None
+
+            async def post(self, url, json=None, headers=None, cookies=None):
+                captured["body"] = json
+                return _Resp()
+
+        monkeypatch.setattr("parsehub.provider_api.twitter.http.AsyncClient", _Client)
+        asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
+
+        body = captured["body"]
+        assert "contentType" not in body, "Kotlin 属性名不是传输键名"
+        assert "dstLang" not in body, "Kotlin 属性名不是传输键名"
+        assert body["content_type"] == "post"
+        assert body["dst_lang"] == "zh-cn"
 
     def test_csrf_header_carries_ct0(self, monkeypatch) -> None:
         """X 的写类请求要 ``x-csrf-token`` 且必须与 cookie 里的 ct0 一致。"""
@@ -176,6 +230,11 @@ class TestResponses:
     def test_error_field_is_surfaced(self, monkeypatch) -> None:
         with pytest.raises(TranslationUnavailable, match="翻译失败"):
             self._run(monkeypatch, status=200, payload={"error": "not_translatable"})
+
+    def test_5xx_is_reported_as_service_error(self, monkeypatch) -> None:
+        """500/131 是 X 侧内部错误，不能报成「登录态失效」。"""
+        with pytest.raises(TranslationUnavailable, match="服务异常"):
+            self._run(monkeypatch, status=500, payload={"errors": [{"code": 131}]})
 
     def test_empty_text_is_rejected(self, monkeypatch) -> None:
         """别把空串当译文发出去 —— 用户会收到一条空消息。"""

@@ -805,13 +805,29 @@ class Twitter:
     #: Grok 翻译端点。**不在 GraphQL 里** —— 从 X 12.44.0 的 APK 反编译得到
     #: （``com.x.http.translation.a`` 上 ``@POST("/2/grok/translation.json")``），
     #: 所以在 web 端的 GraphQL 文档里搜「translate」永远搜不到它。
-    _TRANSLATE_ENDPOINT = "https://x.com/2/grok/translation.json"
+    #:
+    #: 前缀必须是 ``/i/api`` —— X 的内部 API 都挂在这个前缀下。实测：
+    #: ``https://x.com/2/...`` → 401（路径不存在，被当匿名），
+    #: ``https://x.com/i/api/2/...`` → 500（路由存在、认证已过），
+    #: ``https://api.twitter.com/i/api/2/...`` → 404（另一套 host）。
+    _TRANSLATE_ENDPOINT = "https://x.com/i/api/2/grok/translation.json"
 
     async def translate_tweet(self, tweet_id: str, dst_lang: str) -> str:
         """用 **X 自己的翻译**（Grok）把一条推文译成 ``dst_lang``，返回译文正文。
 
-        请求体形状来自 APK 里的 ``com.x.ai.grok.c``（字段名直接取自它的
-        ``toString``：``GrokTranslateRequest(id=, contentType=, dstLang=)``），
+        请求体的字段名来自 APK 里 kotlinx.serialization 的描述符
+        （``com.x.ai.grok.a`` 的静态块）：
+
+        ```java
+        n1Var.j("id", false);
+        n1Var.j("content_type", false);
+        n1Var.j("dst_lang", false);
+        ```
+
+        **注意是 snake_case**：``GrokTranslateRequest.toString()`` 显示的
+        ``contentType`` / ``dstLang`` 是 Kotlin 属性名，不是传输键名，照着它写
+        会得到 500/131。
+
         响应字段来自 ``ApiGrokTranslateResult``：``text`` / ``entities`` /
         ``rich_text_entities`` / ``index`` / ``content_type``。
 
@@ -820,8 +836,8 @@ class Twitter:
             dst_lang: 目标语言，BCP-47 小写形式（如 ``zh-cn`` / ``ja`` / ``en``）。
 
         Raises:
-            TranslationUnavailable: 没有登录态、或平台拒绝（401/403）。**翻译
-                必须带登录 cookie** —— 匿名调用一律 401 空 body。
+            TranslationUnavailable: 没有登录态、或平台拒绝（401/403/5xx）。翻译
+                **必须带登录 cookie** —— 匿名调用一律 401 空 body。
         """
         if not self.check_cookie():
             raise TranslationUnavailable("X 翻译需要登录态（auth_token / ct0 缺失）")
@@ -834,7 +850,7 @@ class Twitter:
             "x-twitter-active-user": "yes",
             "x-twitter-auth-type": "OAuth2Session",
         }
-        body = {"id": str(tweet_id), "contentType": "post", "dstLang": dst_lang}
+        body = {"id": str(tweet_id), "content_type": "post", "dst_lang": dst_lang}
 
         async with http.AsyncClient(proxy=self.proxy) as client:
             response = await client.post(
@@ -846,6 +862,8 @@ class Twitter:
 
         if response.status_code in (401, 403):
             raise TranslationUnavailable(f"X 翻译被拒（HTTP {response.status_code}），登录态可能已失效")
+        if response.status_code >= 500:
+            raise TranslationUnavailable(f"X 翻译服务异常（HTTP {response.status_code}）")
         response.raise_for_status()
 
         payload = response.json()

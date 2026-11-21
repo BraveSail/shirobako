@@ -23,6 +23,7 @@ import re
 
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
+from parsehub.utils.helpers import SecretCookie
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ParseMode
 from pyrogram.types import LinkPreviewOptions, Message
@@ -98,7 +99,13 @@ async def translate(cli: Client, msg: Message) -> None:
     tweet_id = match[1]
     dst_lang = x_lang_for(lang)
 
-    client = Twitter(cookie=pl_cfg.roll_cookie("twitter"), proxy=pl_cfg.roll_parser_proxy("twitter"))
+    # **必须走 `SecretCookie`**：``pl_cfg.roll_cookie`` 返回的是 ``MaskedSecretStr``，
+    # 它自己的 ``get_value()`` 是脱敏显示（14 字符的 ``gues******znn.``），
+    # 直接传给客户端会得到「缺少 ct0」。`SecretCookie.get_value()` 才返回
+    # 真正的 ``dict[str, str]``（实测该 cookie 有 1259 字符、12 个字段）。
+    raw_cookie = pl_cfg.roll_cookie("twitter")
+    cookie = SecretCookie(raw_cookie.get_secret_value() if raw_cookie else None).get_value()
+    client = Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
     try:
         translated = await client.translate_tweet(tweet_id, dst_lang)
     except TranslationUnavailable as e:
