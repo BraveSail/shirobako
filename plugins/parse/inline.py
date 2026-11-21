@@ -276,11 +276,15 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     raw_url = await ParseService().get_raw_url(query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
-        # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
-        # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
-        results = [build_cached_rich_result(cached, raw_url, lang, config, spoiler_tag=spoiler_tag)]
-        await answer_inline(inline_query, results, lang=lang, cache_time=60)
-        return
+        # **``#t`` 不能在这里 return** —— 缓存存的是**原文**形态，直接用它就
+        # 等于忽略了这个开关（实测：预览出来还是原文，用户报「没用啊」）。
+        # 带 ``#t`` 时往下走，拿解析结果重新构建，多花一次解析换功能正确。
+        if not translate:
+            # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
+            # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
+            results = [build_cached_rich_result(cached, raw_url, lang, config, spoiler_tag=spoiler_tag)]
+            await answer_inline(inline_query, results, lang=lang, cache_time=60)
+            return
 
     parse_result = await parse_cache.get(raw_url)
     if parse_result is None:
@@ -291,7 +295,8 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     # 失败时保持原文 —— 开关不该让预览变成空白。
     if translate:
         try:
-            await apply_translation(parse_result, raw_url, lang)
+            changed = await apply_translation(parse_result, raw_url, lang)
+            logger.info(f"inline #t 翻译: changed={changed}, url={raw_url}")
         except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住预览
             logger.warning(f"inline #t 翻译失败, 用原文: url={raw_url} err={e}")
 
