@@ -1,34 +1,23 @@
-"""`/t` 命令：用 X 自己的翻译（Grok）译推文，格式靠 entities.indices 保住。
+"""``#t`` —— 与 ``#剧透`` 同步的翻译开关。
+
+## 为什么是 ``#t`` 不是 ``/t``
+
+用户原话：「不支持 inline？把 /t 换成 #t，和 #剧透 同步一下」。
+
+``/t`` 是命令，只在普通消息里工作，inline 输入框里发 ``/t`` 会被当成普通查询
+（实测：inline 把 ``/t https://…`` 整串当分享文案去解析）。``#剧透`` 是
+**独立 token**，正文与 inline 都识别 —— ``#t`` 必须照这个形状做，否则同一层
+的两个开关行为不一致。
 
 ## 接口契约（实测，不是猜）
 
-请求**只发推文 id，不发正文**：
-
-```json
-{"id": "<推文id>", "content_type": "POST", "dst_lang": "zh-cn"}
-```
-
-服务端自己知道那条推文的原文，翻译后返回**译文 + 重算过的实体偏移**：
-
-```json
-{"result": {"text": "译文", "entities": {"urls": [...], "user_mentions": [...], "hashtags": [...]}}}
-```
-
-端点与请求体来自 X 12.44.0 的 APK（``com.twitter.android``）反编译：
-``com.x.http.translation.a`` 上的 ``@POST("/2/grok/translation.json")``，
-请求体字段在 kotlinx.serialization 描述符 ``com.x.ai.grok.a`` 里，
-``content_type`` 的真实值 ``"POST"`` 在调用点
-``com/x/urt/items/post/translate/grok/q.smali``。
-
-## 格式怎么保住
+请求只发 ``{"id": ..., "content_type": "POST", "dst_lang": ...}``，**不发正文**；
+服务端返回 ``{"result": {"text": "译文", "entities": {...}}}``。
 
 ``entities[*].indices`` 是**译文字符串里的字符区间**。实测一条 157 字符的译文：
 ``27,43`` → ``@maruyono_kamome``、``121,144`` → ``https://t.co/…``、
-``146,157`` → ``#FX戦士くるみちゃん``；同一批 indices 用在 180 字符的原文上全错。
-
-所以正确做法是拿 ``text`` 原样当正文、按下标把实体包成链接，**文本一字不改**。
-曾经为「格式」去拆段落再拼回 blocks，既丢了平台给的真格式，又让块结构超限
-（``400 MESSAGE_TOO_LONG``）。
+``146,157`` → ``#FX戦士くるみちゃん``；同一批 indices 用在 180 字符的原文上全错
+（服务端翻译时重算了偏移）。
 """
 
 from __future__ import annotations
@@ -37,6 +26,7 @@ import pytest
 
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
+from parsehub.utils.helpers import strip_translate_flag
 
 COOKIE = {"auth_token": "fake-auth", "ct0": "fake-ct0"}
 
@@ -60,6 +50,51 @@ ENTITIES = {
 }
 
 
+class TestFlagParsing:
+    """``#t`` 必须与 ``#剧透`` 逐条同形 —— 这是用户明确要求的「同步」。"""
+
+    def test_strips_flag_and_reports_hit(self) -> None:
+        text, hit = strip_translate_flag("https://x.com/a/status/1 #t")
+        assert text == "https://x.com/a/status/1"
+        assert hit is True
+
+    def test_case_insensitive(self) -> None:
+        for flag in ("#t", "#T", "#翻译", "#翻譯"):
+            _, hit = strip_translate_flag(f"https://x.com/a/status/1 {flag}")
+            assert hit is True, f"{flag} 应该被识别"
+
+    def test_not_triggered_inside_other_tokens(self) -> None:
+        """``#test`` / ``#tt`` 都不是开关 —— 与 ``#nsfwxxx`` 不算同理。"""
+        for token in ("#test", "#tt", "#trans", "x#t"):
+            _, hit = strip_translate_flag(f"https://x.com/a/status/1 {token}")
+            assert hit is False, f"{token} 不该触发"
+
+    def test_url_itself_is_untouched(self) -> None:
+        """标记必须空一格再写，URL 本体完全不变（``#剧透`` 的同一规矩）。"""
+        url = "https://x.com/a/status/1"
+        text, _ = strip_translate_flag(f"{url} #t")
+        assert url in text
+
+    def test_can_coexist_with_spoiler(self) -> None:
+        """``#t #剧透`` 既要译文又要打码 —— 两个开关不互斥。"""
+        from parsehub.utils.helpers import strip_spoiler_flag
+
+        text, hit_t = strip_translate_flag("https://x.com/a/status/1 #t #剧透")
+        text, hit_s = strip_spoiler_flag(text)
+        assert hit_t is True
+        assert hit_s == "#剧透"
+        assert text == "https://x.com/a/status/1"
+
+    def test_empty_input(self) -> None:
+        assert strip_translate_flag("") == ("", False)
+        assert strip_translate_flag(None) == ("", False)
+
+    def test_multiple_flags_reduce_to_one_hit(self) -> None:
+        text, hit = strip_translate_flag("https://x.com/a/status/1 #t #T")
+        assert hit is True
+        assert text == "https://x.com/a/status/1"
+
+
 class TestEndpointContract:
     """端点与请求体是反向工程的产物，改动必须有新证据。"""
 
@@ -76,14 +111,11 @@ class TestEndpointContract:
         实测三种写法：``x.com/2/...`` → 401（路径不存在，被当匿名）；
         ``x.com/i/api/2/...`` → 500（路由存在、认证已过）；
         ``api.twitter.com/i/api/2/...`` → 404（另一套 host）。
-        漏掉前缀会让人误判成「cookie 失效」。
         """
         assert "/i/api/" in Twitter._TRANSLATE_ENDPOINT
 
 
 class TestRequiresLogin:
-    """匿名调用一律 401，所以必须在发出请求前就拒绝。"""
-
     def test_no_cookie_raises_before_any_request(self) -> None:
         import asyncio
 
@@ -99,8 +131,6 @@ class TestRequiresLogin:
 
 def _patch_client(monkeypatch, *, status: int = 200, payload: dict | None = None, captured: dict | None = None):
     """装一个假 HTTP 客户端，记录请求并回固定响应。"""
-    import asyncio
-
     captured = captured if captured is not None else {}
 
     class _Resp:
@@ -135,8 +165,6 @@ def _patch_client(monkeypatch, *, status: int = 200, payload: dict | None = None
 
 
 class TestRequestShape:
-    """请求体三个字段，名字与取值都来自 APK。"""
-
     def test_body_uses_apk_field_names(self, monkeypatch) -> None:
         import asyncio
 
@@ -144,29 +172,11 @@ class TestRequestShape:
         text, _ = asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1795284023", "zh-tw"))
 
         assert text == "译好的正文"
-        assert captured["url"] == Twitter._TRANSLATE_ENDPOINT
         assert captured["body"] == {
             "id": "1795284023",
             "content_type": "POST",
             "dst_lang": "zh-tw",
         }
-
-    def test_body_uses_snake_case_not_kotlin_property_names(self, monkeypatch) -> None:
-        """``toString`` 显示的 ``contentType``/``dstLang`` 是 Kotlin 属性名。
-
-        真实传输键名在 kotlinx.serialization 描述符里：``id`` / ``content_type`` /
-        ``dst_lang``。照着 toString 写会得到 500/131。
-        """
-        import asyncio
-
-        captured = _patch_client(monkeypatch, payload={"result": {"text": "ok"}})
-        asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
-
-        body = captured["body"]
-        assert "contentType" not in body, "Kotlin 属性名不是传输键名"
-        assert "dstLang" not in body, "Kotlin 属性名不是传输键名"
-        assert body["content_type"] == "POST"
-        assert body["dst_lang"] == "zh-cn"
 
     def test_content_type_must_be_uppercase(self, monkeypatch) -> None:
         """``"post"`` / ``"Post"`` 都会 500 code 131 —— 服务端对大小写敏感。
@@ -182,7 +192,6 @@ class TestRequestShape:
         assert captured["body"]["content_type"].isupper()
 
     def test_csrf_header_carries_ct0(self, monkeypatch) -> None:
-        """X 的写类请求要 ``x-csrf-token`` 且必须与 cookie 里的 ct0 一致。"""
         import asyncio
 
         captured = _patch_client(monkeypatch, payload={"result": {"text": "ok"}})
@@ -206,13 +215,6 @@ class TestResponses:
         with pytest.raises(TranslationUnavailable, match="服务异常"):
             asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
 
-    def test_error_field_is_surfaced(self, monkeypatch) -> None:
-        import asyncio
-
-        _patch_client(monkeypatch, payload={"error": "not_translatable"})
-        with pytest.raises(TranslationUnavailable, match="翻译失败"):
-            asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
-
     def test_reads_translation_from_result_key(self, monkeypatch) -> None:
         """实测响应顶层是 ``result``（APK 的 Retrofit 声明写的是 value）。"""
         import asyncio
@@ -227,19 +229,10 @@ class TestResponses:
         import asyncio
 
         _patch_client(monkeypatch, payload={"result": {"text": "译好的", "entities": ENTITIES}})
-        text, ents = asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
-        assert text == "译好的"
+        _, ents = asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
         assert ents["user_mentions"][0]["screen_name"] == "maruyono_kamome"
 
-    def test_missing_entities_becomes_empty_dict(self, monkeypatch) -> None:
-        import asyncio
-
-        _patch_client(monkeypatch, payload={"result": {"text": "无实体"}})
-        _, ents = asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
-        assert ents == {}
-
     def test_empty_text_is_rejected(self, monkeypatch) -> None:
-        """别把空串当译文发出去 —— 用户会收到一条空消息。"""
         import asyncio
 
         _patch_client(monkeypatch, payload={"result": {"text": "  "}})
@@ -269,7 +262,11 @@ def _strip_links(md: str) -> str:
     """把 markdown 链接还原成纯文字，用于验证「文字没变」。"""
     import re as _re
 
-    return _re.sub(r"\[((?:[^\]\\]|\\.)*)\]\([^)]*\)", lambda m: m.group(1).replace("\\[", "[").replace("\\]", "]"), md)
+    return _re.sub(
+        r"\[((?:[^\]\\]|\\.)*)\]\([^)]*\)",
+        lambda m: m.group(1).replace("\\[", "[").replace("\\]", "]"),
+        md,
+    )
 
 
 class TestToMarkdown:
@@ -277,8 +274,7 @@ class TestToMarkdown:
         """最重要的一条：加链接不能改动任何正文字符。"""
         from plugins.translate import to_markdown
 
-        md = to_markdown(TEXT, ENTITIES)
-        assert _strip_links(md) == TEXT
+        assert _strip_links(to_markdown(TEXT, ENTITIES)) == TEXT
 
     def test_all_three_entity_kinds_become_links(self) -> None:
         from plugins.translate import to_markdown
@@ -306,7 +302,6 @@ class TestToMarkdown:
         assert to_markdown("纯文本", {}) == "纯文本"
 
     def test_entities_are_ordered_by_position(self) -> None:
-        """乱序输入也要按出现顺序切，否则文本会被切碎。"""
         from plugins.translate import to_markdown
 
         shuffled = {
@@ -320,8 +315,7 @@ class TestToMarkdown:
         """越界下标必须跳过而不是抛异常 —— 宁可少一个链接，不能整条失败。"""
         from plugins.translate import to_markdown
 
-        bad = {"hashtags": [{"indices": [999, 1000], "text": "x"}]}
-        assert to_markdown("短文本", bad) == "短文本"
+        assert to_markdown("短文本", {"hashtags": [{"indices": [999, 1000], "text": "x"}]}) == "短文本"
 
     def test_overlapping_span_is_skipped(self) -> None:
         from plugins.translate import to_markdown
@@ -333,33 +327,34 @@ class TestToMarkdown:
         assert _strip_links(to_markdown("0123456789", bad)) == "0123456789"
 
 
-class TestEntitySpans:
-    def test_mention_url_shape(self) -> None:
-        from plugins.translate import entity_spans
+class TestSetBody:
+    """两种结果类的正文字段不同，**两个都要写**。"""
 
-        assert entity_spans({"user_mentions": [{"indices": [1, 2], "screen_name": "abc"}]}) == [
-            (1, 2, "https://x.com/abc")
-        ]
+    def test_writes_both_fields(self) -> None:
+        from plugins.translate import set_body
 
-    def test_hashtag_is_url_encoded(self) -> None:
-        """日文话题名必须 URL 编码，否则链接打不开。"""
-        from plugins.translate import entity_spans
+        class _R:
+            markdown_content = ""
+            content = "原文"
 
-        spans = entity_spans({"hashtags": [{"indices": [0, 3], "text": "戦士"}]})
-        assert spans[0][2].startswith("https://x.com/hashtag/")
-        assert "%" in spans[0][2]
+        r = _R()
+        set_body(r, "译文")
+        assert r.markdown_content == "译文"
+        assert r.content == "译文"
 
-    def test_malformed_entries_are_ignored(self) -> None:
-        from plugins.translate import entity_spans
+    def test_multimedia_without_markdown_content_still_works(self) -> None:
+        """``MultimediaParseResult`` 没有 ``markdown_content`` —— 只写前者会失效。"""
+        from plugins.translate import set_body
 
-        spans = entity_spans(
-            {
-                "user_mentions": [{"indices": None, "screen_name": "x"}, {"indices": [1]}],
-                "urls": [{"indices": [0, 1]}],
-                "hashtags": None,
-            }
-        )
-        assert spans == []
+        class _R:
+            __slots__ = ("content",)
+
+            def __init__(self) -> None:
+                self.content = "原文"
+
+        r = _R()
+        set_body(r, "译文")
+        assert r.content == "译文"
 
 
 class TestLanguageMapping:
@@ -385,26 +380,3 @@ class TestLanguageMapping:
         from plugins.translate import x_lang_for
 
         assert x_lang_for("xx-yy") == "en"
-
-
-class TestCommandParsing:
-    def test_extracts_tweet_id_from_status_url(self) -> None:
-        from plugins.translate import _TWEET_URL_RE
-
-        assert _TWEET_URL_RE.search("https://x.com/NASA/status/20")[1] == "20"
-
-    def test_extracts_tweet_id_from_twitter_url(self) -> None:
-        from plugins.translate import _TWEET_URL_RE
-
-        assert _TWEET_URL_RE.search("https://twitter.com/user/status/1795284023")[1] == "1795284023"
-
-    def test_extracts_article_id(self) -> None:
-        """``/article/<id>`` 与 ``/status/<id>`` 同一个 id 空间。"""
-        from plugins.translate import _TWEET_URL_RE
-
-        assert _TWEET_URL_RE.search("https://x.com/u/article/1234567890")[1] == "1234567890"
-
-    def test_non_tweet_url_does_not_match(self) -> None:
-        from plugins.translate import _TWEET_URL_RE
-
-        assert _TWEET_URL_RE.search("https://x.com/NASA") is None

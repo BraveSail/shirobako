@@ -7,7 +7,7 @@ from parsehub.types import (
     ImageRef,
     VideoRef,
 )
-from parsehub.utils.helpers import strip_spoiler_flag
+from parsehub.utils.helpers import strip_spoiler_flag, strip_translate_flag
 from pyrogram import Client, raw, utils
 from pyrogram.errors import BadRequest
 from pyrogram.types import (
@@ -30,6 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
+from plugins.translate import apply_translation
 from plugins.filters import platform_filter
 from plugins.helpers import (
     build_rich_markdown,
@@ -270,6 +271,8 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
 
     # 手动打码开关: query 里那个独立的 /s 先剥掉, 否则会被当成 URL 的一部分
     query, spoiler_tag = strip_spoiler_flag(inline_query.query)
+    # ``#t`` 与 ``#剧透`` 同一层：剥掉后再算 raw_url，否则会被当成 URL 的一部分
+    query, translate = strip_translate_flag(query)
     raw_url = await ParseService().get_raw_url(query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
@@ -283,6 +286,14 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     if parse_result is None:
         parse_result = await ParseService().parse(query)
         await parse_cache.set(raw_url, parse_result)
+
+    # ``#t``: 预览里也直接显示译文（用户看到的选择项就该是最终形态）。
+    # 失败时保持原文 —— 开关不该让预览变成空白。
+    if translate:
+        try:
+            await apply_translation(parse_result, raw_url, lang)
+        except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住预览
+            logger.warning(f"inline #t 翻译失败, 用原文: url={raw_url} err={e}")
 
     results = await build_inline_results(parse_result, cli, lang, config, spoiler_tag=spoiler_tag)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
@@ -379,6 +390,9 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
 
     # 选中回调带的是原始 query, 手动打码标记同样要剥掉 (否则 /s 会被拼进 URL)
     _, spoiler_tag = strip_spoiler_flag(chosen_result.query)
+    # ``#t`` 同理：选中后重新取译文。**必须重取**，因为
+    # ``parse_cache`` 里存的是原文，预览阶段的改写不会留到这一步。
+    _, translate = strip_translate_flag(chosen_result.query)
 
     inline_message_id = chosen_result.inline_message_id
     if inline_message_id is None:
@@ -417,6 +431,12 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             return
 
         parse_result = result.parse_result
+        # ``#t``: 在**发送前**换正文（缓存里是原文，预览阶段的改写不会留到这一步）
+        if translate:
+            try:
+                await apply_translation(parse_result, raw_url, lang)
+            except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住发送
+                logger.warning(f"inline #t 翻译失败, 用原文: url={raw_url} err={e}")
         await reporter.report_result(parse_result, _t("上 传 中..."))
         try:
             media_refs = to_list(parse_result.media)

@@ -1,6 +1,22 @@
-"""/t —— 用 **X（Twitter）自己的翻译** 把一条推文译成发送者语言。
+"""``#t`` —— 用 **X（Twitter）自己的翻译** 把推文译成用户语言。
 
-## 接口怎么运作（先搞清楚再写代码）
+## 触发方式（与 ``#剧透`` 同步）
+
+用户原话：「把 /t 换成 #t，和 #剧透 同步一下」。两者本来就是同一层的开关
+（都是「链接后面空一格的独立 token」），行为必须完全一致：
+
+```
+https://x.com/user/status/123 #t
+https://x.com/user/status/123 #t #剧透     ← 可并存：既要译文又要打码
+https://x.com/user/status/123 #T           ← 大小写不敏感
+https://x.com/user/status/123 #翻译
+```
+
+- 独立 token（``#test`` 不算）
+- 正文与 **inline query** 都识别
+- 与 ``#剧透`` 可同时出现
+
+## 接口怎么运作
 
 请求**只发推文 id，不发正文**：
 
@@ -24,22 +40,11 @@
 ``entities[*].indices`` 是**译文字符串里的字符区间**（实测：157 字符译文里
 ``27,43`` 精确切出 ``@maruyono_kamome``；同一批 indices 用在 180 字符原文上全错）。
 
-## 输出必须和「不加 /t」一致
+## 只换正文，其它一律不动
 
-用户报「你确定 /t 和不加 /t 的输出一样？」—— 之前只发译文一段裸文字，丢掉了
-普通解析路径会给出的一切：作者名、作者主页、发布时间、浏览量、点赞、配图/视频、
-标签、页脚。
-
-正确做法：**复用项目的构建器** ``build_rich_markdown``，把
-- 译文（按 indices 套好链接后的 markdown）当作 ``markdown_content``
-- 原推文解析结果里的作者/时间/计数/平台/标签 原样传进去
-
-这样 ``/t`` 与普通解析**同形**，只是正文换成译文。
-
-## 为什么只发译文不附原文
-
-用户定案「不放」。附原文会让块结构膨胀（长推文实测 ``400 MESSAGE_TOO_LONG``），
-而且要动共享渲染层才能压扁引用块段间距 —— 不值得为次要需求动共享层。
+``apply_translation`` 只改写解析结果的正文字段。作者行 / 发布时间 / 浏览量 /
+点赞 / 标签 / 页脚 / 折叠 / **媒体** 全由项目既有链路（``send_rich_media``）
+按统一形态生成 —— 所以 ``#t`` 的输出与不加 ``#t`` **同形**，唯一差别是正文语言。
 """
 
 from __future__ import annotations
@@ -47,23 +52,12 @@ from __future__ import annotations
 import re
 from urllib.parse import quote
 
-from parsehub import ParseHub
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
 from parsehub.utils.helpers import SecretCookie
-from pyrogram import Client, filters
-from pyrogram.enums import ChatType
-from pyrogram.types import InputRichMessage, Message
 
 from core import pl_cfg
-from db import get_session
-from i18n import t_
 from log import logger
-from plugins.context import get_config_target
-from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
-from plugins.parse.rich_blocks import markdown_to_blocks
-from plugins.parse.sender import MessageSender, send_rich_media
-from services import AdminUserService, ParsePipeline, SettingsService, UserService
 
 logger = logger.bind(name="Translate")
 
@@ -143,7 +137,7 @@ def to_markdown(text: str, entities: dict) -> str:
         entities: X 返回的 ``entities``。
 
     Returns:
-        可直接作为 ``markdown_content`` 交给项目构建器的 markdown。
+        可直接作为正文交给项目构建器的 markdown。
     """
     spans = entity_spans(entities)
     if not spans:
@@ -167,34 +161,16 @@ def to_markdown(text: str, entities: dict) -> str:
     return "".join(out) or text
 
 
-@Client.on_message(filters.command(["t"]))
-async def translate(cli: Client, msg: Message) -> None:
-    """/t <推文链接> —— 把那条推文译成发送者语言，**输出形态与普通解析一致**。"""
-    if not msg.from_user:
-        return
+async def translate_tweet_markdown(url: str, lang: str) -> str | None:
+    """取一条推文的译文 markdown；取不到返回 ``None``。
 
-    async with get_session() as session:
-        lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
-        config = await SettingsService(session).get_config(get_config_target(msg))
-        # 与解析命令一致的鉴权口径：私聊属于非同群调用，只认本地库白名单。
-        if msg.chat and msg.chat.type == ChatType.PRIVATE:
-            allowed = await AdminUserService(session).is_whitelisted(msg.from_user.id)
-            if not allowed:
-                logger.info(f"/t 私聊被拦截(不在白名单): user_id={msg.from_user.id}")
-                await MessageSender(cli, msg, config).text(t_[lang]("仅限白名单用户使用"))
-                return
-
-    _t = t_[lang]
-
-    parts = (msg.text or "").split(maxsplit=1)
-    arg = parts[1].strip() if len(parts) > 1 else ""
-    match = _TWEET_URL_RE.search(arg)
+    **失败不抛**：``#t`` 是用户加的一个开关，平台不返回译文时应该照常发原文，
+    而不是整条消息发不出去。
+    """
+    match = _TWEET_URL_RE.search(url)
     if not match:
-        await MessageSender(cli, msg, config).text(_t("用法：/t <推文链接>"))
-        return
-
+        return None
     tweet_id = match[1]
-    url = match[0]
     dst_lang = x_lang_for(lang)
 
     # **必须走 `SecretCookie`**：``pl_cfg.roll_cookie`` 返回的是 ``MaskedSecretStr``，
@@ -203,79 +179,53 @@ async def translate(cli: Client, msg: Message) -> None:
     # 真正的 ``dict[str, str]``（实测该 cookie 有 1259 字符、12 个字段）。
     raw_cookie = pl_cfg.roll_cookie("twitter")
     cookie = SecretCookie(raw_cookie.get_secret_value() if raw_cookie else None).get_value()
-    proxy = pl_cfg.roll_parser_proxy("twitter")
+    client = Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
 
-    client = Twitter(cookie=cookie, proxy=proxy)
     try:
         translated, entities = await client.translate_tweet(tweet_id, dst_lang)
     except TranslationUnavailable as e:
-        logger.warning(f"/t 翻译不可用: tweet_id={tweet_id} lang={dst_lang} err={e}")
-        await MessageSender(cli, msg, config).text(_t(str(e)))
-        return
-    except Exception as e:  # noqa: BLE001 - 翻译失败不能把命令打成未捕获异常
-        logger.exception(f"/t 翻译异常: tweet_id={tweet_id} err={e}")
-        await MessageSender(cli, msg, config).text(_t("翻译失败，请稍后再试"))
-        return
+        logger.warning(f"#t 翻译不可用: tweet_id={tweet_id} lang={dst_lang} err={e}")
+        return None
+    except Exception as e:  # noqa: BLE001 - 翻译失败不能把整条解析弄挂
+        logger.exception(f"#t 翻译异常: tweet_id={tweet_id} err={e}")
+        return None
+    return to_markdown(translated, entities)
 
-    # **原推文照常解析**：作者/时间/浏览量/点赞/标签/平台/配图全在这一步，
-    # 少了它 ``/t`` 的输出就和普通解析不一样（用户报的正是这个差异）。
-    parse_result = None
-    try:
-        parse_result = await ParseHub().parse(url, cookie=cookie, proxy=proxy)
-    except Exception as e:  # noqa: BLE001 - 解析失败仍要能把译文发出去
-        logger.warning(f"/t 解析原推文失败（退化为纯译文）: tweet_id={tweet_id} err={e}")
 
-    markdown = to_markdown(translated, entities)
+def set_body(parse_result: object, markdown: str) -> None:
+    """把正文写进解析结果。
 
-    if parse_result is None:
-        # 兜底：没有元信息时至少给出译文 + 来源
-        body = f'{markdown}\n\n---\n\n<footer><a href="{url}">{_t("来源")}</a></footer>'
-        await MessageSender(cli, msg, config).rich_message(
-            rich_message=InputRichMessage(blocks=markdown_to_blocks(body)),
-        )
-        return
+    **两种结果类各有自己的正文字段，两个都要写**：
 
-    # **把正文换成译文**：``send_rich_media`` → ``build_rich_markdown`` 通过
-    # ``rich_content()`` 读 ``parse_result.markdown_content``，覆盖这个字段即可。
-    # 作者行、发布时间、浏览量/点赞、标签、页脚、折叠全由构建器按统一形态生成。
-    #
-    # 注意 ``MultimediaParseResult`` 没有 ``markdown_content`` 属性（实测那条
-    # GTA6 推文是带视频的），所以动态补上而不是假设它存在。
-    try:
-        parse_result.markdown_content = markdown
-    except AttributeError:
-        object.__setattr__(parse_result, "markdown_content", markdown)
+    - ``RichTextParseResult.markdown_content`` —— 纯文本/长文推文，渲染器优先读它
+    - ``MultimediaParseResult.content`` —— 带图/视频的推文**没有**
+      ``markdown_content`` 属性（实测那条 GTA6 推文就是这种），只写前者
+      会让多媒体推文的 ``#t`` 完全不生效
 
-    # **下载与发送全部交给项目既有链路**，不重复造轮子：
-    # ``MessageStatusReporter`` 负责「一条消息从进度编辑到结果」，
-    # ``ParsePipeline(parse_result=...)`` 负责下载 + 格式转换，
-    # ``send_rich_media`` 负责排版与上传。``/t`` 只做两件项目没有的事：
-    # 取平台译文、把正文换成译文。
-    sender = MessageSender(cli, msg, config)
-    reporter = MessageStatusReporter(
-        cli,
-        msg,
-        t=_t,
-        config=config,
-        on_forbidden=disable_progress_on_report_forbidden,
-    )
-    with ParsePipeline(
-        url,
-        url,
-        reporter,
-        parse_result=parse_result,
-        t=_t,
-    ) as pipeline:
-        result = await pipeline.run()
-        if result is None:
-            await sender.text(_t("翻译失败，请稍后再试"))
-            return
+    正文一换，原文里的 ``{{media:N}}`` 占位就不成立了；媒体仍由
+    ``send_rich_media`` 从 ``parse_result.media`` 正常发出（挂在消息末尾）。
+    """
+    for field in ("markdown_content", "content"):
+        try:
+            object.__setattr__(parse_result, field, markdown)
+        except (AttributeError, TypeError):
+            continue
 
-        await send_rich_media(
-            sender,
-            result.parse_result,
-            result.processed_list,
-            _t=_t,
-            raw_url=url,
-            reporter=reporter,
-        )
+
+async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
+    """``#t`` 的实现：把 ``parse_result`` 的正文换成平台译文。
+
+    Args:
+        parse_result: 已解析的结果（媒体是否下载过无所谓 —— 只改正文）。
+        url: 原推文链接。
+        lang: 目标界面语言（``zh-hans`` / ``ja-jp`` …）。
+
+    Returns:
+        是否真的换成了译文。``False`` 表示平台没给译文，正文保持原文 ——
+        调用方**不需要**额外处理，照常发原文即可（用户加的开关不该让消息发不出去）。
+    """
+    markdown = await translate_tweet_markdown(url, lang)
+    if not markdown:
+        return False
+    set_body(parse_result, markdown)
+    return True

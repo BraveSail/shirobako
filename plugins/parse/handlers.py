@@ -4,7 +4,7 @@ from dataclasses import replace
 from typing import Any
 
 from parsehub.types import AniRef, RichTextParseResult
-from parsehub.utils.helpers import strip_spoiler_flag
+from parsehub.utils.helpers import strip_spoiler_flag, strip_translate_flag
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType
 from pyrogram.types import Message
@@ -24,6 +24,7 @@ from plugins.filters import (
 from plugins.helpers import build_caption, format_label
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
+from plugins.translate import apply_translation
 from plugins.parse.sender import (
     MessageSender,
     build_gif_button,
@@ -99,12 +100,20 @@ async def parse(cli: Client, msg: Message) -> None:
 
     # 手动打码开关: 链接后跟独立的 #nsfw / #spoiler —— 先剥掉, 免得它被当成不支持的平台
     text, spoiler_tag = strip_spoiler_flag(text)
+    # ``#t`` 同一层：要求翻译这条推文。**先于平台判断**剥掉，否则 ``#t`` 会被
+    # 当成「不支持的平台」的一部分（与 ``#剧透`` 的处理顺序一致）。
+    text, translate_requested = strip_translate_flag(text)
     lines = text.strip().split()
     urls = list({i for i in lines if ParseService().parser.get_platform(i)})[:10]
 
     if not urls:
         await MessageSender(cli, msg, config).text(format_label(_t("不支持的平台")))
         return
+
+    # 翻译只对**单条**内容有意义（一条消息里多个链接时无法确定译哪条），
+    # 多链接时忽略 ``#t`` 而不是报错 —— 与 ``#剧透`` 可在多链接下并存不同，
+    # 因为打码是整条消息的属性、翻译是单条内容的属性。
+    translate = translate_requested and len(urls) == 1
 
     custom_content = ""
     if len(urls) == 1 and config.custom_content and msg.text:
@@ -127,6 +136,7 @@ async def parse(cli: Client, msg: Message) -> None:
                 delete_share_url_msg=config.auto_delete_url,
                 custom_content=custom_content,
                 spoiler_tag=spoiler_tag,
+                translate=translate,
             )
         )
         for url in urls
@@ -299,6 +309,18 @@ async def handle_parse(req: ParseRequest) -> bool:
         parse_result = result.parse_result
         await parse_cache.set(raw_url, parse_result)
 
+        # ``#t``: 把正文换成**平台自己的译文**。
+        #
+        # 位置很关键：必须在 pipeline **之后**（媒体已下载好，processed_list 在手上）
+        # 且**发送之前**。只改写正文字段 —— ``send_rich_media`` 通过 ``rich_content()``
+        # 读正文，作者行/时间/计数/媒体/页脚/折叠仍由构建器统一生成，
+        # 所以 ``#t`` 与普通解析同形，只是正文语言不同。
+        if req.translate:
+            try:
+                changed = await apply_translation(parse_result, raw_url, req.t_.locale)
+                logger.info(f"#t 翻译结果: changed={changed}, url={raw_url}")
+            except Exception as e:  # noqa: BLE001 - 翻译失败不能让整条消息发不出去
+                logger.warning(f"#t 翻译失败, 照常发原文: url={raw_url} err={e}")
         if isinstance(parse_result, RichTextParseResult):
             # 长文与普通结果同一条路径: 正文取 markdown_content, 排版交给富文本
             await sender.typing()

@@ -388,6 +388,34 @@ def strip_spoiler_flag(text: str | None) -> tuple[str, str]:
     return " ".join(kept), hit
 
 
+#: ``#t`` —— 要求**翻译**这条推文。与 ``#剧透`` 同一套机制：独立 token、
+#: 大小写不敏感、在正文与 inline query 里都识别，并保留用户写的原形。
+TRANSLATE_FLAGS = ("#t", "#翻译", "#翻譯")
+
+
+def strip_translate_flag(text: str | None) -> tuple[str, bool]:
+    """剥掉 ``#t`` / ``#翻译``, 返回 ``(去掉标记后的文本, 是否要求翻译)``。
+
+    为什么复用 ``strip_spoiler_flag`` 的形状而不是新做一套命令解析：
+    用户要求「和 ``#剧透`` 同步」—— 那两个开关本来就是同一层的东西（都是
+    「链接后面空一格再写」的独立 token），行为必须一致，否则同一个消息里
+    ``#剧透`` 能认、``#t`` 不认（或反过来）会让人没法预期。
+
+    **与 ``#剧透`` 可以并存**：``<链接> #t #剧透`` 既要译文又要打码。
+    """
+    if not text:
+        return "", False
+    lookup = frozenset(flag.lower() for flag in TRANSLATE_FLAGS)
+    hit = False
+    kept: list[str] = []
+    for token in text.split():
+        if token.lower() in lookup:
+            hit = True
+        else:
+            kept.append(token)
+    return " ".join(kept), hit
+
+
 def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = ()) -> list[str]:
     """消息**整条都是链接**时返回这些链接, 否则返回空列表。
 

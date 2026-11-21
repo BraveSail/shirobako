@@ -29,6 +29,9 @@ class ParseRequest:
     #: 用户手动要求打码时**命中的标记** (``#nsfw`` / ``#spoiler``, 空串=没要求)。
     #: 存标记而不是 bool, 因为摘要要显示它。
     spoiler_tag: str = ""
+    #: ``#t`` 命中 —— 要求把这条推文**译成用户语言**再发。
+    #: 与 ``spoiler_tag`` 同一层（都是「链接后面空一格的独立 token」），可并存。
+    translate: bool = False
 
     @property
     def chat_id(self) -> int | None:
