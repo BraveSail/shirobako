@@ -265,75 +265,72 @@ class TestIndicesAreOnTranslatedText:
         assert original[146:157] != TEXT[146:157]
 
 
-class TestInlineEntities:
-    def test_text_is_byte_identical_after_inlining(self) -> None:
-        """最重要的一条：加链接不能改动任何字符。"""
-        from plugins.translate import inline_entities
+def _strip_links(md: str) -> str:
+    """把 markdown 链接还原成纯文字，用于验证「文字没变」。"""
+    import re as _re
 
-        pieces = inline_entities(TEXT, ENTITIES)
-        rebuilt = "".join(p if isinstance(p, str) else p.text for p in pieces)
-        assert rebuilt == TEXT
+    return _re.sub(r"\[((?:[^\]\\]|\\.)*)\]\([^)]*\)", lambda m: m.group(1).replace("\\[", "[").replace("\\]", "]"), md)
+
+
+class TestToMarkdown:
+    def test_text_is_unchanged_after_inlining(self) -> None:
+        """最重要的一条：加链接不能改动任何正文字符。"""
+        from plugins.translate import to_markdown
+
+        md = to_markdown(TEXT, ENTITIES)
+        assert _strip_links(md) == TEXT
 
     def test_all_three_entity_kinds_become_links(self) -> None:
-        from plugins.translate import inline_entities
+        from plugins.translate import to_markdown
 
-        pieces = inline_entities(TEXT, ENTITIES)
-        urls = {p.url for p in pieces if not isinstance(p, str)}
-        assert "https://x.com/maruyono_kamome" in urls
-        assert "https://younganimal.com/episodes/b9a3ec5171c8c" in urls
-        assert any("hashtag" in u for u in urls)
+        md = to_markdown(TEXT, ENTITIES)
+        assert "https://x.com/maruyono_kamome" in md
+        assert "https://younganimal.com/episodes/b9a3ec5171c8c" in md
+        assert "hashtag" in md
 
     def test_url_uses_expanded_not_tco(self) -> None:
         """``t.co`` 短链现在跳登录墙，必须用 expanded_url。"""
-        from plugins.translate import inline_entities
+        from plugins.translate import to_markdown
 
-        pieces = inline_entities(TEXT, ENTITIES)
-        urls = [p.url for p in pieces if not isinstance(p, str)]
-        assert "https://t.co/KcKGqar7Au" not in urls
+        assert "(https://t.co/KcKGqar7Au)" not in to_markdown(TEXT, ENTITIES)
 
-    def test_newlines_survive_in_literal(self) -> None:
-        """换行必须留在字面量里 —— 一旦被吃掉，段落就糊成一片。"""
-        from plugins.translate import inline_entities
+    def test_newlines_survive(self) -> None:
+        """换行必须保留 —— 一旦被吃掉，段落就糊成一片。"""
+        from plugins.translate import to_markdown
 
-        pieces = inline_entities(TEXT, ENTITIES)
-        first = pieces[0]
-        assert isinstance(first, str) and "\n\n" in first
+        assert "\n\n" in to_markdown(TEXT, ENTITIES)
 
-    def test_no_entities_returns_single_literal(self) -> None:
-        from plugins.translate import inline_entities
+    def test_no_entities_returns_text_verbatim(self) -> None:
+        from plugins.translate import to_markdown
 
-        assert inline_entities("纯文本", {}) == ["纯文本"]
+        assert to_markdown("纯文本", {}) == "纯文本"
 
     def test_entities_are_ordered_by_position(self) -> None:
         """乱序输入也要按出现顺序切，否则文本会被切碎。"""
-        from plugins.translate import inline_entities
+        from plugins.translate import to_markdown
 
         shuffled = {
             "hashtags": ENTITIES["hashtags"],
             "user_mentions": ENTITIES["user_mentions"],
             "urls": ENTITIES["urls"],
         }
-        pieces = inline_entities(TEXT, shuffled)
-        rebuilt = "".join(p if isinstance(p, str) else p.text for p in pieces)
-        assert rebuilt == TEXT
+        assert _strip_links(to_markdown(TEXT, shuffled)) == TEXT
 
     def test_out_of_range_span_is_skipped(self) -> None:
         """越界下标必须跳过而不是抛异常 —— 宁可少一个链接，不能整条失败。"""
-        from plugins.translate import inline_entities
+        from plugins.translate import to_markdown
 
         bad = {"hashtags": [{"indices": [999, 1000], "text": "x"}]}
-        assert inline_entities("短文本", bad) == ["短文本"]
+        assert to_markdown("短文本", bad) == "短文本"
 
     def test_overlapping_span_is_skipped(self) -> None:
-        from plugins.translate import inline_entities
+        from plugins.translate import to_markdown
 
         bad = {
             "user_mentions": [{"indices": [0, 5], "screen_name": "a"}],
             "hashtags": [{"indices": [3, 8], "text": "b"}],
         }
-        pieces = inline_entities("0123456789", bad)
-        rebuilt = "".join(p if isinstance(p, str) else p.text for p in pieces)
-        assert rebuilt == "0123456789"
+        assert _strip_links(to_markdown("0123456789", bad)) == "0123456789"
 
 
 class TestEntitySpans:

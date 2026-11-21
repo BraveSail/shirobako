@@ -1,6 +1,6 @@
 """/t —— 用 **X（Twitter）自己的翻译** 把一条推文译成发送者语言。
 
-## 这个接口怎么运作（先搞清楚，再写代码）
+## 接口怎么运作（先搞清楚再写代码）
 
 请求**只发推文 id，不发正文**：
 
@@ -21,28 +21,25 @@
 }}
 ```
 
-## 所以「保住格式」= 按 indices 原地套，不拆不拼
+``entities[*].indices`` 是**译文字符串里的字符区间**（实测：157 字符译文里
+``27,43`` 精确切出 ``@maruyono_kamome``；同一批 indices 用在 180 字符原文上全错）。
 
-``entities[*].indices`` 是**译文字符串里的字符区间**。实测（157 字符译文）：
-``27,43`` 精确切出 ``@maruyono_kamome``，``121,144`` 切出 ``https://t.co/…``，
-``146,157`` 切出 ``#FX戦士くるみちゃん``；同一批 indices 用在 180 字符的**原文**上
-全错 —— 服务端翻译时重算了偏移。
+## 输出必须和「不加 /t」一致
 
-正确做法：拿 ``text`` 原样当正文，按下标把那几段包成带链接的 RichText 片段，
-**文本一个字都不改**（换行留在字面量里）。
+用户报「你确定 /t 和不加 /t 的输出一样？」—— 之前只发译文一段裸文字，丢掉了
+普通解析路径会给出的一切：作者名、作者主页、发布时间、浏览量、点赞、配图/视频、
+标签、页脚。
 
-## 为什么只发译文，不附原文
+正确做法：**复用项目的构建器** ``build_rich_markdown``，把
+- 译文（按 indices 套好链接后的 markdown）当作 ``markdown_content``
+- 原推文解析结果里的作者/时间/计数/平台/标签 原样传进去
 
-用户定案「不放」。附原文时：① 长推文撑爆块结构，服务端回
-``400 MESSAGE_TOO_LONG``（报错说 text too long，实测总字符才 1500 出头）；
-② 共享渲染层的 ``_quote_children`` 会把整段压成一个段落。都不值得为「对照原文」
-去动共享层。
+这样 ``/t`` 与普通解析**同形**，只是正文换成译文。
 
-## 语言
+## 为什么只发译文不附原文
 
-目标语言取**发送者**的 Telegram 语言（``UserService.ensure_lang``），拿不到就用
-项目默认语言（简中）。X 收 BCP-47 小写形式（``zh-cn`` / ``ja`` / ``en``），而项目
-locale 是 ``zh-hans`` / ``ja-jp`` 这类，所以要过一次映射。
+用户定案「不放」。附原文会让块结构膨胀（长推文实测 ``400 MESSAGE_TOO_LONG``），
+而且要动共享渲染层才能压扁引用块段间距 —— 不值得为次要需求动共享层。
 """
 
 from __future__ import annotations
@@ -50,25 +47,21 @@ from __future__ import annotations
 import re
 from urllib.parse import quote
 
+from parsehub import ParseHub
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
 from parsehub.utils.helpers import SecretCookie
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType
-from pyrogram.types import (
-    InputRichBlockFooter,
-    InputRichBlockParagraph,
-    InputRichMessage,
-    Message,
-    RichTextUrl,
-)
+from pyrogram.types import InputRichMessage, Message
 
 from core import pl_cfg
 from db import get_session
 from i18n import t_
 from log import logger
 from plugins.context import get_config_target
-from plugins.helpers import fold_for_show_more, visible_length
+from plugins.helpers import build_rich_markdown
+from plugins.parse.rich_blocks import markdown_to_blocks
 from plugins.parse.sender import MessageSender
 from services import AdminUserService, SettingsService, UserService
 
@@ -139,42 +132,44 @@ def entity_spans(entities: dict) -> list[tuple[int, int, str]]:
     return spans
 
 
-def inline_entities(text: str, entities: dict) -> list:
-    """按 ``indices`` 把译文切成 ``[str, RichTextUrl, str, …]``。
+def to_markdown(text: str, entities: dict) -> str:
+    """按 ``indices`` 把译文转成 markdown：**文本一字不改，只给实体包链接**。
 
-    **文本本身一个字都不改** —— 换行留在字面量里，只在实体区间上包一层链接。
-    这才是「保住格式」：格式来自平台的 ``indices``，不是我们拆段落猜出来的。
+    这才是「保住格式」：格式信息来自平台的 ``indices``，不是我们拆段落猜出来的。
+    换行原样保留（markdown 里 ``\\n\\n`` 就是分段）。
 
     Args:
         text: 译文正文（原样，含换行）。
         entities: X 返回的 ``entities``。
 
     Returns:
-        ``InputRichBlockParagraph`` 可直接吃的 text 列表；无实体时 ``[text]``。
+        可直接作为 ``markdown_content`` 交给项目构建器的 markdown。
     """
     spans = entity_spans(entities)
     if not spans:
-        return [text]
+        return text
 
-    pieces: list = []
+    out: list[str] = []
     cursor = 0
     for start, end, url in spans:
         # 越界或与前一段重叠就跳过 —— 宁可不加链接，也不能把文本切乱
-        # （服务端偶尔会给越界下标，实测过 indices 落在字符串尾部之外的情况）。
+        # （服务端偶尔会给越界下标）。
         if start < cursor or end > len(text) or start >= end:
             continue
         if start > cursor:
-            pieces.append(text[cursor:start])
-        pieces.append(RichTextUrl(text[start:end], url))
+            out.append(text[cursor:start])
+        # 链接文字里的 ``[`` / ``]`` 会断 markdown 语法，转义掉
+        label = text[start:end].replace("[", "\\[").replace("]", "\\]")
+        out.append(f"[{label}]({url})")
         cursor = end
     if cursor < len(text):
-        pieces.append(text[cursor:])
-    return pieces or [text]
+        out.append(text[cursor:])
+    return "".join(out) or text
 
 
 @Client.on_message(filters.command(["t"]))
 async def translate(cli: Client, msg: Message) -> None:
-    """/t <推文链接> —— 把那条推文译成发送者语言。"""
+    """/t <推文链接> —— 把那条推文译成发送者语言，**输出形态与普通解析一致**。"""
     if not msg.from_user:
         return
 
@@ -191,7 +186,6 @@ async def translate(cli: Client, msg: Message) -> None:
 
     _t = t_[lang]
 
-    # ``/t <url>``：命令参数可能为空（只发了 ``/t``），那样没有东西可翻。
     parts = (msg.text or "").split(maxsplit=1)
     arg = parts[1].strip() if len(parts) > 1 else ""
     match = _TWEET_URL_RE.search(arg)
@@ -209,8 +203,9 @@ async def translate(cli: Client, msg: Message) -> None:
     # 真正的 ``dict[str, str]``（实测该 cookie 有 1259 字符、12 个字段）。
     raw_cookie = pl_cfg.roll_cookie("twitter")
     cookie = SecretCookie(raw_cookie.get_secret_value() if raw_cookie else None).get_value()
-    client = Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
+    proxy = pl_cfg.roll_parser_proxy("twitter")
 
+    client = Twitter(cookie=cookie, proxy=proxy)
     try:
         translated, entities = await client.translate_tweet(tweet_id, dst_lang)
     except TranslationUnavailable as e:
@@ -222,20 +217,41 @@ async def translate(cli: Client, msg: Message) -> None:
         await MessageSender(cli, msg, config).text(_t("翻译失败，请稍后再试"))
         return
 
-    text_pieces = inline_entities(translated, entities)
+    # **原推文照常解析**：作者/时间/浏览量/点赞/标签/平台/配图全在这一步，
+    # 少了它 ``/t`` 的输出就和普通解析不一样（用户报的正是这个差异）。
+    parse_result = None
+    try:
+        parse_result = await ParseHub().parse(url, cookie=cookie, proxy=proxy)
+    except Exception as e:  # noqa: BLE001 - 解析失败仍要能把译文发出去
+        logger.warning(f"/t 解析原推文失败（退化为纯译文）: tweet_id={tweet_id} err={e}")
 
-    # 超长时按项目既有机制折叠（只折正文，页脚永远在折叠之外）。
-    if visible_length(translated) > 6800:
-        text_pieces = [fold_for_show_more(translated)]
+    markdown = to_markdown(translated, entities)
 
-    blocks = [
-        InputRichBlockParagraph(text_pieces),
-        InputRichBlockFooter([RichTextUrl(_t("来源"), url)]),
-    ]
+    if parse_result is None:
+        # 兜底：没有元信息时至少给出译文 + 来源
+        body = f'{markdown}\n\n---\n\n<footer><a href="{url}">{_t("来源")}</a></footer>'
+        await MessageSender(cli, msg, config).rich_message(
+            rich_message=InputRichMessage(blocks=markdown_to_blocks(body)),
+        )
+        return
 
-    # **必须走项目的 `MessageSender.rich_message`**：``msg.reply()`` 只接受文本，
-    # 传 ``InputRichMessage`` 进去会被 pyrogram 转成字符串发出去 —— 生产上就是
-    # 这样把 ``{'_': 'InputRichMessage', 'blocks': [...]}`` 当消息发给了用户。
+    # **把正文换成译文**：``build_rich_markdown`` 通过
+    # ``rich_content()`` 读 ``parse_result.markdown_content``（有 markdown 源就用它），
+    # 所以直接覆盖这个字段即可 —— 作者行、发布时间、浏览量/点赞、标签、页脚、
+    # 折叠全由构建器按统一形态生成，``/t`` 与普通解析**同形**，只是正文是译文。
+    #
+    # 注意 ``MultimediaParseResult`` 没有 ``markdown_content`` 属性（实测那条
+    # GTA6 推文是带视频的），所以要**动态补上**而不是假设它存在。
+    try:
+        parse_result.markdown_content = markdown
+    except AttributeError:
+        # dataclass 但字段在子类上：用 object.__setattr__ 绕过 slots/frozen
+        object.__setattr__(parse_result, "markdown_content", markdown)
+    # 正文已换成译文，原解析结果里的 ``{{media:N}}`` 占位不再成立，
+    # 但媒体仍按原样挂到消息末尾（构建器自己处理 media_placeholders）。
+
+    rich_markdown = build_rich_markdown(parse_result, config=config, lang=lang)
+
     await MessageSender(cli, msg, config).rich_message(
-        rich_message=InputRichMessage(blocks=blocks),
+        rich_message=InputRichMessage(blocks=markdown_to_blocks(rich_markdown)),
     )
