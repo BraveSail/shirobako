@@ -60,10 +60,10 @@ from db import get_session
 from i18n import t_
 from log import logger
 from plugins.context import get_config_target
-from plugins.helpers import build_rich_markdown
+from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
 from plugins.parse.rich_blocks import markdown_to_blocks
-from plugins.parse.sender import MessageSender
-from services import AdminUserService, SettingsService, UserService
+from plugins.parse.sender import MessageSender, send_rich_media
+from services import AdminUserService, ParsePipeline, SettingsService, UserService
 
 logger = logger.bind(name="Translate")
 
@@ -235,23 +235,47 @@ async def translate(cli: Client, msg: Message) -> None:
         )
         return
 
-    # **把正文换成译文**：``build_rich_markdown`` 通过
-    # ``rich_content()`` 读 ``parse_result.markdown_content``（有 markdown 源就用它），
-    # 所以直接覆盖这个字段即可 —— 作者行、发布时间、浏览量/点赞、标签、页脚、
-    # 折叠全由构建器按统一形态生成，``/t`` 与普通解析**同形**，只是正文是译文。
+    # **把正文换成译文**：``send_rich_media`` → ``build_rich_markdown`` 通过
+    # ``rich_content()`` 读 ``parse_result.markdown_content``，覆盖这个字段即可。
+    # 作者行、发布时间、浏览量/点赞、标签、页脚、折叠全由构建器按统一形态生成。
     #
     # 注意 ``MultimediaParseResult`` 没有 ``markdown_content`` 属性（实测那条
-    # GTA6 推文是带视频的），所以要**动态补上**而不是假设它存在。
+    # GTA6 推文是带视频的），所以动态补上而不是假设它存在。
     try:
         parse_result.markdown_content = markdown
     except AttributeError:
-        # dataclass 但字段在子类上：用 object.__setattr__ 绕过 slots/frozen
         object.__setattr__(parse_result, "markdown_content", markdown)
-    # 正文已换成译文，原解析结果里的 ``{{media:N}}`` 占位不再成立，
-    # 但媒体仍按原样挂到消息末尾（构建器自己处理 media_placeholders）。
 
-    rich_markdown = build_rich_markdown(parse_result, config=config, lang=lang)
-
-    await MessageSender(cli, msg, config).rich_message(
-        rich_message=InputRichMessage(blocks=markdown_to_blocks(rich_markdown)),
+    # **下载与发送全部交给项目既有链路**，不重复造轮子：
+    # ``MessageStatusReporter`` 负责「一条消息从进度编辑到结果」，
+    # ``ParsePipeline(parse_result=...)`` 负责下载 + 格式转换，
+    # ``send_rich_media`` 负责排版与上传。``/t`` 只做两件项目没有的事：
+    # 取平台译文、把正文换成译文。
+    sender = MessageSender(cli, msg, config)
+    reporter = MessageStatusReporter(
+        cli,
+        msg,
+        t=_t,
+        config=config,
+        on_forbidden=disable_progress_on_report_forbidden,
     )
+    with ParsePipeline(
+        url,
+        url,
+        reporter,
+        parse_result=parse_result,
+        t=_t,
+    ) as pipeline:
+        result = await pipeline.run()
+        if result is None:
+            await sender.text(_t("翻译失败，请稍后再试"))
+            return
+
+        await send_rich_media(
+            sender,
+            result.parse_result,
+            result.processed_list,
+            _t=_t,
+            raw_url=url,
+            reporter=reporter,
+        )
