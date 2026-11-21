@@ -575,6 +575,7 @@ class LinuxDoTopic:
         - ``div.spoiler``：只保留内容
         - ``img.emoji`` / ``img.avatar``：直接去掉 —— emoji 的 alt 是 ``:name:`` 形式,
           留在正文里既不美观也不是原样文本; 头像则是引用回复头部的装饰
+        - ``aside.onebox``：**整块改写成引用块**（见 ``_onebox_to_quote``）
         - ``div.poll``：改写成**占位符行**（见 ``_convert_polls``）
 
         :param offset: poll 索引的起点 —— 上下文引用块 (排在正文最前) 里的投票
@@ -584,6 +585,7 @@ class LinuxDoTopic:
         for tag in soup.find_all("img", class_=["emoji", "avatar"]):
             tag.decompose()
         LinuxDoTopic._strip_lightbox(soup)
+        LinuxDoTopic._onebox_to_quote(soup)
         for details in soup.find_all("details"):
             details.unwrap()
         for summary in soup.find_all("summary"):
@@ -591,6 +593,67 @@ class LinuxDoTopic:
         for spoiler in soup.find_all("div", class_="spoiler"):
             spoiler.unwrap()
         return LinuxDoTopic._convert_polls(soup, polls or [], offset=offset)
+
+    @staticmethod
+    def _onebox_to_quote(soup: BeautifulSoup) -> None:
+        """把 Discourse 的 ``aside.onebox``（外链预览卡片）改写成 **blockquote**。
+
+        卡片本身不是正文，它是 Discourse 自动为**外部链接**生成的预览。原样转
+        markdown 会把它拆成一堆散乱的标题/摘要/图片，看起来像正文被塞了无关内容
+        （用户报「前面那一堆是引用的东西，md 格式错乱」）。
+
+        做法：取出卡片里的 **链接 + 标题 + 摘要文字**，包成引用块，丢掉卡片里的
+        两张装饰图（``img.site-icon`` 站标、``img.thumbnail.onebox-avatar`` 缩略图）
+        —— 它们既不是发帖人的图，也不是正文媒体。
+        """
+        for aside in soup.find_all("aside", class_="onebox"):
+            header = aside.find("header", class_="source")
+            source_link = header.find("a") if header else None
+            body = aside.find("article", class_="onebox-body")
+            title_link = body.find("a") if body else None
+            heading = body.find("h3") if body else None
+            summary = body.find("p") if body else None
+
+            link = title_link or source_link
+            paragraphs: list[Any] = []
+
+            # **保留真正的 <a> 元素**，不要把 markdown 源码当纯文本塞进 <p>：
+            # 转换器认的是 DOM 里的 <a href>，写 `[text](url)` 只会得到一坨字面量。
+            if link is not None:
+                href = str(link.get("href") or "")
+                link_text = link.get_text(" ", strip=True) or href
+                paragraphs.append(("link", href, link_text))
+            else:
+                link_text = ""
+
+            if heading is not None and heading is not link:
+                heading_text = heading.get_text(" ", strip=True)
+                if heading_text and heading_text != link_text:
+                    paragraphs.append(("text", "", heading_text))
+
+            if summary is not None:
+                summary_text = summary.get_text(" ", strip=True)
+                if summary_text and summary_text != link_text:
+                    if summary_text.startswith(link_text):
+                        summary_text = summary_text[len(link_text) :].strip()
+                if summary_text and all(summary_text != p[2] for p in paragraphs):
+                    paragraphs.append(("text", "", summary_text))
+
+            if not paragraphs:
+                aside.decompose()
+                continue
+
+            blockquote = soup.new_tag("blockquote")
+            for kind, href, text in paragraphs:
+                para = soup.new_tag("p")
+                if kind == "link" and href:
+                    anchor = soup.new_tag("a", href=href)
+                    anchor.string = text
+                    para.append(anchor)
+                else:
+                    para.string = text
+                blockquote.append(para)
+            aside.replace_with(blockquote)
 
     @staticmethod
     def _convert_polls(
@@ -685,6 +748,12 @@ class LinuxDoTopic:
             classes = img.get("class") or []
             # 表情 (img.emoji) 与头像 (img.avatar, 引用回复里那个 24x24 小图) 都不是帖子媒体
             if "emoji" in classes or "avatar" in classes:
+                continue
+            # **外链预览卡片里的装饰图**（``img.site-icon`` 站标、``img.thumbnail
+            # onebox-avatar`` 缩略图）不是发帖人贴的图: 前者常是 favicon.ico
+            # (下载回来 Pillow 认不出), 后者是 Discourse 抓的站点缩略图。
+            # 用户报「前面那一堆是引用的东西」时, 这两张就是罪魁。
+            if img.find_parent("aside", class_="onebox") is not None:
                 continue
             src = str(img.get("src") or "")
             link = img.find_parent("a")
