@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from parsehub.types import AniFile, AnyMediaRef, ImageFile, LivePhotoFile, VideoFile
+from parsehub.types import AniFile, AnyMediaRef, BrokenMedia, ImageFile, LivePhotoFile, VideoFile
 from pyrogram import raw, utils
 from pyrogram.types import (
     InputMediaAnimation,
@@ -89,6 +89,20 @@ def build_rich_media(
         group: list[str] = []
         per_ref.append(group)
         ref_url = str(getattr(media_ref, "url", "") or "")
+
+        # **下载失败的媒体降级成链接**（`_do_download` 里内容不是图片时用
+        # `BrokenMedia` 占位、带原 URL）。必须**保留一个占位符**，
+        # 否则后面的项整体错位、把 A 图显示到 B 的位置。
+        # 用户口径：下载失败保留 URL 就行。
+        fallback_url = str(getattr(processed.source, "url", "") or "")
+        if isinstance(processed.source, BrokenMedia) or not str(getattr(processed.source, "path", "") or ""):
+            fallback = fallback_url or ref_url
+            text = f"[{fallback}]({fallback})" if fallback else ""
+            group.append(text)
+            placeholders.extend(group)
+            urls_flat.extend([fallback] * len(group))
+            continue
+
         file_paths = processed.output_paths or [processed.source.path]
         for file_path in file_paths:
             file_path_str = str(file_path)

@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 import aiofiles
 from bs4 import BeautifulSoup
+from loguru import logger
 from markdown import markdown as md_to_html
 from slugify import slugify
 
@@ -18,10 +19,65 @@ from ..errors import DeleteError, DownloadError
 from ..utils.downloader import download
 from ..utils.helpers import run_sync, to_datetime, to_int
 from .callback import ProgressCallback
-from .media_file import AniFile, AnyMediaFile, ImageFile, LivePhotoFile, VideoFile
+from .media_file import AniFile, AnyMediaFile, BrokenMedia, ImageFile, LivePhotoFile, VideoFile
 from .media_ref import AniRef, AnyMediaRef, ImageRef, LivePhotoRef, VideoRef
 from .platform import Platform
 from .post import PostType
+
+
+#: 图片文件的**魔数**（前几字节）。用于下载后校验响应体真是图片。
+#:
+#: 为什么需要：下载器只要 HTTP 200 就把 body 落盘。但图床对**网页地址**
+#: 常先回 302、再回一个 429/403 的 HTML 错误页 —— 那个 HTML 会被原样存成
+#: ``.gif``，随后 Pillow 抛 ``cannot identify image file``。
+#: 实测：``https://imgur.com/WLAHkWh.gif``（缺 ``i.`` 前缀）拿到的就是
+#: 8KB 的 ``<!doctype html>``，保存成 .gif 后整条流水线失败。
+_IMAGE_MAGIC: tuple[tuple[bytes, str], ...] = (
+    (b"GIF87a", "GIF"),
+    (b"GIF89a", "GIF"),
+    (b"\xff\xd8\xff", "JPEG"),
+    (b"\x89PNG\r\n\x1a\n", "PNG"),
+    (b"BM", "BMP"),
+    (b"II*\x00", "TIFF"),
+    (b"MM\x00*", "TIFF"),
+)
+
+
+def _sniff_image(path: str | Path) -> str:
+    """读文件头判断真实图片格式；不是图片返回空串。"""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(32)
+    except OSError:
+        return ""
+    for magic, name in _IMAGE_MAGIC:
+        if head.startswith(magic):
+            return name
+    # WEBP: RIFF....WEBP
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "WEBP"
+    return ""
+
+
+def _ensure_image_payload(path: str | Path, url: str) -> None:
+    """下载结果不是图片时报错，**别把它当图片交给下游**。
+
+    这样错误信息能直接指向「服务器返回了 HTML/错误页」，
+    而不是让 Pillow 抛一句 ``cannot identify image file`` 让人以为文件坏了。
+    """
+    if _sniff_image(path):
+        return
+    try:
+        size = Path(path).stat().st_size
+        with open(path, "rb") as fh:
+            head = fh.read(120)
+    except OSError:
+        size, head = -1, b""
+    hint = ""
+    low = head.lower()
+    if b"<html" in low or b"<!doctype" in low:
+        hint = "（返回的是 HTML 页面，通常是图床的 429/403 错误页或需要跟随跳转）"
+    raise DownloadError(f"下载内容不是图片: {url} {size}B{hint}")
 
 
 def _media_to_dict(media: AnyMediaRef) -> dict:
@@ -296,6 +352,18 @@ class ParseResult(ABC):  # noqa: B024
             mf: AnyMediaFile
             match media:
                 case ImageRef():
+                    # **坏图不拖垮整条解析，也不舍弃它的位置**：图床常对服务器 IP
+                    # 限流（429）或返回 HTML 错误页（PTT 会把取不到图的链接也渲染成
+                    # <img>）。这时保留这一项、在结果里记下**原 URL**，
+                    # 由渲染层把 `{{media:N}}` 降级成链接 ——
+                    # 索引必须与 media 列表严格对齐，否则后面的图会全部错位。
+                    try:
+                        _ensure_image_payload(f, media.url)
+                    except DownloadError as exc:
+                        logger.warning(f"非图片内容，降级为链接: {exc}")
+                        Path(f).unlink(missing_ok=True)
+                        result_list.append(BrokenMedia(path="", url=str(media.url)))
+                        continue
                     mf = ImageFile(path=f, width=media.width, height=media.height)
                 case VideoRef():
                     mf = VideoFile(path=f, width=media.width, height=media.height, duration=media.duration)

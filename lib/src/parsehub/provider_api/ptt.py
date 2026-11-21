@@ -32,7 +32,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from ..utils import http
-from ..utils.helpers import media_placeholder
+from ..utils.helpers import media_placeholder, normalize_image_url
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -200,8 +200,12 @@ class PttAPI:
 
         # 预扫描: 有 <img> 的 URL。正文里指向同一张图的裸链接不再重复输出，
         # 否则同一张图既留一行链接、又渲染一张图。
+        #
+        # 归一成直链后再比较/下载：PTT 的 ``<img src>`` 是**发帖人原文**，
+        # 常见 ``https://imgur.com/<id>.gif`` 这种网页形态（302 到 i.imgur.com，
+        # 图床限流时响应体就是 HTML），下载器会原样存成 .gif 再被 Pillow 拒绝。
         img_urls = {
-            (img.get("src") or "").strip()
+            normalize_image_url((img.get("src") or "").strip())
             for img in node.find_all("img")
             if not set(img.get("class") or ()) & {"emoji", "avatar"}
         }
@@ -215,7 +219,7 @@ class PttAPI:
         for element in node.children:
             name = getattr(element, "name", None)
             if name == "img":
-                src = (element.get("src") or "").strip()
+                src = normalize_image_url((element.get("src") or "").strip())
                 if src and not set(element.get("class") or ()) & {"emoji", "avatar"}:
                     lines.append(_marker(src))
                 continue

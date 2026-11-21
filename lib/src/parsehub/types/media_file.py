@@ -59,6 +59,27 @@ class ImageFile(MediaFile):
 
 
 @dataclass(kw_only=True)
+class BrokenMedia(MediaFile):
+    """**下载失败**的媒体占位。
+
+    图床常对服务器 IP 限流（429）或返回 HTML 错误页 —— 此时内容不是图片，
+    不能当图片发出去。但**也不能把它从列表里删掉**：``media_refs`` 与
+    ``processed_list`` 是按位置 ``zip`` 的，删一项会让后面所有媒体错位
+    （把 A 图显示到 B 的位置）。
+
+    所以保留这个占位项，带着**原 URL**，由渲染层把 ``{{media:N}}``
+    降级成一个链接。``path`` 为空即表示"没下载成功"。
+    """
+
+    url: str = ""
+
+    def __post_init__(self) -> None:
+        # 不读文件信息 —— 根本没有文件
+        self.width = self.width or 0
+        self.height = self.height or 0
+
+
+@dataclass(kw_only=True)
 class AniFile(MediaFile):
     """本地动图
     Attributes:

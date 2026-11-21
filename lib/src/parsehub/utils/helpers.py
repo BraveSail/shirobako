@@ -5,7 +5,7 @@ import re
 from collections.abc import Coroutine, Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from typing import Any
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse, urlsplit, urlunsplit
 
 from pydantic import SecretStr
 from urlextract import URLExtract
@@ -43,6 +43,45 @@ def media_placeholder(index: int) -> str:
 #: 原位媒体标记 ``{{media:N}}`` 的正则（lib ↔ 渲染层的协议）—— 纯文本兜底
 #: （``text_content`` / ``plain``）里要删掉，别把协议标记当正文交给用户。
 MEDIA_PLACEHOLDER_RE = re.compile(r"\{\{media:(\d+)\}\}")
+
+
+#: 需要把「网页地址」换成「直链」的图床。
+#:
+#: 实测（PTT 帖子里的 ``<img src>`` 原样来自发帖人）：
+#: ``https://imgur.com/WLAHkWh.gif`` 是 **网页地址** —— 先 302 到
+#: ``i.imgur.com``，跳转后若图床限流（429）响应体就是 HTML 错误页，
+#: 被下载器原样存成 ``.gif``，Pillow 随后报 ``cannot identify image file``。
+#: 直链才是图片本体：``https://i.imgur.com/WLAHkWh.gif``。
+#:
+#: 只做**主机名**归一，路径保持不变 —— imgur 的网页与直链共用同一个 path。
+_IMAGE_HOST_ALIASES: dict[str, str] = {
+    "imgur.com": "i.imgur.com",
+    "www.imgur.com": "i.imgur.com",
+    "m.imgur.com": "i.imgur.com",
+}
+
+
+def normalize_image_url(url: str) -> str:
+    """把图床的**网页地址**归一成**直链**，其它 URL 原样返回。
+    为什么要单独一步：PTT 等平台正文里的 ``<img src>`` 是**发帖人原文**，
+    常见 ``https://imgur.com/<id>.gif`` 这种网页形态。直接下载拿到的是
+    HTML 跳转页/错误页，而不是图片。归一后拿到真图。
+
+    **只改主机名**，path/query 不动。非图床 URL（以及已经是 ``i.imgur.com`` 的）
+    原样返回，幂等。
+    """
+    if not url:
+        return url
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return url
+    host = (parsed.hostname or "").lower()
+    target = _IMAGE_HOST_ALIASES.get(host)
+    if not target:
+        return url
+    netloc = target if parsed.port is None else f"{target}:{parsed.port}"
+    return urlunsplit((parsed.scheme or "https", netloc, parsed.path, parsed.query, parsed.fragment))
 
 
 def image_ext_from_url(url: str, default: str = "jpg", exts: frozenset[str] = IMAGE_EXTS) -> str:
