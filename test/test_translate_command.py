@@ -353,3 +353,80 @@ class TestCommandParsing:
         from plugins.translate import _TWEET_URL_RE
 
         assert _TWEET_URL_RE.search("https://x.com/NASA") is None
+
+
+class TestOutputFormat:
+    """用户报「怎么只有译文？格式呢？」—— 输出必须是整条推文，不是裸文字。
+
+    只发 ``result.text`` 会丢掉作者、来源链接、原文对照、配图。下面这些断言
+    钉的就是「不能退化成一段纯文本」。
+    """
+
+    def test_translation_comes_first_then_original_as_quote(self) -> None:
+        from plugins.translate import build_translated_body
+
+        out = build_translated_body("译文第一行\n译文第二行", "original line 1\noriginal line 2")
+        assert out.startswith("译文第一行"), "译文必须在最前面"
+        assert "> original line 1" in out, "原文要以引用块形式保留"
+        assert "> original line 2" in out
+
+    def test_original_is_quoted_line_by_line(self) -> None:
+        """多行原文每行都要带 ``> ``，否则 markdown 会把它们并成一段。"""
+        from plugins.translate import build_translated_body
+
+        out = build_translated_body("译文", "a\n\nb")
+        quoted = [ln for ln in out.splitlines() if ln.startswith(">")]
+        assert len(quoted) == 3, f"应有三行引用（含空行占位），实际: {quoted}"
+
+    def test_blank_line_inside_quote_stays_in_quote(self) -> None:
+        from plugins.translate import build_translated_body
+
+        out = build_translated_body("译文", "a\n\nb")
+        assert ">" in out.splitlines(), "空行要用单独的 '>' 保持引用块连续"
+
+    def test_missing_original_sends_translation_only(self) -> None:
+        """取不到原文时不能留一个空引用块。"""
+        from plugins.translate import build_translated_body
+
+        assert build_translated_body("只有译文", "") == "只有译文"
+
+    def test_identical_original_is_not_duplicated(self) -> None:
+        """原文已经是目标语言时 X 会回同样的文本，别重复一遍。"""
+        from plugins.translate import build_translated_body
+
+        assert build_translated_body("一样的内容", "一样的内容") == "一样的内容"
+
+    def test_header_carries_author_and_source_link(self) -> None:
+        from plugins.translate import build_header
+
+        class _R:
+            author_name = "Joseph Webb"
+            author_handle = "999toba"
+            raw_url = "https://x.com/999toba/status/2124132062420402538"
+
+        header = build_header(_R(), "2124132062420402538")
+        assert "Joseph Webb" in header
+        assert "999toba" in header
+        assert "https://x.com/999toba/status/2124132062420402538" in header
+
+    def test_header_falls_back_to_id_when_url_missing(self) -> None:
+        from plugins.translate import build_header
+
+        class _R:
+            author_name = ""
+            author_handle = ""
+            raw_url = ""
+
+        header = build_header(_R(), "2124132062420402538")
+        assert "2124132062420402538" in header
+
+    def test_header_survives_missing_author(self) -> None:
+        """解析失败时仍要有来源链接，不能返回空串（否则整条消息没头）。"""
+        from plugins.translate import build_header
+
+        class _R:
+            author_name = ""
+            author_handle = ""
+            raw_url = "https://x.com/a/status/1"
+
+        assert build_header(_R(), "1").strip() != ""
