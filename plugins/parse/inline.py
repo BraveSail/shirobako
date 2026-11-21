@@ -7,7 +7,7 @@ from parsehub.types import (
     ImageRef,
     VideoRef,
 )
-from parsehub.utils.helpers import strip_spoiler_flag, strip_translate_flag
+from parsehub.utils.helpers import strip_flags
 from pyrogram import Client, raw, utils
 from pyrogram.errors import BadRequest
 from pyrogram.types import (
@@ -269,10 +269,11 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         await answer_inline(inline_query, [build_denied_result(_t)], lang=lang, cache_time=0)
         return
 
-    # 手动打码开关: query 里那个独立的 /s 先剥掉, 否则会被当成 URL 的一部分
-    query, spoiler_tag = strip_spoiler_flag(inline_query.query)
-    # ``#t`` 与 ``#剧透`` 同一层：剥掉后再算 raw_url，否则会被当成 URL 的一部分
-    query, translate = strip_translate_flag(query)
+    # **一次剥掉全部已注册开关**（``#剧透``、``#t`` …），否则标记会被当成
+    # URL 的一部分。由 ``FLAG_GROUPS`` 驱动 —— 新增开关无需改这里。
+    query, flags = strip_flags(inline_query.query)
+    spoiler_tag = flags.get("spoiler", "")
+    translate = "translate" in flags
     raw_url = await ParseService().get_raw_url(query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
@@ -393,11 +394,12 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         logger.info(f"跳过: result_id={chosen_result.result_id!r} 非富文本结果")
         return
 
-    # 选中回调带的是原始 query, 手动打码标记同样要剥掉 (否则 /s 会被拼进 URL)
-    _, spoiler_tag = strip_spoiler_flag(chosen_result.query)
-    # ``#t`` 同理：选中后重新取译文。**必须重取**，因为
-    # ``parse_cache`` 里存的是原文，预览阶段的改写不会留到这一步。
-    _, translate = strip_translate_flag(chosen_result.query)
+    # 选中回调带的是原始 query, 开关同样要剥掉 (否则会拼进 URL)。
+    # ``#t`` **必须重新取译文**：``parse_cache`` 存的是原文，
+    # 预览阶段的改写不会留到这一步。
+    _, flags = strip_flags(chosen_result.query)
+    spoiler_tag = flags.get("spoiler", "")
+    translate = "translate" in flags
 
     inline_message_id = chosen_result.inline_message_id
     if inline_message_id is None:
@@ -417,7 +419,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         _t = t_[lang]
 
     # 用剥掉标记后的 query, 别把 /s 拼进 URL
-    query, _ = strip_spoiler_flag(chosen_result.query)
+    query, _ = strip_flags(chosen_result.query)
     raw_url = await ParseService().get_raw_url(query)
     cached_result = await parse_cache.get(raw_url)
     # 处理过程要与最终结果同一种排版: 不再拼老 caption, 由 reporter 自己渲染富文本。

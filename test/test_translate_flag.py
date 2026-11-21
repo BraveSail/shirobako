@@ -76,14 +76,21 @@ class TestFlagParsing:
         assert url in text
 
     def test_can_coexist_with_spoiler(self) -> None:
-        """``#t #剧透`` 既要译文又要打码 —— 两个开关不互斥。"""
-        from parsehub.utils.helpers import strip_spoiler_flag
+        """``#t #剧透`` 既要译文又要打码 —— 两个开关不互斥。
 
-        text, hit_t = strip_translate_flag("https://x.com/a/status/1 #t #剧透")
-        text, hit_s = strip_spoiler_flag(text)
-        assert hit_t is True
-        assert hit_s == "#剧透"
-        assert text == "https://x.com/a/status/1"
+        ``strip_flags`` 一次剥完全部开关并按组返回，所以两个包装函数
+        各自都能看到自己的命中（它们各自遍历同一个注册表）。
+        """
+        from parsehub.utils.helpers import strip_flags, strip_spoiler_flag
+
+        raw = "https://x.com/a/status/1 #t #剧透"
+        kept, hits = strip_flags(raw)
+        assert kept == "https://x.com/a/status/1"
+        assert hits == {"translate": "#t", "spoiler": "#剧透"}
+
+        # 包装函数仍按各自的语义返回
+        assert strip_translate_flag(raw) == ("https://x.com/a/status/1", True)
+        assert strip_spoiler_flag(raw) == ("https://x.com/a/status/1", "#剧透")
 
     def test_empty_input(self) -> None:
         assert strip_translate_flag("") == ("", False)
@@ -425,3 +432,50 @@ class TestGroupAutoParse:
 
         url = "https://x.com/a/status/1"
         assert url_only_message_urls(f"{url}。 #t") == [url]
+
+
+class TestFlagRegistry:
+    """所有 ``#`` 开关由一张注册表驱动 —— 这是「做个列表，列表里的都触发」的落地。
+
+    以前每个开关一个独立 strip 函数、每个调用点按顺序手动调一遍。代价：
+    漏一处就出现「群里不认 / inline 不认 / 纯链接判定不认」的割裂，
+    ``#t`` 的两次故障（inline 无效、群自动解析不触发）都是这么来的。
+    """
+
+    def test_both_groups_are_registered(self) -> None:
+        from parsehub.utils.helpers import FLAG_GROUPS
+
+        assert set(FLAG_GROUPS) == {"spoiler", "translate"}
+
+    def test_every_flag_in_the_table_is_recognised(self) -> None:
+        """**列表里的每一个写法都必须真的触发** —— 否则表就是摆设。"""
+        from parsehub.utils.helpers import FLAG_GROUPS, strip_flags
+
+        for group, flags in FLAG_GROUPS.items():
+            for flag in flags:
+                kept, hits = strip_flags(f"https://x.com/a/status/1 {flag}")
+                assert hits.get(group) == flag, f"{flag} 应归入 {group}"
+                assert kept == "https://x.com/a/status/1", f"{flag} 应被剥掉"
+
+    def test_table_is_case_insensitive(self) -> None:
+        from parsehub.utils.helpers import FLAG_GROUPS, strip_flags
+
+        for group, flags in FLAG_GROUPS.items():
+            for flag in flags:
+                _, hits = strip_flags(f"https://x.com/a/status/1 {flag.upper()}")
+                assert group in hits, f"{flag.upper()} 应被识别"
+
+    def test_multiple_groups_in_one_message(self) -> None:
+        from parsehub.utils.helpers import strip_flags
+
+        kept, hits = strip_flags("https://x.com/a/status/1 #t #nsfw")
+        assert kept == "https://x.com/a/status/1"
+        assert hits == {"translate": "#t", "spoiler": "#nsfw"}
+
+    def test_unknown_hash_token_is_not_stripped(self) -> None:
+        """不在表里的 ``#`` 词保持原样 —— 不能把用户正文吃掉。"""
+        from parsehub.utils.helpers import strip_flags
+
+        kept, hits = strip_flags("https://x.com/a/status/1 #python")
+        assert kept == "https://x.com/a/status/1 #python"
+        assert hits == {}

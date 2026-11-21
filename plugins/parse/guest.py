@@ -16,7 +16,7 @@ guest 是 bot 自己在群里发一条 —— 后者要求"只能被允许的人
 from __future__ import annotations
 
 from easy_ai18n import PreLocaleSelector
-from parsehub.utils.helpers import strip_spoiler_flag, strip_translate_flag, url_only_message_urls
+from parsehub.utils.helpers import strip_flags, url_only_message_urls
 from pyrogram import Client
 from pyrogram.types import (
     InlineQueryResultArticle,
@@ -405,8 +405,8 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         return
 
     # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
-    # 手动打码开关同样适用: 剥掉 /s 并传下去
-    _, spoiler_tag = strip_spoiler_flag(msg.text or msg.caption)
-    # ``#t`` 与 ``#剧透`` 同一层：guest 路径也要认（群里 @bot 加链接时同样可能带它）
-    _, translate = strip_translate_flag(msg.text or msg.caption)
+    # **一次剥掉全部已注册开关**，group/inline/guest 三条路径行为一致
+    _, flags = strip_flags(msg.text or msg.caption)
+    spoiler_tag = flags.get("spoiler", "")
+    translate = "translate" in flags
     await _answer(cli, guest_query_id, urls[0], user_id or 0, locale, spoiler_tag=spoiler_tag, translate=translate)

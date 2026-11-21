@@ -351,69 +351,82 @@ def match_url(text: str) -> str:
 _TRAILING_PUNCTUATION = "。，、！？；：,.!?;:"
 
 
-#: 手动开关标记 (独立 token): 让本次结果把正文折起来、摘要标 ⚠️
-#: 手动开关: 让本条结果把内容折起来。**所有标记等价**, 用户按语义挑一个 ——
-#: ``#nsfw`` / ``#r18`` / ``#色色`` / ``#不可以色色`` 不宜公开, ``#spoiler`` / ``#劇透`` 剧透。
+#: ── 手动开关注册表 ────────────────────────────────────────────────────────
 #:
-#: 匹配**大小写不敏感**(``#R18`` / ``#NSFW`` 都算), 但返回的是用户写的原形,
-#: 摘要照原样显示。简体 ``#剧透`` 一并认 —— 同一个词的两种写法都该触发。
-SPOILER_FLAGS = ("#nsfw", "#spoiler", "#r18", "#劇透", "#剧透", "#色色", "#不可以色色")
-#: 查表用的小写集合; 命中后返回的是原 token (保留用户写的大小写)
-_SPOILER_LOOKUP = frozenset(flag.lower() for flag in SPOILER_FLAGS)
+#: **所有 ``#`` 开关都在这张表里**，新增一个开关 = 往这里加一行，
+#: 解析、inline、guest、纯链接判定四处会自动认它（它们都走
+#: ``strip_flags`` / 各自的 strip 包装）。
+#:
+#: 键是开关的内部名（代码里用），值是「该开关的全部写法」——同一语义的
+#: 简繁/别名都登记，用户按习惯挑一个。匹配**大小写不敏感**，但返回命中时
+#: 保留用户写的原形（摘要要显示它）。
+FLAG_GROUPS: dict[str, tuple[str, ...]] = {
+    # 折叠打码：所有标记等价，摘要标 ⚠️
+    "spoiler": ("#nsfw", "#spoiler", "#r18", "#劇透", "#剧透", "#色色", "#不可以色色"),
+    # 用平台自己的翻译替换正文
+    "translate": ("#t", "#翻译", "#翻譯"),
+}
+
+#: 全部标记（小写）→ 它所属的组
+_FLAG_LOOKUP: dict[str, str] = {
+    flag.lower(): group for group, flags in FLAG_GROUPS.items() for flag in flags
+}
+
+#: 打码开关的全部写法（兼容旧引用；新代码用 ``FLAG_GROUPS["spoiler"]``）
+SPOILER_FLAGS = FLAG_GROUPS["spoiler"]
 #: 无标记时的折叠摘要兜底 (正常总有一个标记, 摘要是 ``⚠️ <标记>``)
 SPOILER_FOLD_SUMMARY = "⚠️"
 
 
-def strip_spoiler_flag(text: str | None) -> tuple[str, str]:
-    """剥掉独立的手动开关, 返回 (去掉标记后的文本, **命中的标记或空串**)。
+def strip_flags(text: str | None) -> tuple[str, dict[str, str]]:
+    """剥掉**所有**已注册的 ``#`` 开关，返回 ``(剩余文本, {组名: 命中的原形})``。
 
-    **必须是独立 token**: ``#nsfwxxx``、URL 里的片段都不算 —— 用户在链接后面
-    空一格再写, 这样 URL 本体完全不变 (往 URL 里塞参数会被参数清理逻辑摘掉,
-    加路径后缀又会污染缓存 key 与 provider 的路径解析)。
+    一次遍历解决全部开关 —— 以前每个开关一个 strip 函数、每个调用点按顺序
+    调一遍，漏一处就出现「群里不认 / inline 不认 / 纯链接判定不认」这类
+    割裂（``#t`` 的两次故障都是这么来的）。
+
+    **必须是独立 token**：``#nsfwxxx``、URL 里的片段都不算 —— 用户空一格再写，
+    这样 URL 本体完全不变（往 URL 里塞参数会被参数清理逻辑摘掉，加路径后缀
+    又会污染缓存 key 与 provider 的路径解析）。
+    """
+    if not text:
+        return "", {}
+    hits: dict[str, str] = {}
+    kept: list[str] = []
+    for token in text.split():
+        group = _FLAG_LOOKUP.get(token.lower())
+        if group is None:
+            kept.append(token)
+        else:
+            # 同组多个写法时保留第一个（与 ``strip_spoiler_flag`` 的老行为一致）
+            hits.setdefault(group, token)
+    return " ".join(kept), hits
+
+
+def strip_spoiler_flag(text: str | None) -> tuple[str, str]:
+    """剥掉打码开关, 返回 (去掉标记后的文本, **命中的标记或空串**)。
 
     返回命中的**标记本身**(而不是 bool) 是因为摘要要显示它: 用 ``#nsfw`` 触发就
     显示 ``⚠️ #nsfw``, 让读者一眼知道是被标为不宜公开还是剧透。
     **大小写不敏感**(``#R18`` / ``#NSFW`` 都算), 但返回值保持用户写的原形 ——
     摘要与用户输入一致, 不做规范化。
+
+    实现委托给 :func:`strip_flags`：所有开关一次剥完，避免调用点漏调某个
+    strip 函数导致「这个开关在那个路径不生效」。
     """
-    if not text:
-        return "", ""
-    hit = ""
-    kept: list[str] = []
-    for token in text.split():
-        if token.lower() in _SPOILER_LOOKUP:
-            hit = hit or token
-        else:
-            kept.append(token)
-    return " ".join(kept), hit
-
-
-#: ``#t`` —— 要求**翻译**这条推文。与 ``#剧透`` 同一套机制：独立 token、
-#: 大小写不敏感、在正文与 inline query 里都识别，并保留用户写的原形。
-TRANSLATE_FLAGS = ("#t", "#翻译", "#翻譯")
+    kept, hits = strip_flags(text)
+    return kept, hits.get("spoiler", "")
 
 
 def strip_translate_flag(text: str | None) -> tuple[str, bool]:
     """剥掉 ``#t`` / ``#翻译``, 返回 ``(去掉标记后的文本, 是否要求翻译)``。
 
-    为什么复用 ``strip_spoiler_flag`` 的形状而不是新做一套命令解析：
-    用户要求「和 ``#剧透`` 同步」—— 那两个开关本来就是同一层的东西（都是
-    「链接后面空一格再写」的独立 token），行为必须一致，否则同一个消息里
-    ``#剧透`` 能认、``#t`` 不认（或反过来）会让人没法预期。
-
-    **与 ``#剧透`` 可以并存**：``<链接> #t #剧透`` 既要译文又要打码。
+    与 ``strip_spoiler_flag`` 同一套机制（都走 :func:`strip_flags`），因为
+    用户要求「和 ``#剧透`` 同步」：独立 token、大小写不敏感、正文与 inline
+    都识别。**与 ``#剧透`` 可并存**：``<链接> #t #剧透`` 既要译文又要打码。
     """
-    if not text:
-        return "", False
-    lookup = frozenset(flag.lower() for flag in TRANSLATE_FLAGS)
-    hit = False
-    kept: list[str] = []
-    for token in text.split():
-        if token.lower() in lookup:
-            hit = True
-        else:
-            kept.append(token)
-    return " ".join(kept), hit
+    kept, hits = strip_flags(text)
+    return kept, "translate" in hits
 
 
 def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = ()) -> list[str]:
@@ -433,12 +446,10 @@ def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = 
         name = (mention or "").strip().lstrip("@").strip()
         if name:
             text = re.sub(rf"@{re.escape(name)}\b", " ", text)
-    # 手动开关 (/s) 也要先剔掉, 否则 "<链接> /s" 永远不算纯链接
-    text, _ = strip_spoiler_flag(text)
-    # ``#t`` 同理 —— 它是和 ``#剧透`` 同一层的开关，不剥掉的话群里的
-    # ``<链接> #t`` 永远不满足「整条消息就是链接」，自动解析根本不会触发
-    # （实测：群里发 ``<链接> #t`` 完全没反应）。
-    text, _ = strip_translate_flag(text)
+    # **一次剥掉全部已注册开关**（`#剧透`、`#t` …）—— 每个开关单列一行
+    # 的写法漏过两次（``#t`` 没进这份清单时，群里的 ``<链接> #t`` 永远不满足
+    # 「整条消息就是链接」，自动解析根本不触发）。现在由 `FLAG_GROUPS` 统一驱动。
+    text, _ = strip_flags(text)
     tokens = [token.rstrip(_TRAILING_PUNCTUATION) for token in text.split()]
     if not tokens or any(not token for token in tokens):
         return []

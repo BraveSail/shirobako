@@ -4,7 +4,7 @@ from dataclasses import replace
 from typing import Any
 
 from parsehub.types import AniRef, RichTextParseResult
-from parsehub.utils.helpers import strip_spoiler_flag, strip_translate_flag
+from parsehub.utils.helpers import strip_flags
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType
 from pyrogram.types import Message
@@ -98,11 +98,12 @@ async def parse(cli: Client, msg: Message) -> None:
     else:
         text = msg.text or msg.caption or ""
 
-    # 手动打码开关: 链接后跟独立的 #nsfw / #spoiler —— 先剥掉, 免得它被当成不支持的平台
-    text, spoiler_tag = strip_spoiler_flag(text)
-    # ``#t`` 同一层：要求翻译这条推文。**先于平台判断**剥掉，否则 ``#t`` 会被
-    # 当成「不支持的平台」的一部分（与 ``#剧透`` 的处理顺序一致）。
-    text, translate_requested = strip_translate_flag(text)
+    # **一次剥掉全部已注册的 ``#`` 开关**（``FLAG_GROUPS`` 驱动）。
+    # 必须**先于平台判断**：否则标记会被当成「不支持的平台」的一部分。
+    # 一次调用拿全部命中，避免「这个路径记得剥、那个路径忘了剥」的割裂。
+    text, flags = strip_flags(text)
+    spoiler_tag = flags.get("spoiler", "")
+    translate_requested = "translate" in flags
     lines = text.strip().split()
     urls = list({i for i in lines if ParseService().parser.get_platform(i)})[:10]
 
