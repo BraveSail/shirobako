@@ -828,6 +828,19 @@ class Twitter:
         ``contentType`` / ``dstLang`` 是 Kotlin 属性名，不是传输键名，照着它写
         会得到 500/131。
 
+        **``content_type`` 必须是全大写 ``"POST"``** —— 值来自真实调用点
+        （``com/x/urt/items/post/translate/grok/q.smali``）：
+
+        ```smali
+        new-instance v10, Lcom/x/ai/grok/c;
+        const-string v11, "POST"
+        invoke-direct {v10, v12, v11, v5}, Lcom/x/ai/grok/c;-><init>(...)
+        ```
+
+        实测：``"POST"`` → 200 带译文；``"post"`` / ``"Post"`` → **500 code 131**。
+        服务端对大小写敏感，且错值时给的是「内部错误」而不是参数错误 —— 这也是
+        为什么之前 8 种组合全 500，看起来像「接口没启用」。
+
         响应字段来自 ``ApiGrokTranslateResult``：``text`` / ``entities`` /
         ``rich_text_entities`` / ``index`` / ``content_type``。
 
@@ -850,7 +863,7 @@ class Twitter:
             "x-twitter-active-user": "yes",
             "x-twitter-auth-type": "OAuth2Session",
         }
-        body = {"id": str(tweet_id), "content_type": "post", "dst_lang": dst_lang}
+        body = {"id": str(tweet_id), "content_type": "POST", "dst_lang": dst_lang}
 
         async with http.AsyncClient(proxy=self.proxy) as client:
             response = await client.post(
@@ -869,7 +882,10 @@ class Twitter:
         payload = response.json()
         if error := payload.get("error"):
             raise TranslationUnavailable(f"X 翻译失败: {error}")
-        value = payload.get("value") or {}
+        # **顶层键是 ``result``**，不是 APK 里 Retrofit 声明的 ``value`` ——
+        # 实测响应：``{"result": {"content_type": "POST", "text": "...", "entities": {}}}``
+        # （``ApiGrokTranslateItemResponse`` 的字段在 App 侧叫 value，但 JSON 里是 result）
+        value = payload.get("result") or payload.get("value") or {}
         text_value = str(value.get("text") or "").strip()
         if not text_value:
             raise TranslationUnavailable("X 没有返回译文（该推文可能不可翻译）")

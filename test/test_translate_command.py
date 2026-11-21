@@ -79,7 +79,7 @@ class TestRequestShape:
 
             @staticmethod
             def json() -> dict:
-                return {"value": {"text": "译好的正文"}}
+                return {"result": {"text": "译好的正文"}}
 
             @staticmethod
             def raise_for_status() -> None:
@@ -106,7 +106,7 @@ class TestRequestShape:
         assert captured["url"] == Twitter._TRANSLATE_ENDPOINT
         assert captured["body"] == {
             "id": "1795284023",
-            "content_type": "post",
+            "content_type": "POST",
             "dst_lang": "zh-tw",
         }
 
@@ -125,7 +125,7 @@ class TestRequestShape:
 
             @staticmethod
             def json() -> dict:
-                return {"value": {"text": "ok"}}
+                return {"result": {"text": "ok"}}
 
             @staticmethod
             def raise_for_status() -> None:
@@ -151,7 +151,7 @@ class TestRequestShape:
         body = captured["body"]
         assert "contentType" not in body, "Kotlin 属性名不是传输键名"
         assert "dstLang" not in body, "Kotlin 属性名不是传输键名"
-        assert body["content_type"] == "post"
+        assert body["content_type"] == "POST"
         assert body["dst_lang"] == "zh-cn"
 
     def test_csrf_header_carries_ct0(self, monkeypatch) -> None:
@@ -165,7 +165,7 @@ class TestRequestShape:
 
             @staticmethod
             def json() -> dict:
-                return {"value": {"text": "ok"}}
+                return {"result": {"text": "ok"}}
 
             @staticmethod
             def raise_for_status() -> None:
@@ -236,10 +236,20 @@ class TestResponses:
         with pytest.raises(TranslationUnavailable, match="服务异常"):
             self._run(monkeypatch, status=500, payload={"errors": [{"code": 131}]})
 
+    def test_reads_translation_from_result_key(self, monkeypatch) -> None:
+        """实测响应顶层是 ``result``（APK 的 Retrofit 声明写的是 value）。"""
+        out = self._run(monkeypatch, status=200, payload={"result": {"text": "译好的"}})
+        assert out == "译好的"
+
+    def test_also_accepts_value_key(self, monkeypatch) -> None:
+        """兼容另一形态，避免平台改字段时直接崩。"""
+        out = self._run(monkeypatch, status=200, payload={"value": {"text": "备用"}})
+        assert out == "备用"
+
     def test_empty_text_is_rejected(self, monkeypatch) -> None:
         """别把空串当译文发出去 —— 用户会收到一条空消息。"""
         with pytest.raises(TranslationUnavailable, match="没有返回译文"):
-            self._run(monkeypatch, status=200, payload={"value": {"text": "  "}})
+            self._run(monkeypatch, status=200, payload={"result": {"text": "  "}})
 
 
 class TestLanguageMapping:
@@ -262,6 +272,59 @@ class TestLanguageMapping:
 
         assert x_lang_for("xx-yy") == "en"
 
+class TestContentTypeCase:
+    """``content_type`` 必须是全大写 "POST" —— 错一个字母就是 500/131。
+
+    值来自真实调用点 ``com/x/urt/items/post/translate/grok/q.smali``：
+
+    ```smali
+    const-string v11, "POST"
+    invoke-direct {v10, v12, v11, v5}, Lcom/x/ai/grok/c;-><init>(...)
+    ```
+
+    实测：``"POST"`` → 200 带译文；``"post"`` / ``"Post"`` → 500 code 131。
+    服务端对错值给的是「内部错误」而不是参数错误，所以看起来像「接口没启用」，
+    曾经让 8 种组合全部 500 而误判为死接口。
+    """
+
+    def test_constant_is_uppercase(self, monkeypatch) -> None:
+        import asyncio
+
+        captured: dict = {}
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json() -> dict:
+                return {"result": {"text": "ok"}}
+
+            @staticmethod
+            def raise_for_status() -> None:
+                return None
+
+        class _Client:
+            def __init__(self, *a, **kw) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a) -> None:
+                return None
+
+            async def post(self, url, json=None, headers=None, cookies=None):
+                captured["body"] = json
+                return _Resp()
+
+        monkeypatch.setattr("parsehub.provider_api.twitter.http.AsyncClient", _Client)
+        asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
+
+        assert captured["body"]["content_type"] == "POST"
+        assert captured["body"]["content_type"].isupper(), "必须是全大写"
+
+
+class TestLanguageMappingLowercase:
     @pytest.mark.parametrize("locale", ["zh-hans", "zh-hant", "en-us", "ja-jp", "ko-kr"])
     def test_mapping_is_lowercase(self, locale: str) -> None:
         from plugins.translate import x_lang_for
