@@ -1,64 +1,76 @@
 """/t —— 用 **X（Twitter）自己的翻译** 把一条推文译成发送者语言。
 
-## 为什么是"平台自己的翻译"
+## 这个接口怎么运作（先搞清楚，再写代码）
 
-用户明确要求取 **X 平台返回的译文**，不是接外部翻译服务。X 的译文由 Grok 提供，
-端点是 ``POST /i/api/2/grok/translation.json``。这个端点**不在 GraphQL 里**，
-是从 X 12.44.0 的 APK（``com.twitter.android``）反编译出来的：
+请求**只发推文 id，不发正文**：
 
-- ``com.x.http.translation.a``: ``@POST("/2/grok/translation.json")``
-- 请求体 ``com.x.ai.grok.c``：``id`` / ``content_type`` / ``dst_lang``
-  （snake_case，来自 kotlinx.serialization 描述符）
-- **``content_type`` 必须是全大写 ``"POST"``** —— 真实调用点
-  ``com/x/urt/items/post/translate/grok/q.smali`` 里就是 ``const-string v11, "POST"``；
-  写 ``"post"`` 会得到 500 code 131（服务端拿内部错误回参数错，极易误判成接口没启用）
-- 响应：``{"result": {"content_type": "POST", "text": "...", "entities": {}}}``
-  —— **顶层键是 ``result``**，不是 App 侧 Retrofit 声明的 ``value``
-
-## 输出形态：整条推文，不是一段裸文字
-
-用户报「怎么只有译文？格式呢？」—— 只发 ``result.text`` 会把作者、来源链接、
-发布时间、话题标签、配图、原文全部丢掉。所以这里**复用项目自己的推文解析**
-（``ParseHub.parse``）拿到完整元信息，再把译文当作正文正文段：
-
-```
-作者 · @handle
-        <- 空行
-译文正文（保留原文换行与段落）
-        <- 空行
-> 原文（引用块，保留原语言，可对照）
-        <- 空行
-来源：<原推文链接>
+```json
+{"id": "<推文id>", "content_type": "POST", "dst_lang": "zh-cn"}
 ```
 
-配图照常下载并发送（``ParseHub`` 的 media 走项目统一下载链路）。
+服务端自己知道那条推文的原文，翻译后返回**译文 + 重算过的实体偏移**：
+
+```json
+{"result": {
+  "text": "译好的正文（换行保留在字面量里）",
+  "entities": {
+    "urls":          [{"indices": [121, 144], "url": "https://t.co/…", "expanded_url": "…"}],
+    "user_mentions": [{"indices": [27, 43], "screen_name": "…"}],
+    "hashtags":      [{"indices": [146, 157], "text": "…"}]
+  }
+}}
+```
+
+## 所以「保住格式」= 按 indices 原地套，不拆不拼
+
+``entities[*].indices`` 是**译文字符串里的字符区间**。实测（157 字符译文）：
+``27,43`` 精确切出 ``@maruyono_kamome``，``121,144`` 切出 ``https://t.co/…``，
+``146,157`` 切出 ``#FX戦士くるみちゃん``；同一批 indices 用在 180 字符的**原文**上
+全错 —— 服务端翻译时重算了偏移。
+
+正确做法：拿 ``text`` 原样当正文，按下标把那几段包成带链接的 RichText 片段，
+**文本一个字都不改**（换行留在字面量里）。
+
+## 为什么只发译文，不附原文
+
+用户定案「不放」。附原文时：① 长推文撑爆块结构，服务端回
+``400 MESSAGE_TOO_LONG``（报错说 text too long，实测总字符才 1500 出头）；
+② 共享渲染层的 ``_quote_children`` 会把整段压成一个段落。都不值得为「对照原文」
+去动共享层。
 
 ## 语言
 
 目标语言取**发送者**的 Telegram 语言（``UserService.ensure_lang``），拿不到就用
-项目默认语言（简中）。X 那边要 BCP-47 小写形式（``zh-cn`` / ``ja`` / ``en``），
-而我们的 ``locale_for`` 出的是 ``zh-hans`` / ``ja-jp`` 这类，所以要过一次映射。
+项目默认语言（简中）。X 收 BCP-47 小写形式（``zh-cn`` / ``ja`` / ``en``），而项目
+locale 是 ``zh-hans`` / ``ja-jp`` 这类，所以要过一次映射。
 """
 
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
-from parsehub import ParseHub
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
-from parsehub.types import RichTextParseResult
 from parsehub.utils.helpers import SecretCookie
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType
-from pyrogram.types import LinkPreviewOptions, Message
+from pyrogram.types import (
+    InputRichBlockFooter,
+    InputRichBlockParagraph,
+    InputRichMessage,
+    Message,
+    RichTextUrl,
+)
 
 from core import pl_cfg
 from db import get_session
 from i18n import t_
 from log import logger
+from plugins.context import get_config_target
 from plugins.helpers import fold_for_show_more, visible_length
-from services import AdminUserService, UserService
+from plugins.parse.sender import MessageSender
+from services import AdminUserService, SettingsService, UserService
 
 logger = logger.bind(name="Translate")
 
@@ -96,52 +108,68 @@ def x_lang_for(locale: str) -> str:
     return _LANG_TO_X.get((locale or "").lower(), "en")
 
 
-def build_translated_body(translated: str, original: str) -> str:
-    """拼出译文正文：**译文在前、原文引用块在后**。
+def entity_spans(entities: dict) -> list[tuple[int, int, str]]:
+    """把三类实体摊平成 ``(start, end, url)``，按起点排序。
 
-    为什么不只发译文：用户对照原文是常见需求，而且译文是机器生成的，留原文
-    才能判断译得对不对。原文用引用块（``> ``）是项目既有形态 —— 引用块在
-    富文本里是一个独立块，不会和正文混成一片。
+    覆盖 X 返回的三种：``user_mentions`` / ``urls`` / ``hashtags``。
+    ``urls`` 取 ``expanded_url`` —— ``t.co`` 短链现在会跳登录墙，展开后的真实
+    地址才是用户想点的。
+    """
+    spans: list[tuple[int, int, str]] = []
+
+    for item in entities.get("user_mentions") or []:
+        idx = item.get("indices")
+        handle = str(item.get("screen_name") or "").strip()
+        if isinstance(idx, list) and len(idx) == 2 and handle:
+            spans.append((int(idx[0]), int(idx[1]), f"https://x.com/{handle}"))
+
+    for item in entities.get("urls") or []:
+        idx = item.get("indices")
+        url = str(item.get("expanded_url") or item.get("url") or "").strip()
+        if isinstance(idx, list) and len(idx) == 2 and url:
+            spans.append((int(idx[0]), int(idx[1]), url))
+
+    for item in entities.get("hashtags") or []:
+        idx = item.get("indices")
+        tag = str(item.get("text") or "").strip()
+        if isinstance(idx, list) and len(idx) == 2 and tag:
+            spans.append((int(idx[0]), int(idx[1]), f"https://x.com/hashtag/{quote(tag)}"))
+
+    spans.sort(key=lambda s: (s[0], -s[1]))
+    return spans
+
+
+def inline_entities(text: str, entities: dict) -> list:
+    """按 ``indices`` 把译文切成 ``[str, RichTextUrl, str, …]``。
+
+    **文本本身一个字都不改** —— 换行留在字面量里，只在实体区间上包一层链接。
+    这才是「保住格式」：格式来自平台的 ``indices``，不是我们拆段落猜出来的。
 
     Args:
-        translated: X 返回的译文正文。
-        original: 原推文全文（可为空 —— 取不到原文时只发译文）。
+        text: 译文正文（原样，含换行）。
+        entities: X 返回的 ``entities``。
 
     Returns:
-        可直接作为正文字符串的 markdown。
+        ``InputRichBlockParagraph`` 可直接吃的 text 列表；无实体时 ``[text]``。
     """
-    translated = (translated or "").strip()
-    original = (original or "").strip()
-    if not original or original == translated:
-        return translated
-    quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in original.splitlines())
-    return f"{translated}\n\n{quoted}"
+    spans = entity_spans(entities)
+    if not spans:
+        return [text]
 
-
-def build_header(parse_result: object, fallback_id: str) -> str:
-    """作者行 + 来源链接。作者名/句柄来自项目解析结果。"""
-    name = str(getattr(parse_result, "author_name", "") or "").strip()
-    handle = str(getattr(parse_result, "author_handle", "") or "").strip()
-    url = str(getattr(parse_result, "raw_url", "") or "").strip()
-    if not url:
-        url = f"https://x.com/i/status/{fallback_id}"
-
-    if name and handle:
-        author = f"**{name}** ({handle})"
-    elif handle:
-        author = f"({handle})"
-    elif name:
-        author = f"**{name}**"
-    else:
-        author = ""
-    # 来源用 markdown 链接，Telegram 富文本会渲染成可点文本而不是裸 URL 预览
-    source = f"[{t_source_label()}]({url})"
-    return f"{author}\n{source}" if author else source
-
-
-def t_source_label() -> str:
-    """``来源`` 的标签（用项目既有词条，不新造硬编码文案）。"""
-    return t_("来源")
+    pieces: list = []
+    cursor = 0
+    for start, end, url in spans:
+        # 越界或与前一段重叠就跳过 —— 宁可不加链接，也不能把文本切乱
+        # （服务端偶尔会给越界下标，实测过 indices 落在字符串尾部之外的情况）。
+        if start < cursor or end > len(text) or start >= end:
+            continue
+        if start > cursor:
+            pieces.append(text[cursor:start])
+        pieces.append(RichTextUrl(text[start:end], url))
+        cursor = end
+    if cursor < len(text):
+        pieces.append(text[cursor:])
+    return pieces or [text]
 
 
 @Client.on_message(filters.command(["t"]))
@@ -152,12 +180,13 @@ async def translate(cli: Client, msg: Message) -> None:
 
     async with get_session() as session:
         lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
+        config = await SettingsService(session).get_config(get_config_target(msg))
         # 与解析命令一致的鉴权口径：私聊属于非同群调用，只认本地库白名单。
         if msg.chat and msg.chat.type == ChatType.PRIVATE:
             allowed = await AdminUserService(session).is_whitelisted(msg.from_user.id)
             if not allowed:
                 logger.info(f"/t 私聊被拦截(不在白名单): user_id={msg.from_user.id}")
-                await msg.reply(t_[lang]("仅限白名单用户使用"))
+                await MessageSender(cli, msg, config).text(t_[lang]("仅限白名单用户使用"))
                 return
 
     _t = t_[lang]
@@ -167,12 +196,12 @@ async def translate(cli: Client, msg: Message) -> None:
     arg = parts[1].strip() if len(parts) > 1 else ""
     match = _TWEET_URL_RE.search(arg)
     if not match:
-        await msg.reply(_t("用法：/t <推文链接>"))
+        await MessageSender(cli, msg, config).text(_t("用法：/t <推文链接>"))
         return
 
     tweet_id = match[1]
-    dst_lang = x_lang_for(lang)
     url = match[0]
+    dst_lang = x_lang_for(lang)
 
     # **必须走 `SecretCookie`**：``pl_cfg.roll_cookie`` 返回的是 ``MaskedSecretStr``，
     # 它自己的 ``get_value()`` 是脱敏显示（14 字符的 ``gues******znn.``），
@@ -180,55 +209,33 @@ async def translate(cli: Client, msg: Message) -> None:
     # 真正的 ``dict[str, str]``（实测该 cookie 有 1259 字符、12 个字段）。
     raw_cookie = pl_cfg.roll_cookie("twitter")
     cookie = SecretCookie(raw_cookie.get_secret_value() if raw_cookie else None).get_value()
-    proxy = pl_cfg.roll_parser_proxy("twitter")
+    client = Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
 
-    # ① 翻译（平台自己的译文）
-    client = Twitter(cookie=cookie, proxy=proxy)
     try:
-        translated = await client.translate_tweet(tweet_id, dst_lang)
+        translated, entities = await client.translate_tweet(tweet_id, dst_lang)
     except TranslationUnavailable as e:
         logger.warning(f"/t 翻译不可用: tweet_id={tweet_id} lang={dst_lang} err={e}")
-        await msg.reply(_t(str(e)))
+        await MessageSender(cli, msg, config).text(_t(str(e)))
         return
     except Exception as e:  # noqa: BLE001 - 翻译失败不能把命令打成未捕获异常
         logger.exception(f"/t 翻译异常: tweet_id={tweet_id} err={e}")
-        await msg.reply(_t("翻译失败，请稍后再试"))
+        await MessageSender(cli, msg, config).text(_t("翻译失败，请稍后再试"))
         return
 
-    # ② 完整解析（作者 / 来源 / 原文 / 配图）—— **复用项目解析链**，不自己拼
-    original = ""
-    parse_result = None
-    try:
-        parse_result = await ParseHub().parse(url, cookie=cookie, proxy=proxy)
-        # **正文有两个来源，按结果类型取**：带图/视频的推文走
-        # ``MultimediaParseResult``，它的正文在 ``content``；纯文本推文才是
-        # ``RichTextParseResult`` 的 ``markdown_content``。只看后者会让带图推文
-        # 的原文整段丢失（实测那条 GTA6 推文就有 1 张图）。
-        if isinstance(parse_result, RichTextParseResult):
-            original = (parse_result.markdown_content or "").strip()
-        if not original:
-            original = str(getattr(parse_result, "content", "") or "").strip()
-    except Exception as e:  # noqa: BLE001 - 解析失败仍要能把译文发出去
-        logger.warning(f"/t 取原推文失败（只发译文）: tweet_id={tweet_id} err={e}")
+    text_pieces = inline_entities(translated, entities)
 
-    header = build_header(parse_result, tweet_id) if parse_result else f"[{t_source_label()}]({url})"
-    body = build_translated_body(translated, original)
+    # 超长时按项目既有机制折叠（只折正文，页脚永远在折叠之外）。
+    if visible_length(translated) > 6800:
+        text_pieces = [fold_for_show_more(translated)]
 
-    # 正文超过客户端折叠阈值时仍要保证页脚（来源）可见：先把来源摘出来，
-    # 只折正文（与项目其它长文一致）。
-    full = "\n".join([header, "", body])
-    if visible_length(full) > 6800:
-        full = f"{header}\n\n{fold_for_show_more(body)}"
+    blocks = [
+        InputRichBlockParagraph(text_pieces),
+        InputRichBlockFooter([RichTextUrl(_t("来源"), url)]),
+    ]
 
-    # **走 blocks 通道**：``ParseMode.DISABLED`` 会把 ``**粗体**`` 和
-    # ``[来源](url)`` 当字面量发出去，用户看到的是满屏星号与方括号。
-    # blocks 的每块携带字面量、服务端不解析 —— 我们拼的是**自己的 markdown**，
-    # 而 ``markdown_to_blocks`` 正是把它转成结构化块的那条通道。
-    from pyrogram.types import InputRichMessage
-
-    from plugins.parse.rich_blocks import markdown_to_blocks
-
-    await msg.reply(
-        InputRichMessage(blocks=markdown_to_blocks(full)),
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    # **必须走项目的 `MessageSender.rich_message`**：``msg.reply()`` 只接受文本，
+    # 传 ``InputRichMessage`` 进去会被 pyrogram 转成字符串发出去 —— 生产上就是
+    # 这样把 ``{'_': 'InputRichMessage', 'blocks': [...]}`` 当消息发给了用户。
+    await MessageSender(cli, msg, config).rich_message(
+        rich_message=InputRichMessage(blocks=blocks),
     )

@@ -812,10 +812,14 @@ class Twitter:
     #: ``https://api.twitter.com/i/api/2/...`` → 404（另一套 host）。
     _TRANSLATE_ENDPOINT = "https://x.com/i/api/2/grok/translation.json"
 
-    async def translate_tweet(self, tweet_id: str, dst_lang: str) -> str:
-        """用 **X 自己的翻译**（Grok）把一条推文译成 ``dst_lang``，返回译文正文。
+    async def translate_tweet(self, tweet_id: str, dst_lang: str) -> tuple[str, dict]:
+        """用 **X 自己的翻译**（Grok）把一条推文译成 ``dst_lang``。
 
-        请求体的字段名来自 APK 里 kotlinx.serialization 的描述符
+        **请求只发 id，不发正文** —— 服务端自己知道那条推文的原文，翻译后把
+        译文和**重算过的实体偏移**一起返回。所以「能不能保住格式」完全取决于
+        用不用 ``entities[*].indices``，而不是我们怎么拆段落。
+
+        请求体只三个字段，字段名来自 APK 里 kotlinx.serialization 的描述符
         （``com.x.ai.grok.a`` 的静态块）：
 
         ```java
@@ -841,12 +845,21 @@ class Twitter:
         服务端对大小写敏感，且错值时给的是「内部错误」而不是参数错误 —— 这也是
         为什么之前 8 种组合全 500，看起来像「接口没启用」。
 
-        响应字段来自 ``ApiGrokTranslateResult``：``text`` / ``entities`` /
-        ``rich_text_entities`` / ``index`` / ``content_type``。
+        **``indices`` 是按译文字符（码点）算的** —— 实测一条 157 字符的译文里，
+        ``27,43`` 精确切出 ``@maruyono_kamome``，``121,144`` 切出
+        ``https://t.co/...``，``146,157`` 切出 ``#FX戦士くるみちゃん``；同一批
+        indices 用在 180 字符的**原文**上则全错。所以直接用 Python 的
+        ``text[a:b]``，不要按 UTF-16 或字节切。
 
         Args:
             tweet_id: 推文 id（从 ``get_id_by_url`` 取）。
             dst_lang: 目标语言，BCP-47 小写形式（如 ``zh-cn`` / ``ja`` / ``en``）。
+
+        Returns:
+            ``(译文正文, entities)``。``entities`` 形如
+            ``{"urls": [{"indices": [a, b], "url": ..., "expanded_url": ...}],
+            "user_mentions": [{"indices": [a, b], "screen_name": ...}],
+            "hashtags": [{"indices": [a, b], "text": ...}]}``；无实体时是空 dict。
 
         Raises:
             TranslationUnavailable: 没有登录态、或平台拒绝（401/403/5xx）。翻译
@@ -889,7 +902,8 @@ class Twitter:
         text_value = str(value.get("text") or "").strip()
         if not text_value:
             raise TranslationUnavailable("X 没有返回译文（该推文可能不可翻译）")
-        return text_value
+        entities = value.get("entities")
+        return text_value, entities if isinstance(entities, dict) else {}
 
 
 @dataclass
