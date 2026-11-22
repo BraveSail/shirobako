@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import re
 from dataclasses import replace
 from typing import Any
@@ -316,7 +317,10 @@ async def handle_parse(req: ParseRequest) -> bool:
         # 且**发送之前**。只改写正文字段 —— ``send_rich_media`` 通过 ``rich_content()``
         # 读正文，作者行/时间/计数/媒体/页脚/折叠仍由构建器统一生成，
         # 所以 ``#t`` 与普通解析同形，只是正文语言不同。
+        orig_parse_result = parse_result
         if req.translate:
+            # 浅拷贝后再替换正文，避免把译文写进 persistent_cache 污染后续非 #t 请求
+            parse_result = copy.copy(parse_result)
             try:
                 changed = await apply_translation(parse_result, raw_url, req.t_.locale)
                 logger.info(f"#t 翻译结果: changed={changed}, url={raw_url}")
@@ -335,6 +339,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 raw_url=raw_url,
                 reporter=reporter,
                 spoiler_tag=req.spoiler_tag,
+                cache_parse_result=orig_parse_result,
             )
             return True
 
@@ -373,6 +378,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 raw_url=raw_url,
                 reporter=reporter,
                 spoiler_tag=req.spoiler_tag,
+                cache_parse_result=orig_parse_result,
             )
             return True
 
@@ -398,6 +404,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 raw_url=raw_url,
                 reporter=reporter,
                 spoiler_tag=req.spoiler_tag,
+                cache_parse_result=orig_parse_result,
             )
             return True
         except Exception as e:

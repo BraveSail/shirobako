@@ -146,6 +146,7 @@ class ParseResult(ABC):  # noqa: B024
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        quote_ids: dict[str, str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
@@ -217,6 +218,12 @@ class ParseResult(ABC):  # noqa: B024
         self.topic_label = (topic_label or "").strip()
         """内容在源站的位置标记 (如 linux.do 的楼层号 ``#4``); 无此概念的平台为空串"""
         self.quote_roles: list[str] = [str(r).strip() for r in (quote_roles or []) if str(r).strip()]
+        self.quote_ids: dict[str, str] = {
+            str(k).strip(): str(v).strip()
+            for k, v in (quote_ids or {}).items()
+            if str(k).strip() and str(v).strip()
+        }
+        """引用块角色 → 对应源帖 ID（如 ``{"reply": "...", "quoted": "..."}``），供 ``#t`` 翻译引用推文"""
         """正文里每个引用块的角色 (按出现顺序); 空列表 = 没声明, 渲染层退回位置推断"""
         self.origin_line = (origin_line or "").strip()
         """归属行 (这条内容属于哪里); 渲染层放在标题与作者行之间"""
@@ -531,6 +538,7 @@ class VideoParseResult(ParseResult):
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        quote_ids: dict[str, str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
@@ -555,6 +563,7 @@ class VideoParseResult(ParseResult):
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
+            quote_ids=quote_ids,
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
@@ -586,6 +595,7 @@ class ImageParseResult(ParseResult):
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        quote_ids: dict[str, str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
@@ -610,6 +620,7 @@ class ImageParseResult(ParseResult):
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
+            quote_ids=quote_ids,
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
@@ -641,6 +652,7 @@ class MultimediaParseResult(ParseResult):
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        quote_ids: dict[str, str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
@@ -664,6 +676,7 @@ class MultimediaParseResult(ParseResult):
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
+            quote_ids=quote_ids,
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
@@ -701,6 +714,7 @@ class RichTextParseResult(ParseResult):
         position_label: str = "",
         topic_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        quote_ids: dict[str, str] | None = None,
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
@@ -730,6 +744,7 @@ class RichTextParseResult(ParseResult):
             position_label=position_label,
             topic_label=topic_label,
             quote_roles=quote_roles,
+            quote_ids=quote_ids,
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,

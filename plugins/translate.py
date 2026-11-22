@@ -40,24 +40,27 @@ https://x.com/user/status/123 #翻译
 ``entities[*].indices`` 是**译文字符串里的字符区间**（实测：157 字符译文里
 ``27,43`` 精确切出 ``@maruyono_kamome``；同一批 indices 用在 180 字符原文上全错）。
 
-## 只换正文，其它一律不动
+## 只换正文文本，保留完整排版结构（含引用块 / 回复块 / 投票 / 话题卡片）
 
-``apply_translation`` 只改写解析结果的正文字段。作者行 / 发布时间 / 浏览量 /
-点赞 / 标签 / 页脚 / 折叠 / **媒体** 全由项目既有链路（``send_rich_media``）
-按统一形态生成 —— 所以 ``#t`` 的输出与不加 ``#t`` **同形**，唯一差别是正文语言。
+``apply_translation`` 只替换主帖文本，以及（若存在 ``quote_ids``）并发翻译被回复 /
+被引用推文块内的文本。作者行 / 引用署名行 / 引用块结构 / 投票占位符 / trending 卡片 /
+发布时间 / 浏览量 / 点赞 / 标签 / 页脚 / 折叠 / **媒体归位** 全部保持原形态，
+所以 ``#t`` 的输出与不加 ``#t`` **同形**，唯一差别是正文与引用内容换成了目标语言。
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 from urllib.parse import quote
 
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
-from parsehub.utils.helpers import SecretCookie
+from parsehub.utils.helpers import SecretCookie, _quote_line
 
 from core import pl_cfg
 from log import logger
+from plugins.helpers import split_quote_blocks
 
 logger = logger.bind(name="Translate")
 
@@ -88,6 +91,10 @@ _LANG_TO_X: dict[str, str] = {
 
 #: 推文链接。``status`` 与 ``article`` 共用同一个 id 空间。
 _TWEET_URL_RE = re.compile(r"https?://(?:www\.)?(?:x|twitter)\.com/[^/\s]+/(?:status|article)/(\d+)")
+
+#: 主帖 / 引用块里需要原样保留的结构占位符（投票 / 媒体）
+_POLL_LINE_RE = re.compile(r"^\{\{poll:\d+\}\}$")
+_QUOTE_STRUCT_LINE_RE = re.compile(r"^>\s*(?:\{\{(?:poll|media):\d+\}\}|>.*)$")
 
 
 def x_lang_for(locale: str) -> str:
@@ -161,26 +168,18 @@ def to_markdown(text: str, entities: dict) -> str:
     return "".join(out) or text
 
 
-async def translate_tweet_markdown(url: str, lang: str) -> str | None:
-    """取一条推文的译文 markdown；取不到返回 ``None``。
-
-    **失败不抛**：``#t`` 是用户加的一个开关，平台不返回译文时应该照常发原文，
-    而不是整条消息发不出去。
-    """
-    match = _TWEET_URL_RE.search(url)
-    if not match:
-        return None
-    tweet_id = match[1]
-    dst_lang = x_lang_for(lang)
-
+def _build_twitter_client() -> Twitter:
     # **必须走 `SecretCookie`**：``pl_cfg.roll_cookie`` 返回的是 ``MaskedSecretStr``，
     # 它自己的 ``get_value()`` 是脱敏显示（14 字符的 ``gues******znn.``），
     # 直接传给客户端会得到「缺少 ct0」。`SecretCookie.get_value()` 才返回
     # 真正的 ``dict[str, str]``（实测该 cookie 有 1259 字符、12 个字段）。
     raw_cookie = pl_cfg.roll_cookie("twitter")
     cookie = SecretCookie(raw_cookie.get_secret_value() if raw_cookie else None).get_value()
-    client = Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
+    return Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
 
+
+async def _translate_id_markdown(client: Twitter, tweet_id: str, dst_lang: str) -> str | None:
+    """用既有 Twitter 客户端翻译单条推文 id；不可用或失败返回 ``None``。"""
     try:
         translated, entities = await client.translate_tweet(tweet_id, dst_lang)
     except TranslationUnavailable as e:
@@ -192,40 +191,192 @@ async def translate_tweet_markdown(url: str, lang: str) -> str | None:
     return to_markdown(translated, entities)
 
 
-def set_body(parse_result: object, markdown: str) -> None:
-    """把正文写进解析结果。
+async def translate_tweet_markdown(url: str, lang: str) -> str | None:
+    """取一条推文的译文 markdown；取不到返回 ``None``。
 
-    **两种结果类各有自己的正文字段，两个都要写**：
-
-    - ``RichTextParseResult.markdown_content`` —— 纯文本/长文推文，渲染器优先读它
-    - ``MultimediaParseResult.content`` —— 带图/视频的推文**没有**
-      ``markdown_content`` 属性（实测那条 GTA6 推文就是这种），只写前者
-      会让多媒体推文的 ``#t`` 完全不生效
-
-    正文一换，原文里的 ``{{media:N}}`` 占位就不成立了；媒体仍由
-    ``send_rich_media`` 从 ``parse_result.media`` 正常发出（挂在消息末尾）。
+    **失败不抛**：``#t`` 是用户加的一个开关，平台不返回译文时应该照常发原文，
+    而不是整条消息发不出去。
     """
+    match = _TWEET_URL_RE.search(url)
+    if not match:
+        return None
+    client = _build_twitter_client()
+    return await _translate_id_markdown(client, match[1], x_lang_for(lang))
+
+
+def replace_quote_block_body(quote_block: str, translated_md: str) -> str:
+    """只替换引用块（``> ...``）里的正文文本，保留作者署名行与块内结构行。
+
+    ``format_quote_block`` 产出的引用块形态固定为：
+    - 第 0 行：``> <i><a href="...">作者</a> <code>@handle</code></i>``（署名行）
+    - 后续行：``> <i>正文行</i>`` / ``>`` / ``> {{poll:N}}`` / ``> {{media:N}}`` / ``> > YouTube卡片``
+
+    纯图引用块（只有署名行、没有正文）原样返回，避免凭空塞出多余文本。
+    """
+    body = (translated_md or "").strip()
+    if not quote_block or not body:
+        return quote_block
+
+    lines = quote_block.splitlines()
+    if not lines:
+        return quote_block
+
+    # 识别署名行（TwitterParser._quote_block 统一由 format_author_link 生成）
+    has_author_header = (
+        lines[0].startswith("> <i>") and ("<a " in lines[0] or "<code>@" in lines[0])
+    )
+    header = lines[0] if has_author_header else ""
+    rest = lines[1:] if has_author_header else lines
+
+    # 若原块仅有署名行（纯图引用）或仅有结构行（无文字），保持原样
+    struct_lines: list[str] = []
+    has_text_line = False
+    for line in rest:
+        stripped = line.strip()
+        if not stripped or stripped == ">":
+            continue
+        if _QUOTE_STRUCT_LINE_RE.match(stripped):
+            struct_lines.append(line)
+        else:
+            has_text_line = True
+
+    if not has_text_line:
+        return quote_block
+
+    rendered_lines = [_quote_line(line) for line in body.splitlines()]
+    out: list[str] = []
+    if header:
+        out.append(header)
+    out.extend(rendered_lines)
+    if struct_lines:
+        out.append(">")
+        out.extend(struct_lines)
+    return "\n".join(out)
+
+
+def _extract_middle_tail_extras(middle: str) -> list[str]:
+    """抽取主帖 ``middle`` 末尾由 ``_compose`` 追加的结构块（投票占位符 / trending 卡片）。
+
+    当一条推文**同时**带有 trending 卡片与被引用推文时，``split_quote_blocks`` 只把
+    最末尾的被引用推文切进 ``tail``，trending 卡片和 ``{{poll:N}}`` 会留在 ``middle``
+    末尾。替换主帖文本时必须把这些结构段留下来。
+    """
+    if not middle:
+        return []
+    blocks = [b for b in re.split(r"\n{2,}", middle.strip()) if b.strip()]
+    extras: list[str] = []
+    while blocks:
+        last = blocks[-1].strip()
+        last_lines = [ln.strip() for ln in last.splitlines() if ln.strip()]
+        is_poll = len(last_lines) == 1 and bool(_POLL_LINE_RE.match(last_lines[0]))
+        is_quote_card = bool(last_lines) and all(ln.startswith(">") for ln in last_lines)
+        if is_poll or is_quote_card:
+            extras.append(blocks.pop())
+        else:
+            break
+    extras.reverse()
+    return extras
+
+
+def _existing_body(parse_result: object) -> str:
+    """读取解析结果当前的正文（优先 ``markdown_content``，再退 ``content``）。"""
+    md = getattr(parse_result, "markdown_content", None)
+    if isinstance(md, str) and md:
+        return md
+    content = getattr(parse_result, "content", None)
+    return content if isinstance(content, str) else ""
+
+
+def set_body(
+    parse_result: object,
+    markdown: str | None,
+    *,
+    reply_markdown: str | None = None,
+    quoted_markdown: str | None = None,
+) -> None:
+    """把译文写进解析结果，同时**完整保留**开头回复块、末尾引用块、投票与话题卡片。
+
+    - 仅替换 ``middle`` 的纯文本主体（保留其中的 ``{{poll:N}}`` 与内嵌 trending 块）。
+    - 若提供了 ``reply_markdown`` / ``quoted_markdown``，同步替换对应引用块内的文本，
+      署名行与块内占位符（``{{poll:N}}`` / ``{{media:N}}`` / 嵌套卡片）保持不动。
+    - ``markdown`` 为 ``None`` 时保持主帖原文，仅更新提供的引用块译文（常见于中文主帖
+      引用外语推文：主帖无需翻译，引用块仍可译成中文）。
+    - **两种结果类各有自己的正文字段，两个都要写**：
+      ``RichTextParseResult.markdown_content`` 与 ``MultimediaParseResult.content``。
+    """
+    existing = _existing_body(parse_result)
+    head, middle, tail = split_quote_blocks(existing) if existing else ("", "", "")
+    quote_roles = [str(r) for r in (getattr(parse_result, "quote_roles", None) or []) if r]
+
+    # 把 reply / quoted 译文准确映射到 head / tail：
+    # 当只有 1 个引用块且主帖正文为空时，split_quote_blocks 会把唯一块放进 tail，
+    # 此时看 quote_roles 决定它到底是 reply 还是 quoted。
+    if head and reply_markdown:
+        head = replace_quote_block_body(head, reply_markdown)
+    if tail:
+        tail_role = "reply" if (not head and quote_roles == ["reply"]) else "quoted"
+        tail_md = reply_markdown if tail_role == "reply" else quoted_markdown
+        if tail_md:
+            tail = replace_quote_block_body(tail, tail_md)
+
+    if markdown is not None:
+        extras = _extract_middle_tail_extras(middle)
+        middle_parts = [p for p in [markdown.strip(), *extras] if p]
+        new_middle = "\n\n".join(middle_parts)
+    else:
+        new_middle = middle
+
+    composed = "\n\n".join(p for p in (head, new_middle, tail) if p)
+
     for field in ("markdown_content", "content"):
         try:
-            object.__setattr__(parse_result, field, markdown)
+            object.__setattr__(parse_result, field, composed)
         except (AttributeError, TypeError):
             continue
 
 
 async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
-    """``#t`` 的实现：把 ``parse_result`` 的正文换成平台译文。
+    """``#t`` 的实现：把 ``parse_result`` 的主帖与引用推文换成平台译文。
 
     Args:
-        parse_result: 已解析的结果（媒体是否下载过无所谓 —— 只改正文）。
+        parse_result: 已解析的结果（媒体是否下载过无所谓 —— 只改文本部分）。
         url: 原推文链接。
         lang: 目标界面语言（``zh-hans`` / ``ja-jp`` …）。
 
     Returns:
-        是否真的换成了译文。``False`` 表示平台没给译文，正文保持原文 ——
-        调用方**不需要**额外处理，照常发原文即可（用户加的开关不该让消息发不出去）。
+        是否真的换成了译文（主帖或任一引用推文翻译成功即为 ``True``）。
+        ``False`` 表示平台都没给译文，正文保持原文 —— 调用方**不需要**额外处理，
+        照常发原文即可（用户加的开关不该让消息发不出去）。
     """
-    markdown = await translate_tweet_markdown(url, lang)
-    if not markdown:
+    match = _TWEET_URL_RE.search(url)
+    if not match:
         return False
-    set_body(parse_result, markdown)
+
+    main_id = match[1]
+    dst_lang = x_lang_for(lang)
+    quote_ids = dict(getattr(parse_result, "quote_ids", None) or {})
+    reply_id = str(quote_ids.get("reply") or "").strip()
+    quoted_id = str(quote_ids.get("quoted") or "").strip()
+
+    client = _build_twitter_client()
+
+    # 并发请求主帖与引用推文翻译，避免串行放大延迟
+    async def _maybe(tid: str) -> str | None:
+        return await _translate_id_markdown(client, tid, dst_lang) if tid else None
+
+    main_md, reply_md, quoted_md = await asyncio.gather(
+        _translate_id_markdown(client, main_id, dst_lang),
+        _maybe(reply_id),
+        _maybe(quoted_id),
+    )
+
+    if not any((main_md, reply_md, quoted_md)):
+        return False
+
+    set_body(
+        parse_result,
+        main_md,
+        reply_markdown=reply_md,
+        quoted_markdown=quoted_md,
+    )
     return True

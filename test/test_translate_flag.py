@@ -479,3 +479,151 @@ class TestFlagRegistry:
         kept, hits = strip_flags("https://x.com/a/status/1 #python")
         assert kept == "https://x.com/a/status/1 #python"
         assert hits == {}
+class TestQuotePreservationAndTranslation:
+    """``#t`` 不能抹掉引用块 / 回复块 / 投票 / 话题卡片，且同时翻译引用推文。"""
+
+    def test_set_body_preserves_quoted_block_when_only_main_translated(self) -> None:
+        from plugins.translate import set_body
+
+        quoted = (
+            '> <i><a href="https://x.com/DaewonMovie">대원무비</a> <code>@DaewonMovie</code></i>\n'
+            "> <i>&lt;극장판 치이카와&gt; 흥행 질주!</i>"
+        )
+
+        class _R:
+            content = f"원문 본문\n\n{quoted}"
+            quote_roles = ["quoted"]
+
+        r = _R()
+        set_body(r, "翻译后的正文")
+        assert r.content == f"翻译后的正文\n\n{quoted}"
+
+    def test_set_body_translates_quoted_block_preserving_author_and_struct(self) -> None:
+        from plugins.translate import set_body
+
+        quoted = (
+            '> <i><a href="https://x.com/DaewonMovie">대원무비</a> <code>@DaewonMovie</code></i>\n'
+            "> <i>&lt;극장판 치이카와&gt; 흥행 질주!</i>\n"
+            "> <i>300만 관객 돌파💖</i>\n"
+            ">\n"
+            "> {{poll:0}}"
+        )
+
+        class _R:
+            content = f"원문 본문\n\n{quoted}"
+            quote_roles = ["quoted"]
+
+        r = _R()
+        set_body(r, "主帖译文", quoted_markdown="&lt;剧场版 吉伊卡哇&gt; 票房狂飙！\n突破300万观众💖")
+        assert r.content == (
+            "主帖译文\n\n"
+            '> <i><a href="https://x.com/DaewonMovie">대원무비</a> <code>@DaewonMovie</code></i>\n'
+            "> <i>&lt;剧场版 吉伊卡哇&gt; 票房狂飙！</i>\n"
+            "> <i>突破300万观众💖</i>\n"
+            ">\n"
+            "> {{poll:0}}"
+        )
+
+    def test_set_body_preserves_reply_and_quoted_and_main_poll(self) -> None:
+        from plugins.translate import set_body
+
+        reply = '> <i><a href="https://x.com/a">A</a> <code>@a</code></i>\n> <i>reply orig</i>'
+        quoted = '> <i><a href="https://x.com/b">B</a> <code>@b</code></i>\n> <i>quoted orig</i>'
+
+        class _R:
+            content = f"{reply}\n\nmain orig\n\n{{{{poll:0}}}}\n\n{quoted}"
+            quote_roles = ["reply", "quoted"]
+
+        r = _R()
+        set_body(r, "主帖译文", reply_markdown="回复译文", quoted_markdown="引用译文")
+        assert r.content == (
+            '> <i><a href="https://x.com/a">A</a> <code>@a</code></i>\n'
+            "> <i>回复译文</i>\n\n"
+            "主帖译文\n\n"
+            "{{poll:0}}\n\n"
+            '> <i><a href="https://x.com/b">B</a> <code>@b</code></i>\n'
+            "> <i>引用译文</i>"
+        )
+
+    def test_set_body_keeps_sign_only_image_quote_untouched(self) -> None:
+        from plugins.translate import replace_quote_block_body
+
+        sign_only = '> <i><a href="https://x.com/img">Img</a> <code>@img</code></i>'
+        assert replace_quote_block_body(sign_only, "不该塞进来的文字") == sign_only
+
+    def test_set_body_translates_quote_even_when_main_is_none(self) -> None:
+        """中文主帖引用外语推文：主帖无需翻译（None），引用块仍译成中文。"""
+        from plugins.translate import set_body
+
+        quoted = '> <i><a href="https://x.com/b">B</a> <code>@b</code></i>\n> <i>hello world</i>'
+
+        class _R:
+            content = f"笑死\n\n{quoted}"
+            quote_roles = ["quoted"]
+
+        r = _R()
+        set_body(r, None, quoted_markdown="你好世界")
+        assert r.content == (
+            "笑死\n\n"
+            '> <i><a href="https://x.com/b">B</a> <code>@b</code></i>\n'
+            "> <i>你好世界</i>"
+        )
+
+    def test_apply_translation_translates_main_and_quoted_concurrently(self, monkeypatch) -> None:
+        import asyncio
+        from plugins import translate as tr_mod
+
+        calls: list[tuple[str, str]] = []
+
+        class _FakeClient:
+            async def translate_tweet(self, tweet_id: str, dst_lang: str):
+                calls.append((tweet_id, dst_lang))
+                if tweet_id == "100":
+                    return "主帖译文", {}
+                if tweet_id == "200":
+                    return "引用译文", {}
+                raise TranslationUnavailable("none")
+
+        monkeypatch.setattr(tr_mod, "_build_twitter_client", lambda: _FakeClient())
+
+        class _R:
+            content = (
+                "원문\n\n"
+                '> <i><a href="https://x.com/q">Q</a> <code>@q</code></i>\n'
+                "> <i>인용 원문</i>"
+            )
+            quote_roles = ["quoted"]
+            quote_ids = {"quoted": "200"}
+
+        r = _R()
+        changed = asyncio.run(tr_mod.apply_translation(r, "https://x.com/u/status/100", "zh-hans"))
+        assert changed is True
+        assert ("100", "zh-cn") in calls
+        assert ("200", "zh-cn") in calls
+        assert "主帖译文" in r.content
+        assert "> <i>引用译文</i>" in r.content
+        assert 'href="https://x.com/q"' in r.content
+
+    def test_link_hashtags_does_not_double_link_markdown_links(self) -> None:
+        from parsehub.types import Platform
+        from plugins.helpers import link_hashtags
+
+        md = "[#치이카와](https://x.com/hashtag/%EC%B9%98%EC%9D%B4%EC%B9%B4%EC%99%80) #일반"
+        out = link_hashtags(md, Platform.TWITTER, ["치이카와", "일반"])
+        assert out.startswith("[#치이카와](https://x.com/hashtag/%EC%B9%98%EC%9D%B4%EC%B9%B4%EC%99%80)")
+        assert "[<a " not in out
+        assert '<a href="https://x.com/hashtag/' in out
+
+    def test_quote_ids_round_trips_through_result_cache(self) -> None:
+        from parsehub.types import MultimediaParseResult
+        from parsehub.types.serialize import result_from_cache_dict, result_to_cache_dict
+
+        orig = MultimediaParseResult(
+            content="hi",
+            quote_roles=["quoted"],
+            quote_ids={"quoted": "2123929422529286639"},
+        )
+        data = result_to_cache_dict(orig)
+        assert data["quote_ids"] == {"quoted": "2123929422529286639"}
+        rebuilt = result_from_cache_dict(data)
+        assert rebuilt.quote_ids == {"quoted": "2123929422529286639"}

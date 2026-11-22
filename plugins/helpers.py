@@ -1214,7 +1214,7 @@ _TAG_BODY = r"[^\s#，。！？、,.!?）)】\]<>/]+"
 #: 任意位置的 ``#标签`` (前面不是字母/数字/``&``/``/`` —— 排除 ``a#b`` 与 URL 里的片段)
 _HASH_TAG_RE = re.compile(rf"(?<![\w&/])#({_TAG_BODY})")
 #: 已经是链接的整段 (``<a …>…</a>``): 处理标签时跳过, 免得把标签包第二层
-_ANCHOR_SEGMENT_RE = re.compile(r"<a\b[^>]*>.*?</a>", re.S)
+_ANCHOR_SEGMENT_RE = re.compile(r"<a\b[^>]*>.*?</a>|\[(?:\\.|[^\[\]])*\]\([^)]*\)", re.S)
 
 
 def _link_known_tags(text: str, platform: Platform | None, hashtags: Sequence[str]) -> str:

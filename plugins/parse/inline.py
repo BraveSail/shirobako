@@ -1,3 +1,4 @@
+import copy
 import re
 
 from easy_ai18n import PreLocaleSelector
@@ -437,8 +438,9 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         if (result := await pipeline.run()) is None:
             return
 
-        parse_result = result.parse_result
-        # ``#t``: 在**发送前**换正文（缓存里是原文，预览阶段的改写不会留到这一步）
+        orig_parse_result = result.parse_result
+        parse_result = copy.copy(orig_parse_result) if translate else orig_parse_result
+        # ``#t``: 在**发送前**换正文（缓存里存 orig_parse_result 原文，不被译文污染）
         if translate:
             try:
                 await apply_translation(parse_result, raw_url, lang)
@@ -486,7 +488,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             # 两条路都先自己上传拿 file_id: 编辑时就用 file_id 引用 (不再上传), 同时这条
             # inline 消息的媒体也进了缓存 —— 以前 inline 从不写, 每次选中都得重新下载。
             entry = await _upload_and_cache_inline_media(
-                cli, raw_url, parse_result, media, quoted_placeholders, reply_placeholders, media_urls
+                cli, raw_url, orig_parse_result, media, quoted_placeholders, reply_placeholders, media_urls
             )
             # **一律走 blocks**（与 sender 同一决策）：markdown 字符串通道会解析
             # 平台原文（行首空格变代码块、``||`` 变 spoiler），blocks 的字面量不会。

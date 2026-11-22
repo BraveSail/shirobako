@@ -413,6 +413,13 @@ class TwitterParser(BaseParser):
         # 投票: 结构化数据按**占位符出现顺序**收集 (reply → 主帖 → quoted) ——
         # 与 ``_compose`` / ``_quote_block`` 分配索引时用的是同一份 ``_poll_pairs``
         polls = [TwitterParser._to_result_poll(source) for _role, source in TwitterParser._poll_pairs(tweet)]
+        quote_ids: dict[str, str] = {}
+        if tweet.reply_to and TwitterParser._build_quote(tweet):
+            if rid := (tweet.reply_to.tweet_id or tweet.reply_to_id):
+                quote_ids["reply"] = rid
+        if tweet.quoted_status and TwitterParser._build_quoted_block(tweet):
+            if qid := (tweet.quoted_status.tweet_id or tweet.quoted_status_id):
+                quote_ids["quoted"] = qid
         if article := tweet.article:
             return TwitterArticleParseResult(
                 markdown_content=TwitterParser._compose(
@@ -431,6 +438,7 @@ class TwitterParser(BaseParser):
                 reply_media_count=reply_total,
                 # 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, 不再看位置
                 quote_roles=TwitterParser._quote_roles(tweet),
+                quote_ids=quote_ids,
                 # 标签走**平台实体**（服务端算好的边界），渲染层据此精确链接化
                 hashtags=TwitterParser._hashtags(tweet),
                 polls=polls,
@@ -450,6 +458,7 @@ class TwitterParser(BaseParser):
             quoted_media_count=quoted_total,
             reply_media_count=reply_total,
             quote_roles=TwitterParser._quote_roles(tweet),
+            quote_ids=quote_ids,
             hashtags=TwitterParser._hashtags(tweet),
             polls=polls,
         )

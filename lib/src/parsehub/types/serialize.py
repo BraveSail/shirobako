@@ -146,7 +146,7 @@ _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
     "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
     "banner_media_count",
-    "position_label", "topic_label", "quote_roles", "origin_line", "reply_count", "polls", "content",
+    "position_label", "topic_label", "quote_roles", "quote_ids", "origin_line", "reply_count", "polls", "content",
     "video", "photo", "media",
     "markdown_content",
 })
@@ -289,6 +289,7 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         # 引用块的角色 (按出现顺序) —— 渲染层靠它归位媒体; 漏了它缓存命中时
         # 引用块里的媒体会退化成"按位置猜", 又是一次静默的降级
         "quote_roles": list(result.quote_roles),
+        "quote_ids": dict(getattr(result, "quote_ids", None) or {}),
         # 归属行（标题与作者之间的那一行）—— 漏了它缓存命中时归属行消失
         "origin_line": result.origin_line,
         # 回复数同理（页脚那一段）
@@ -348,6 +349,7 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "position_label": data.get("position_label", ""),
         "topic_label": data.get("topic_label", ""),
         "quote_roles": data.get("quote_roles") or [],
+        "quote_ids": dict(data.get("quote_ids") or {}),
         "origin_line": data.get("origin_line", ""),
         "reply_count": data.get("reply_count"),
         # 老缓存没有这个键 -> 空列表 (渲染层拿不到数据时删掉占位符行)

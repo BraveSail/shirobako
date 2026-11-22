@@ -536,6 +536,7 @@ async def send_rich_media(
     raw_url: str = "",
     reporter: "MessageStatusReporter | None" = None,
     spoiler_tag: str = "",
+    cache_parse_result: AnyParseResult | None = None,
 ) -> bool:
     """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。
 
@@ -611,7 +612,7 @@ async def send_rich_media(
             await persistent_cache.set(
                 raw_url,
                 rich_cache_entry(
-                    parse_result,
+                    cache_parse_result or parse_result,
                     cached_media,
                     quoted_media_count=quoted_items,
                     reply_media_count=reply_items,
