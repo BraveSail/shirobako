@@ -53,6 +53,9 @@ class PipelineResult:
     parse_result: AnyParseResult
     processed_list: list[ProcessedMedia] = field(default_factory=list)
     output_dir: Path | None = None
+    #: 进度与发送阶段要展示的解析结果（如 ``#t`` 翻译后的拷贝）；默认同 ``parse_result``。
+    #: 原始 ``parse_result`` 保持原文，供写缓存使用，不互相污染。
+    display_result: AnyParseResult | None = None
 
     def cleanup(self) -> None:
         if bs.debug_skip_cleanup:
@@ -118,6 +121,7 @@ class ParsePipeline:
         gif_only_skip_download_count_threshold: int = 0,
         richtext_skip_download: bool = True,
         save_metadata: bool = False,
+        prepare_display: Callable[[AnyParseResult], Awaitable[AnyParseResult]] | None = None,
         t: PreLocaleSelector,
     ):
         """
@@ -135,6 +139,7 @@ class ParsePipeline:
         self._gif_only_skip_download_count_threshold = gif_only_skip_download_count_threshold
         self._richtext_skip_download = richtext_skip_download
         self._save_metadata = save_metadata
+        self._prepare_display = prepare_display
         self._t = t
         self._result: PipelineResult | None = None
         self._owns_inflight = False
@@ -218,15 +223,22 @@ class ParsePipeline:
             if parse_result is None:
                 return None
 
+        display_result = parse_result
+        if self._prepare_display is not None:
+            try:
+                display_result = await self._prepare_display(parse_result)
+            except Exception as e:  # noqa: BLE001 - 展示层变换（如 #t 翻译）失败不该阻断下载
+                logger.warning(f"prepare_display 失败, 进度与展示沿用原文: url={self._raw_url} err={e}")
+
         if should_skip_richtext_download(parse_result, richtext_skip_download=self._richtext_skip_download):
             logger.debug("富文本跳过下载")
-            return PipelineResult(parse_result=parse_result)
+            return PipelineResult(parse_result=parse_result, display_result=display_result)
 
         if self._skip_download_threshold and len(to_list(parse_result.media)) > self._skip_download_threshold:
             logger.debug(
                 f"媒体数量({len(to_list(parse_result.media))})大于设定值({self._skip_download_threshold}), 跳过下载"
             )
-            return PipelineResult(parse_result=parse_result)
+            return PipelineResult(parse_result=parse_result, display_result=display_result)
 
         gif_count = len([i for i in to_list(parse_result.media) if isinstance(i, AniRef)])
         if (
@@ -235,11 +247,11 @@ class ParsePipeline:
             and gif_count == len(to_list(parse_result.media))
         ):
             logger.debug(f"GIF ({gif_count})大于设定值({self._gif_only_skip_download_count_threshold}), 跳过下载")
-            return PipelineResult(parse_result=parse_result)
+            return PipelineResult(parse_result=parse_result, display_result=display_result)
 
         # ── 2. 下载 ──
         # 已有解析结果 -> 用**完整排版**更新: 正文/标题/标签立刻可见, 只差媒体
-        await self._reporter.report_result(parse_result, self._t("下 载 中..."))
+        await self._reporter.report_result(display_result, self._t("下 载 中..."))
         logger.info(f"开始下载: media_count={len(to_list(parse_result.media))}, url={self._url}")
         p = ps.parser.get_platform(self._url)
         progress_cb = PipelineProgressCallback(self._reporter, _t=self._t)
@@ -264,12 +276,15 @@ class ParsePipeline:
         )
 
         # ── 3. 媒体处理 ──
-        await self._reporter.report_result(parse_result, self._t("处 理 中..."))
+        await self._reporter.report_result(display_result, self._t("处 理 中..."))
         if self._skip_media_processing:
             logger.debug(f"流水线完成: download_result={download_result}")
             processed_list = [ProcessedMedia(i, [Path(i.path)]) for i in to_list(download_result.media)]
             return PipelineResult(
-                parse_result=parse_result, processed_list=processed_list, output_dir=download_result.output_dir
+                parse_result=parse_result,
+                processed_list=processed_list,
+                output_dir=download_result.output_dir,
+                display_result=display_result,
             )
         maybe_processed_list = await self._step(
             "媒体处理",
@@ -285,6 +300,7 @@ class ParsePipeline:
             parse_result=parse_result,
             processed_list=processed_list,
             output_dir=download_result.output_dir,
+            display_result=display_result,
         )
 
     async def _step[T](

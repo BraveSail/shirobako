@@ -381,6 +381,7 @@ def rich_cache_entry(
             position_label=getattr(parse_result, "position_label", "") or "",
             topic_label=getattr(parse_result, "topic_label", "") or "",
             quote_roles=list(getattr(parse_result, "quote_roles", None) or []),
+            quote_ids=dict(getattr(parse_result, "quote_ids", None) or {}),
             origin_line=getattr(parse_result, "origin_line", "") or "",
             reply_count=getattr(parse_result, "reply_count", None),
             hashtags=list(getattr(parse_result, "hashtags", None) or []),

@@ -30,7 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.translate import apply_translation
+from plugins.translate import translate_cache_entry, translate_for_display
 from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
@@ -231,6 +231,8 @@ async def _answer(
     # 首帧就是结果本身 —— 没有后续编辑, 所以不需要句柄
     if cached := await persistent_cache.get(raw_url):
         logger.debug(f"guest: file_id 缓存命中, 直接发送 url={raw_url}")
+        if translate:
+            cached = await translate_cache_entry(cached, raw_url, locale)
         markdown, cached_media, cached_blocks = build_cached_rich_content(
             cached,
             raw_url,
@@ -269,11 +271,13 @@ async def _answer(
         logger.warning(f"guest 解析无结果: url={url}")
         return None
 
-    # ③ 首帧 = 解析到的文字排版 (页脚「下载中」), answer 出去并拿到句柄
+    # ③ 首帧 = 解析到的文字排版 (页脚「下载中」), answer 出去并拿到句柄。
+    # 带 ``#t`` 时先译成目标语言再发首帧，且流水线里的进度编辑全程复用译文，不闪回原文。
+    display_result = await translate_for_display(parse_result, raw_url, locale) if translate else parse_result
     mid = await _send_first_frame(
         cli,
         guest_query_id,
-        parse_result,
+        display_result,
         config=config,
         locale=locale,
         spoiler_tag=spoiler_tag,
@@ -294,22 +298,25 @@ async def _answer(
         else _NullReporter()
     )
 
+    async def _use_display(_pr: Any) -> Any:
+        return display_result
+
     # ⑤ 下载/处理: 解析结果传进流水线 (不重复解析), 首帧之后由 reporter 一路编辑
-    with ParsePipeline(url, raw_url, reporter, parse_result=parse_result, singleflight=False, t=_t) as pipeline:
+    with ParsePipeline(
+        url,
+        raw_url,
+        reporter,
+        parse_result=parse_result,
+        singleflight=False,
+        prepare_display=_use_display if translate else None,
+        t=_t,
+    ) as pipeline:
         result = await pipeline.run()
         if result is None:
             logger.warning(f"guest 解析失败: url={url}")
             return None
 
-        parse_result = result.parse_result
-
-        # ``#t``: 在发送前把正文换成平台译文（作者/计数/媒体/页脚不动）。
-        # 失败保持原文 —— 开关不该让 guest 消息发不出去。
-        if translate:
-            try:
-                await apply_translation(parse_result, url, locale)
-            except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住发送
-                logger.warning(f"guest #t 翻译失败, 用原文: url={url} err={e}")
+        parse_result = result.display_result or result.parse_result
 
         media_refs = to_list(parse_result.media)
         video_thumbs = (

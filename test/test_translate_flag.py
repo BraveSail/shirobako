@@ -585,6 +585,15 @@ class TestQuotePreservationAndTranslation:
                 raise TranslationUnavailable("none")
 
         monkeypatch.setattr(tr_mod, "_build_twitter_client", lambda: _FakeClient())
+        # 隔离 Redis，避免单测读写本机共享 Redis
+        async def _no_cache(_k: str):
+            return None
+
+        async def _no_set(_k: str, _v: str, _ttl: int):
+            return True
+
+        monkeypatch.setattr(tr_mod, "get_optional", _no_cache)
+        monkeypatch.setattr(tr_mod, "set_with_ttl", _no_set)
 
         class _R:
             content = (
@@ -603,6 +612,162 @@ class TestQuotePreservationAndTranslation:
         assert "主帖译文" in r.content
         assert "> <i>引用译文</i>" in r.content
         assert 'href="https://x.com/q"' in r.content
+
+    def test_translation_cache_hits_avoid_second_api_call(self, monkeypatch) -> None:
+        """同一条推文第二次 ``#t`` 命中译文缓存，不再请求 X 接口。"""
+        import asyncio
+        from plugins import translate as tr_mod
+
+        store: dict[str, str] = {}
+        api_calls: list[str] = []
+
+        async def _get(k: str) -> str | None:
+            return store.get(k)
+
+        async def _set(k: str, v: str, _ttl: int) -> bool:
+            store[k] = v
+            return True
+
+        class _FakeClient:
+            async def translate_tweet(self, tweet_id: str, dst_lang: str):
+                api_calls.append(tweet_id)
+                return f"译文-{tweet_id}", {}
+
+        monkeypatch.setattr(tr_mod, "get_optional", _get)
+        monkeypatch.setattr(tr_mod, "set_with_ttl", _set)
+        monkeypatch.setattr(tr_mod, "_build_twitter_client", lambda: _FakeClient())
+
+        class _R:
+            def __init__(self) -> None:
+                self.content = "orig"
+
+        r1, r2 = _R(), _R()
+        assert asyncio.run(tr_mod.apply_translation(r1, "https://x.com/u/status/999", "zh-hans")) is True
+        assert asyncio.run(tr_mod.apply_translation(r2, "https://x.com/u/status/999", "zh-hans")) is True
+        assert r1.content == "译文-999"
+        assert r2.content == "译文-999"
+        assert api_calls == ["999"]
+
+    def test_translate_cache_entry_reuses_media_without_mutating_original(self, monkeypatch) -> None:
+        """``#t`` 命中 file_id 缓存时克隆并翻译正文与引用，原缓存条目保持原文、媒体 file_id 原样保留。"""
+        import asyncio
+        from plugins import translate as tr_mod
+        from services.cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult
+
+        async def _no_cache(_k: str):
+            return None
+
+        async def _no_set(_k: str, _v: str, _ttl: int):
+            return True
+
+        class _FakeClient:
+            async def translate_tweet(self, tweet_id: str, dst_lang: str):
+                return ("主帖译文" if tweet_id == "100" else "引用译文"), {}
+
+        monkeypatch.setattr(tr_mod, "get_optional", _no_cache)
+        monkeypatch.setattr(tr_mod, "set_with_ttl", _no_set)
+        monkeypatch.setattr(tr_mod, "_build_twitter_client", lambda: _FakeClient())
+
+        orig_entry = CacheEntry(
+            parse_result=CacheParseResult(
+                content=(
+                    "원문\n\n"
+                    '> <i><a href="https://x.com/q">Q</a> <code>@q</code></i>\n'
+                    "> <i>인용 원문</i>"
+                ),
+                quote_roles=["quoted"],
+                quote_ids={"quoted": "200"},
+                quoted_media_count=1,
+            ),
+            media=[
+                CacheMedia(type=CacheMediaType.PHOTO, file_id="fid_main"),
+                CacheMedia(type=CacheMediaType.PHOTO, file_id="fid_quote"),
+            ],
+            rich=True,
+        )
+
+        translated = asyncio.run(tr_mod.translate_cache_entry(orig_entry, "https://x.com/u/status/100", "zh-hans"))
+        assert translated is not orig_entry
+        assert "主帖译文" in translated.parse_result.content
+        assert "> <i>引用译文</i>" in translated.parse_result.content
+        assert [m.file_id for m in translated.media or []] == ["fid_main", "fid_quote"]
+        # 原缓存条目未被污染
+        assert "원문" in orig_entry.parse_result.content
+        assert "主帖译文" not in orig_entry.parse_result.content
+
+    def test_pipeline_reports_translated_display_result_during_download_and_process(self, tmp_path) -> None:
+        """下载中 / 处理中进度编辑必须全程展示译文，不能从译文闪回原文。"""
+        import asyncio
+        from parsehub.types import DownloadResult, ImageFile, ImageRef, MultimediaParseResult
+        from plugins.translate import set_body
+        from services.pipeline import ParsePipeline
+
+        reported_contents: list[tuple[str, str]] = []
+
+        class _FakeReporter:
+            async def report(self, text: str) -> None:
+                pass
+
+            async def report_progress(self, text: str) -> None:
+                pass
+
+            async def report_result(self, parse_result, text: str) -> None:
+                reported_contents.append((text, parse_result.content))
+
+            async def report_error(self, stage: str, error: Exception) -> None:
+                raise error
+
+            async def dismiss(self) -> None:
+                pass
+
+        img_path = tmp_path / "a.jpg"
+        img_path.write_bytes(b"fake")
+
+        class _FakeResult(MultimediaParseResult):
+            async def download(self, *_a, **_kw):
+                return DownloadResult(
+                    parse_result=self,
+                    media=[ImageFile(path=str(img_path))],
+                    output_dir=tmp_path,
+                )
+
+        orig = _FakeResult(content="원문 본문", media=[ImageRef(url="https://example.com/a.jpg")])
+
+        async def _prepare(pr):
+            import copy
+
+            cloned = copy.copy(pr)
+            set_body(cloned, "译文正文")
+            return cloned
+
+        class _FakeT:
+            locale = "zh-hans"
+
+            def __call__(self, s: str) -> str:
+                return s
+
+        async def _run():
+            with ParsePipeline(
+                "https://x.com/u/status/100",
+                "https://x.com/u/status/100",
+                _FakeReporter(),
+                parse_result=orig,
+                singleflight=False,
+                skip_media_processing=True,
+                prepare_display=_prepare,
+                t=_FakeT(),
+            ) as p:
+                return await p.run()
+
+        res = asyncio.run(_run())
+        assert res is not None
+        # 下载中与处理中两帧全都是译文，绝不出现原文
+        assert len(reported_contents) == 2
+        assert all(content == "译文正文" for _, content in reported_contents)
+        # 原始 parse_result 仍保持原文，供写缓存使用
+        assert res.parse_result.content == "원문 본문"
+        assert res.display_result is not None
+        assert res.display_result.content == "译文正文"
 
     def test_link_hashtags_does_not_double_link_markdown_links(self) -> None:
         from parsehub.types import Platform

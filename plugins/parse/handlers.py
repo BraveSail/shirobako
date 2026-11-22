@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import re
 from dataclasses import replace
 from typing import Any
@@ -25,7 +24,7 @@ from plugins.filters import (
 from plugins.helpers import build_caption, format_label
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
-from plugins.translate import apply_translation
+from plugins.translate import translate_cache_entry, translate_for_display
 from plugins.parse.sender import (
     MessageSender,
     build_gif_button,
@@ -225,6 +224,8 @@ async def _try_send_cached(
     用户**什么都收不到**(只留一条日志)。清掉记录后正常流程会重新下载并重建缓存。
     """
     try:
+        if req.translate:
+            cached = await translate_cache_entry(cached, raw_url, req.t_.locale)
         await send_cached(
             sender,
             cached,
@@ -284,6 +285,9 @@ async def handle_parse(req: ParseRequest) -> bool:
         # 缓存失效: 已清掉那条记录, 继续往下走正常解析 (重新下载并重建缓存)
 
     cached_parse_result = None if req.bypass_cache else await parse_cache.get(raw_url)
+    prepare_display = (
+        (lambda pr: translate_for_display(pr, raw_url, req.t_.locale)) if req.translate else None
+    )
     with ParsePipeline(
         req.url,
         raw_url,
@@ -293,6 +297,7 @@ async def handle_parse(req: ParseRequest) -> bool:
         skip_media_processing=options.skip_media_processing,
         gif_only_skip_download_count_threshold=options.gif_only_skip_download_count_threshold,
         save_metadata=options.save_metadata,
+        prepare_display=prepare_display,
         t=req.t_,
     ) as pipeline:
         if (result := await pipeline.run()) is None:
@@ -308,24 +313,11 @@ async def handle_parse(req: ParseRequest) -> bool:
                 logger.debug("Pipeline 返回 None, 跳过后续处理")
             return False
 
-        parse_result = result.parse_result
-        await parse_cache.set(raw_url, parse_result)
-
-        # ``#t``: 把正文换成**平台自己的译文**。
-        #
-        # 位置很关键：必须在 pipeline **之后**（媒体已下载好，processed_list 在手上）
-        # 且**发送之前**。只改写正文字段 —— ``send_rich_media`` 通过 ``rich_content()``
-        # 读正文，作者行/时间/计数/媒体/页脚/折叠仍由构建器统一生成，
-        # 所以 ``#t`` 与普通解析同形，只是正文语言不同。
-        orig_parse_result = parse_result
-        if req.translate:
-            # 浅拷贝后再替换正文，避免把译文写进 persistent_cache 污染后续非 #t 请求
-            parse_result = copy.copy(parse_result)
-            try:
-                changed = await apply_translation(parse_result, raw_url, req.t_.locale)
-                logger.info(f"#t 翻译结果: changed={changed}, url={raw_url}")
-            except Exception as e:  # noqa: BLE001 - 翻译失败不能让整条消息发不出去
-                logger.warning(f"#t 翻译失败, 照常发原文: url={raw_url} err={e}")
+        orig_parse_result = result.parse_result
+        await parse_cache.set(raw_url, orig_parse_result)
+        # ``#t`` 已在 ParsePipeline 的 prepare_display 阶段完成翻译（原对象 orig_parse_result
+        # 留给 persistent_cache 写原文，下载/处理/上传全程展示译文不闪回原文）。
+        parse_result = result.display_result or orig_parse_result
         if isinstance(parse_result, RichTextParseResult):
             # 长文与普通结果同一条路径: 正文取 markdown_content, 排版交给富文本
             await sender.typing()

@@ -51,7 +51,9 @@ https://x.com/user/status/123 #翻译
 from __future__ import annotations
 
 import asyncio
+import copy
 import re
+from typing import TypeVar
 from urllib.parse import quote
 
 from parsehub.errors import TranslationUnavailable
@@ -61,8 +63,14 @@ from parsehub.utils.helpers import SecretCookie, _quote_line
 from core import pl_cfg
 from log import logger
 from plugins.helpers import split_quote_blocks
+from services.redis_client import cache_key, get_optional, set_with_ttl
 
 logger = logger.bind(name="Translate")
+
+#: 译文缓存 TTL（7 天）—— 推文内容与译文稳定，缓存后重复 ``#t`` 请求零外部 API 往返
+_TRANSLATE_CACHE_TTL = 7 * 24 * 60 * 60
+
+_T = TypeVar("_T")
 
 #: 我们的界面语言 → X 的 ``dstLang``。
 #:
@@ -179,7 +187,11 @@ def _build_twitter_client() -> Twitter:
 
 
 async def _translate_id_markdown(client: Twitter, tweet_id: str, dst_lang: str) -> str | None:
-    """用既有 Twitter 客户端翻译单条推文 id；不可用或失败返回 ``None``。"""
+    """用既有 Twitter 客户端翻译单条推文 id（优先读 Redis 译文缓存）；不可用或失败返回 ``None``。"""
+    key = cache_key("translate", tweet_id, dst_lang)
+    if cached := await get_optional(key):
+        logger.debug(f"#t 译文缓存命中: tweet_id={tweet_id} lang={dst_lang}")
+        return cached
     try:
         translated, entities = await client.translate_tweet(tweet_id, dst_lang)
     except TranslationUnavailable as e:
@@ -188,7 +200,10 @@ async def _translate_id_markdown(client: Twitter, tweet_id: str, dst_lang: str) 
     except Exception as e:  # noqa: BLE001 - 翻译失败不能把整条解析弄挂
         logger.exception(f"#t 翻译异常: tweet_id={tweet_id} err={e}")
         return None
-    return to_markdown(translated, entities)
+    md = to_markdown(translated, entities)
+    if md:
+        await set_with_ttl(key, md, _TRANSLATE_CACHE_TTL)
+    return md
 
 
 async def translate_tweet_markdown(url: str, lang: str) -> str | None:
@@ -380,3 +395,27 @@ async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
         quoted_markdown=quoted_md,
     )
     return True
+
+
+async def translate_for_display(parse_result: _T, url: str, lang: str) -> _T:
+    """浅拷贝 ``parse_result`` 并就地翻译正文/引用，原对象不动（用于进度展示与发送）。"""
+    cloned = copy.copy(parse_result)
+    try:
+        changed = await apply_translation(cloned, url, lang)
+        logger.info(f"#t 翻译结果: changed={changed}, url={url}")
+    except Exception as e:  # noqa: BLE001 - 翻译失败不能阻断解析与发送
+        logger.warning(f"#t 翻译失败, 照常发原文: url={url} err={e}")
+        return parse_result
+    return cloned if changed else parse_result
+
+
+async def translate_cache_entry(entry: _T, url: str, lang: str) -> _T:
+    """克隆持久化缓存条目并翻译其 ``parse_result``（复用已上传的 file_id，零下载/零上传）。"""
+    pr = entry.parse_result.model_copy(deep=True)  # type: ignore[attr-defined]
+    try:
+        changed = await apply_translation(pr, url, lang)
+        logger.info(f"#t 缓存命中翻译: changed={changed}, url={url}")
+    except Exception as e:  # noqa: BLE001 - 翻译失败不能让缓存直发失败
+        logger.warning(f"#t 缓存命中翻译失败, 照常发原文: url={url} err={e}")
+        return entry
+    return entry.model_copy(update={"parse_result": pr}) if changed else entry  # type: ignore[attr-defined]

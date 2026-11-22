@@ -1,4 +1,3 @@
-import copy
 import re
 
 from easy_ai18n import PreLocaleSelector
@@ -31,7 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.translate import apply_translation
+from plugins.translate import apply_translation, translate_cache_entry, translate_for_display
 from plugins.filters import platform_filter
 from plugins.helpers import (
     build_rich_markdown,
@@ -278,15 +277,15 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     raw_url = await ParseService().get_raw_url(query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
-        # **``#t`` 不能在这里 return** —— 缓存存的是**原文**形态，直接用它就
-        # 等于忽略了这个开关（实测：预览出来还是原文，用户报「没用啊」）。
-        # 带 ``#t`` 时往下走，拿解析结果重新构建，多花一次解析换功能正确。
-        if not translate:
-            # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
-            # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
-            results = [build_cached_rich_result(cached, raw_url, lang, config, spoiler_tag=spoiler_tag)]
-            await answer_inline(inline_query, results, lang=lang, cache_time=60)
-            return
+        # 带 ``#t`` 时在内存克隆条目并套用译文（译文本身走 Redis 缓存），
+        # 直接复用已上传的 file_id，跳过二次下载和上传。
+        if translate:
+            cached = await translate_cache_entry(cached, raw_url, lang)
+        # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
+        # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
+        results = [build_cached_rich_result(cached, raw_url, lang, config, spoiler_tag=spoiler_tag)]
+        await answer_inline(inline_query, results, lang=lang, cache_time=60)
+        return
 
     parse_result = await parse_cache.get(raw_url)
     if parse_result is None:
@@ -434,18 +433,23 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         spoiler_tag=spoiler_tag,
     )
 
-    with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
+    prepare_display = (lambda pr: translate_for_display(pr, raw_url, lang)) if translate else None
+    with ParsePipeline(
+        query,
+        raw_url,
+        reporter,
+        parse_result=cached_result,
+        singleflight=False,
+        prepare_display=prepare_display,
+        t=_t,
+    ) as pipeline:
         if (result := await pipeline.run()) is None:
             return
 
         orig_parse_result = result.parse_result
-        parse_result = copy.copy(orig_parse_result) if translate else orig_parse_result
-        # ``#t``: 在**发送前**换正文（缓存里存 orig_parse_result 原文，不被译文污染）
-        if translate:
-            try:
-                await apply_translation(parse_result, raw_url, lang)
-            except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住发送
-                logger.warning(f"inline #t 翻译失败, 用原文: url={raw_url} err={e}")
+        # ``#t`` 已在 ParsePipeline 的 prepare_display 阶段完成翻译（命中译文缓存，
+        # 下载/处理/上传全程保持译文，不会闪回原语言；缓存写 orig_parse_result 原文）。
+        parse_result = result.display_result or orig_parse_result
         await reporter.report_result(parse_result, _t("上 传 中..."))
         try:
             media_refs = to_list(parse_result.media)
