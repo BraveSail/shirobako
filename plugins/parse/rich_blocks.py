@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 
 #: 表格行判据与渲染层同源（``plugins.helpers._TABLE_ROW_RE``）——
 #: 正文表格、引用块内表格、preserve_linebreaks 的跳过逻辑共用同一个定义。
-from plugins.helpers import _TABLE_ROW_RE
+from plugins.helpers import _LIST_CHECKBOX_RE, _LIST_ITEM_RE, _TABLE_ROW_RE, _markdown_list_items
 
 logger = __import__("loguru").logger.bind(name="RichBlocks")
 
@@ -204,6 +204,7 @@ def parse_inline(text: str) -> str | list:
 _MEDIA_PLACEHOLDER_RE = re.compile(r"^!\[\]\(tg://(?:photo|video)\?id=([\w-]+)\)$")
 
 _TABLE_SEPARATOR_CELL_RE = re.compile(r":?-{2,}:?")
+_DETAILS_TAG_RE = re.compile(r"</?details>")
 
 
 def _table_block(rows: list[str]) -> InputRichBlockTable | None:
@@ -325,7 +326,43 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
     return children
 
 
-def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock] | None = None) -> list[InputRichBlock]:
+def _list_block(
+    lines: list[str], start: int, first: re.Match[str], media_blocks: dict[str, InputRichBlock]
+) -> tuple[InputRichBlockList, int]:
+    """Read siblings at one indentation; give each item's children to the block parser."""
+    marker = first[2][-1]
+    ranges, end = _markdown_list_items(lines, start, first)
+    items: list[InputRichBlockListItem] = []
+    for item_start, content_end, match in ranges:
+        content_indent = len(match[0].expandtabs(4))
+        text = lines[item_start][match.end():].rstrip()
+        checked = None
+        if checkbox := _LIST_CHECKBOX_RE.match(text):
+            checked = checkbox[1].lower() == "x"
+            text = text[checkbox.end():]
+        item_lines = [text]
+        for line in lines[item_start + 1:content_end]:
+            body = line.lstrip(" \t")
+            leading = line[:len(line) - len(body)].expandtabs(4)
+            item_lines.append(leading[content_indent:] + body)
+        # The converter emits nested lists on a new, indented line. A number
+        # at the start of this item's own text is not a second list marker.
+        children = markdown_to_blocks("\n".join(item_lines), media_blocks=media_blocks, _allow_first_list=False)
+        items.append(
+            InputRichBlockListItem(
+                children or [InputRichBlockParagraph("")],
+                has_checkbox=True if checked is not None else None,
+                is_checked=checked,
+                value=int(match[2][:-1]) if marker == "." else None,
+                type="1" if marker == "." else None,
+            )
+        )
+    return InputRichBlockList(items), end
+
+
+def markdown_to_blocks(
+    markdown: str, *, media_blocks: dict[str, InputRichBlock] | None = None, _allow_first_list: bool = True
+) -> list[InputRichBlock]:
     """把富文本 markdown 转成 blocks 列表。
 
     只覆盖我们自己生成的语法: 标题 / 段落 / 引用 / 列表 / 代码块 / 分隔线 / 页脚 / 媒体占位。
@@ -384,26 +421,24 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
         if stripped.startswith("<details>"):
             flush_paragraph(paragraph)
             chunk: list[str] = []
-            rest = stripped[len("<details>"):]
-            same_line = re.fullmatch(r"(.*)</details>\s*", rest, re.S)
-            if same_line and "<details>" not in same_line.group(1):
-                # 整个折叠块在同一行（``<details><summary>…</summary>x</details>``）
-                chunk.append(same_line.group(1))
-                i += 1
-            else:
-                depth = 1 + rest.count("<details>") - rest.count("</details>")
-                chunk.append(rest)
-                i += 1
-                while i < len(lines) and depth > 0:
-                    line = lines[i]
-                    if depth == 1 and "</details>" in line:
-                        chunk.append(line.split("</details>", 1)[0])
-                        i += 1
-                        depth = 0
+            depth = 1
+            fragment = line.lstrip()[len("<details>"):]
+            while i < len(lines):
+                for tag in _DETAILS_TAG_RE.finditer(fragment):
+                    depth += 1 if tag[0] == "<details>" else -1
+                    if depth == 0:
+                        chunk.append(fragment[:tag.start()])
+                        # Keep the tail on this line as outer content.
+                        lines[i] = fragment[tag.end():]
+                        if not lines[i].strip():
+                            i += 1
                         break
-                    chunk.append(line)
-                    depth += line.count("<details>") - line.count("</details>")
-                    i += 1
+                if depth == 0:
+                    break
+                chunk.append(fragment)
+                i += 1
+                if i < len(lines):
+                    fragment = lines[i]
             inner_raw = "\n".join(chunk)
             sm = re.search(r"<summary>(.*?)</summary>", inner_raw, re.S)
             summary = sm.group(1).strip() if sm else ""
@@ -542,25 +577,10 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             blocks.append(InputRichBlockBlockQuotation(_quote_children(quoted, media_blocks)))
             continue
 
-        # 列表 (连续 - / * / 数字项合并成一个 list)
-        if re.match(r"^\s*(?:[-*+]|\d+\.)\s+", line):
+        if (i or _allow_first_list) and (item := _LIST_ITEM_RE.match(line)):
             flush_paragraph(paragraph)
-            items: list[InputRichBlockListItem] = []
-            while i < len(lines) and re.match(r"^\s*(?:[-*+]|\d+\.)\s+", lines[i]):
-                item_text = re.sub(r"^\s*(?:[-*+]|\d+\.)\s+", "", lines[i])
-                checked: bool | None = None
-                if cm := re.match(r"^\[([ xX])\]\s*(.*)$", item_text):
-                    checked = cm.group(1).lower() == "x"
-                    item_text = cm.group(2)
-                items.append(
-                    InputRichBlockListItem(
-                        [InputRichBlockParagraph(parse_inline(item_text))],
-                        has_checkbox=True if checked is not None else None,
-                        is_checked=checked,
-                    )
-                )
-                i += 1
-            blocks.append(InputRichBlockList(items))
+            block, i = _list_block(lines, i, item, media_blocks)
+            blocks.append(block)
             continue
 
         paragraph.append(line)

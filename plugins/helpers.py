@@ -896,7 +896,13 @@ def build_rich_markdown(
         # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
         # 截断会把长正文变成省略号, 折叠也就轮不上了
         # (手动遮住时不在这里折 —— 整组内容会在下面一起进 details)
-        parts.append(body_text if hide_content else format_text(body_text, fold_summary=fold_summary))
+        parts.append(
+            body_text if hide_content else format_text(
+                body_text,
+                fold_summary=fold_summary,
+                preserve_lists=bool(getattr(parse_result, "markdown_content", "")),
+            )
+        )
     if trailing_details and not config.hide_desc:
         # **推文段/尾部折叠块独立于正文折叠**（用户要求「推文不要放进正文折叠里，分出来」）。
         # 它自己就是一个 <details>，不套 format_text —— 折两次会让用户点开「展开全文」
@@ -1930,7 +1936,7 @@ _FOLD_PREVIEW_LINES = 7
 _FOLD_PREVIEW_CHARS = 300
 
 
-def split_fold_preview(content: str) -> tuple[str, str]:
+def split_fold_preview(content: str, *, preserve_lists: bool = False) -> tuple[str, str]:
     """把内容拆成 (外面可见的预览, 折进 details 的剩余部分)。
 
     预览取开头几行 (行数/字符数任一超限即停); 内容全挤在一行时按字符切,
@@ -1944,15 +1950,22 @@ def split_fold_preview(content: str) -> tuple[str, str]:
         # **只数非空行** (与 _should_fold 同一原则): 空行是段落排版, 不是内容量。
         # 若把空行也算一行, 首行文字后面跟个空行就把配额用完了 ——
         # 折叠态只看到一行, 与「前几行预览」的说法不符。
-        if counted >= _FOLD_PREVIEW_LINES or (counted and chars + len(line) > _FOLD_PREVIEW_CHARS):
+        if counted >= _FOLD_PREVIEW_LINES:
+            break
+        # Long opening prose can be previewed by character; a list item cannot.
+        if chars + len(line) > _FOLD_PREVIEW_CHARS and (counted or (preserve_lists and _LIST_ITEM_RE.match(line))):
             break
         if line.strip():
             counted += 1
         chars += len(line)
         end += 1
 
+    if preserve_lists:
+        end = _list_preview_boundary(lines, end)
     preview = "\n".join(lines[:end]).rstrip()
-    rest = "\n".join(lines[end:]).strip()
+    rest = "\n".join(lines[end:])
+    # Drop blank lines without removing the first list item's indentation.
+    rest = re.sub(r"\A(?:[ \t]*\n)+", "", rest).rstrip() if preserve_lists else rest.strip()
 
     # 表格不能被拆开: 切点落在表格中间时, 把 preview 末尾那组表格行整体挪给 rest
     # —— 拆成两半后两边都不再是表格 (「引用里的投票」在折叠卡片里散架)。
@@ -2026,7 +2039,7 @@ def _normalize_hr(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
-def _fold_whole(content: str, *, summary: str = "") -> str:
+def _fold_whole(content: str, *, summary: str = "", preserve_lists: bool = False) -> str:
     """把内容折一次: **开头几行留外面当预览**, 其余折进 details。
 
     **用 <details> 而不是 <blockquote expandable>**: 后者一旦块内含空行,
@@ -2038,11 +2051,11 @@ def _fold_whole(content: str, *, summary: str = "") -> str:
     就是光秃秃一个「展开全文」(曾一度全收起, 用户报「没有前几行」)。
     预览行数与阈值见 ``split_fold_preview`` / ``_FOLD_PREVIEW_*``。
     """
-    preview, rest = split_fold_preview(content)
+    preview, rest = split_fold_preview(content, preserve_lists=preserve_lists)
     if not rest:
         return content
     folded = f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{rest}\n\n</details>"
-    return f"{preview}\n\n{folded}"
+    return f"{preview}\n\n{folded}" if preview else folded
 
 
 def convert_markdown_quote(
@@ -2076,6 +2089,62 @@ def convert_markdown_quote(
 #: 我们**不能无脑全转** —— 其中 ``* _ ` > [ ] ( )`` 正是本项目自己生成语法用的
 #: （粗体 / 引用 / 代码 / 链接），全转会把标题、引用、链接一起打坏。
 _TG_RESERVED = frozenset("_*[]()~`>#+-=|{}.!")
+
+# Same marker grammar for escaping and native block construction.
+_LIST_ITEM_RE = re.compile(r"^([ \t]*)([-+*]|[0-9]{1,9}\.)([ \t]+)(?=\S)", re.M)
+_LIST_CHECKBOX_PREFIX = r"\[([ xX])\](?:[ \t]+|$)"
+_LIST_CHECKBOX_RE = re.compile("^" + _LIST_CHECKBOX_PREFIX)
+_TG_LIST_PREFIX_RE = re.compile(_LIST_ITEM_RE.pattern + f"(?:{_LIST_CHECKBOX_PREFIX})?", re.M)
+
+
+def _markdown_list_items(
+    lines: list[str], start: int, first: re.Match[str]
+) -> tuple[list[tuple[int, int, re.Match[str]]], int]:
+    """Return the list's (item start, content end, marker) ranges and its end line."""
+    indent = len(first[1].expandtabs(4))
+    marker = first[2][-1]
+    items = []
+    i = start
+    while i < len(lines) and (match := _LIST_ITEM_RE.match(lines[i])):
+        if len(match[1].expandtabs(4)) != indent or match[2][-1] != marker:
+            break
+        item_start = i
+        content_indent = len(match[0].expandtabs(4))
+        i += 1
+        after_blanks = i
+        while after_blanks < len(lines):
+            line = lines[after_blanks]
+            if not line.strip():
+                after_blanks += 1
+                continue
+            leading = line[:len(line) - len(line.lstrip(" \t"))]
+            if len(leading.expandtabs(4)) < content_indent:
+                break
+            i = after_blanks = after_blanks + 1
+        items.append((item_start, i, match))
+        sibling = _LIST_ITEM_RE.match(lines[after_blanks]) if after_blanks < len(lines) else None
+        if sibling is None or len(sibling[1].expandtabs(4)) != indent or sibling[2][-1] != marker:
+            break
+        i = after_blanks
+    return items, i
+
+
+def _list_preview_boundary(lines: list[str], end: int) -> int:
+    """If the preview ends inside a list, keep that whole list in the body."""
+    i = 0
+    fenced = False
+    while i < end:
+        if lines[i].lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced and (match := _LIST_ITEM_RE.match(lines[i])):
+            _, next_line = _markdown_list_items(lines, i, match)
+            if end < next_line:
+                return i
+            i = next_line
+            continue
+        i += 1
+    return end
+
 
 #: 需要**原样保留**的语法块（我们生成的，不转义）。
 #: 顺序有意义：先保护 HTML 标签 / 代码块 / 占位符，再保护行内语法。
@@ -2111,7 +2180,7 @@ _TG_PROTECT_PATTERNS = (
 )
 
 
-def escape_telegram_markdown(text: str) -> str:
+def escape_telegram_markdown(text: str, *, preserve_lists: bool = False) -> str:
     """把**平台原文**里的 Telegram 保留字符转义，但不破坏我们自己生成的语法。
 
     背景（2026-10-22）：X 的一条动画预告正文就是 ``||◤ 先行カット＆あらすじ公開 ◢||``，
@@ -2140,6 +2209,9 @@ def escape_telegram_markdown(text: str) -> str:
     masked = text
     for pattern in _TG_PROTECT_PATTERNS:
         masked = pattern.sub(_stash, masked)
+    if preserve_lists:
+        # Protect only syntax, not item text. Run after masking fenced code and links.
+        masked = _TG_LIST_PREFIX_RE.sub(_stash, masked)
 
     escaped = "".join(f"\\{ch}" if ch in _TG_RESERVED else ch for ch in masked)
 
@@ -2158,6 +2230,7 @@ def format_text(
     allow_expandable: bool = True,
     max_length: int | None = None,
     fold_summary: str = "",
+    preserve_lists: bool = False,
 ) -> str:
     """格式化输出内容, 按需限制长度, 添加折叠块样式。
 
@@ -2181,7 +2254,7 @@ def format_text(
     # ``||◤ 先行カット＆あらすじ公開 ◢||``，整行被打码，用户报「为什么识别打码」
     # （``possibly_sensitive`` 其实是 False）。统一走 escape_telegram_markdown：
     # 保护我们自己生成的语法块，其余按官方保留字符清单转义。
-    text = escape_telegram_markdown(text)
+    text = escape_telegram_markdown(text, preserve_lists=preserve_lists)
     if max_length is not None and len(text) > max_length:
         text = text[: max_length - 100] + "......"
 
@@ -2189,7 +2262,7 @@ def format_text(
         # 该通道不支持引用块: 剥掉前缀后按普通文本处理
         text = _QUOTE_BLOCK_RE.sub(_strip_quote_prefix, text)
         if allow_expandable and _should_fold(text):
-            return _fold_whole(text, summary=fold_summary)
+            return _fold_whole(text, summary=fold_summary, preserve_lists=preserve_lists)
         return text
 
     # 先按"引用块不折叠"把引用块转换好, 再拿**整篇**判断是否要折。
@@ -2197,7 +2270,7 @@ def format_text(
     # 整篇折叠是唯一的折叠点 (也就不会有嵌套折叠)。
     converted = convert_markdown_quote(text, allow_expandable=False, fold_summary=fold_summary)
     if allow_expandable and _should_fold(converted):
-        return _fold_whole(converted, summary=fold_summary)
+        return _fold_whole(converted, summary=fold_summary, preserve_lists=preserve_lists)
     return converted
 
 
