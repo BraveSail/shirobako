@@ -728,7 +728,6 @@ class TestQuotePreservationAndTranslation:
         class _FakeResult(MultimediaParseResult):
             async def download(self, *_a, **_kw):
                 return DownloadResult(
-                    parse_result=self,
                     media=[ImageFile(path=str(img_path))],
                     output_dir=tmp_path,
                 )
