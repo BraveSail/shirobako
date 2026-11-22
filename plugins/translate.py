@@ -105,6 +105,19 @@ _POLL_LINE_RE = re.compile(r"^\{\{poll:\d+\}\}$")
 _QUOTE_STRUCT_LINE_RE = re.compile(r"^>\s*(?:\{\{(?:poll|media):\d+\}\}|>.*)$")
 
 
+def _is_formatted_quote_block(block: str) -> bool:
+    """是否为解析器通过 ``format_quote_block`` 产出的引用/回复块（首行 ``> <i>``）。"""
+    first = next((ln.lstrip() for ln in block.splitlines() if ln.strip()), "")
+    return first.startswith("> <i>")
+
+
+def _is_trending_card(block: str) -> bool:
+    """是否为 ``TwitterParser._trending_block`` 产出的话题卡片引用块。"""
+    if not block:
+        return False
+    return "/i/trending/" in block or "> [查看原話題](" in block or "> {{media:" in block
+
+
 def x_lang_for(locale: str) -> str:
     """把项目 locale 转成 X 的 ``dstLang``。未知语言退到 ``en``。"""
     return _LANG_TO_X.get((locale or "").lower(), "en")
@@ -284,8 +297,8 @@ def _extract_middle_tail_extras(middle: str) -> list[str]:
         last = blocks[-1].strip()
         last_lines = [ln.strip() for ln in last.splitlines() if ln.strip()]
         is_poll = len(last_lines) == 1 and bool(_POLL_LINE_RE.match(last_lines[0]))
-        is_quote_card = bool(last_lines) and all(ln.startswith(">") for ln in last_lines)
-        if is_poll or is_quote_card:
+        is_trending = bool(last_lines) and all(ln.startswith(">") for ln in last_lines) and _is_trending_card(last)
+        if is_poll or is_trending:
             extras.append(blocks.pop())
         else:
             break
@@ -322,6 +335,20 @@ def set_body(
     existing = _existing_body(parse_result)
     head, middle, tail = split_quote_blocks(existing) if existing else ("", "", "")
     quote_roles = [str(r) for r in (getattr(parse_result, "quote_roles", None) or []) if r]
+
+    # 区分「解析器生成的回复/引用/话题卡片」与「作者在正文里自己写的 `> ` 段落」：
+    # 作者自写的 `> ` 属于正文的一部分，不能被当成外部引用块原样拼回译文末尾。
+    if head and not ("reply" in quote_roles or (not quote_roles and _is_formatted_quote_block(head))):
+        middle = f"{head}\n\n{middle}".strip() if middle else head
+        head = ""
+    if tail and not (
+        "quoted" in quote_roles
+        or (not head and quote_roles == ["reply"])
+        or _is_trending_card(tail)
+        or (not quote_roles and _is_formatted_quote_block(tail))
+    ):
+        middle = f"{middle}\n\n{tail}".strip() if middle else tail
+        tail = ""
 
     # 把 reply / quoted 译文准确映射到 head / tail：
     # 当只有 1 个引用块且主帖正文为空时，split_quote_blocks 会把唯一块放进 tail，

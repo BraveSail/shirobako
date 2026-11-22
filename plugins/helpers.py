@@ -802,6 +802,17 @@ def build_rich_markdown(
     parts: list[str] = []
     # 被回复的卡片在正文前、被引用的卡片在正文后, 各自的媒体留在自己的块里
     reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
+    declared_roles = [r for r in (getattr(parse_result, "quote_roles", None) or []) if r]
+    # 没声明引用角色、也没给引用媒体时，只有「解析器生成的斜体引用/话题卡片」才拆成独立卡片；
+    # 作者在正文里自己用 `> ` 写的要点列表（无 `> <i>` 且非话题卡片）必须留在正文里，
+    # 否则最后一段会被单独扯到图片下面。
+    if not declared_roles:
+        if reply_quote and not reply_media_placeholders and not _is_parser_quote_card(reply_quote):
+            body_text = f"{reply_quote}\n\n{body_text}".strip() if body_text else reply_quote
+            reply_quote = ""
+        if quote and not quote_media_placeholders and not _is_parser_quote_card(quote):
+            body_text = f"{body_text}\n\n{quote}".strip() if body_text else quote
+            quote = ""
     # 末尾的 <details> 块 (PTT 的推文段) 拆出来, **不参与正文折叠** ——
     # 用户要求「推文不要放进正文折叠里，分出来」: 正文该折就折, 推文段自己折自己,
     # 两者平级。否则展开「展开全文」后看到的还是又一个要点的「推文（N 條）」。
@@ -816,7 +827,6 @@ def build_rich_markdown(
     # 引用块的**角色**决定它拿哪一段媒体。角色由平台显式声明（``quote_roles``，
     # 按引用块出现顺序，取值为两个媒体通道名 ``reply`` / ``quoted``）——
     # **位置不参与判断**。没声明时（老缓存 / 未改的平台）走下面那段位置推断。
-    declared_roles = [r for r in (getattr(parse_result, "quote_roles", None) or []) if r]
     declared_tail: list[str] = []
     """声明角色时，"正文之后"那一侧的引用卡片（末尾统一追加）"""
     reply_media = list(reply_media_placeholders)
@@ -1380,6 +1390,26 @@ def preserve_linebreaks(text: str) -> str:
         is_table_row = bool(_TABLE_ROW_RE.match(line.strip()))
         out.append(line.rstrip() + "  " if line.strip() and followed_by_text and not is_table_row else line)
     return "\n".join(out)
+
+
+def _is_parser_quote_card(block: str) -> bool:
+    """判断一块 ``> ...`` 是解析器产出的引用/回复/话题卡片，还是作者正文自写的 ``> `` 段落。
+
+    - 解析器统一经 ``format_quote_block`` 产出 ``> <i>...</i>``（斜体引用块）；
+    - Twitter trending 话题卡片含 ``/i/trending/``、``> [查看原話題](`` 或块内媒体占位符。
+    作者在正文里用 ``> `` 写要点列表时两者都不具备，不该被拆到图片下面。
+    """
+    if not block:
+        return False
+    first = next((ln.lstrip() for ln in block.splitlines() if ln.strip()), "")
+    if first.startswith("> <i>"):
+        return True
+    return (
+        "/i/trending/" in block
+        or "> [查看原話題](" in block
+        or "> ![](tg://" in block
+        or "> {{media:" in block
+    )
 
 
 def split_quote_blocks(content: str) -> tuple[str, str, str]:

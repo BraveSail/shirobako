@@ -770,6 +770,46 @@ class TestQuotePreservationAndTranslation:
         assert res.display_result is not None
         assert res.display_result.content == "译文正文"
 
+    def test_author_greentext_paragraphs_are_fully_replaced_and_stay_above_media(self) -> None:
+        """作者正文里自写的 ``> `` 列表段落（无 quote_roles、非斜体引用卡）：
+
+        1. ``set_body`` 必须整段替换成译文，绝不能把原文的 ``> `` 段落残留在译文后面；
+        2. ``build_rich_markdown`` 必须把所有 ``> `` 段落留在图片上方，不能把最后一段单独扯到图片下面。
+        """
+        from parsehub.types import MultimediaParseResult, Platform
+        from plugins.helpers import build_rich_markdown
+        from plugins.translate import set_body
+        from repo.settings import SettingsConfig
+
+        orig = (
+            "Rockstar intro:\n\n"
+            "> Paragraph one in Russian\n\n"
+            "> Paragraph two in Russian\n\n"
+            "> Paragraph three in Russian"
+        )
+        translated = (
+            "Rockstar 开场：\n\n"
+            "> 中文第一段\n\n"
+            "> 中文第二段\n\n"
+            "> 中文第三段"
+        )
+
+        r = MultimediaParseResult(content=orig, quote_roles=[])
+        r.platform = Platform.TWITTER
+        r.raw_url = "https://x.com/ogivus/status/2124448710637547789"
+        set_body(r, translated)
+
+        assert r.content == translated
+        assert "Russian" not in r.content
+
+        md = build_rich_markdown(
+            r,
+            config=SettingsConfig(),
+            lang="zh-hans",
+            media_placeholders=["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"],
+        )
+        assert md.index("中文第三段") < md.index("tg://photo?id=m0")
+
     def test_link_hashtags_does_not_double_link_markdown_links(self) -> None:
         from parsehub.types import Platform
         from plugins.helpers import link_hashtags
