@@ -720,8 +720,10 @@ class TestQuotePreservationAndTranslation:
             async def dismiss(self) -> None:
                 pass
 
+        from PIL import Image
+
         img_path = tmp_path / "a.jpg"
-        img_path.write_bytes(b"fake")
+        Image.new("RGB", (2, 2)).save(img_path)
 
         class _FakeResult(MultimediaParseResult):
             async def download(self, *_a, **_kw):
