@@ -17,3 +17,11 @@ For `/p/` links, use the anonymous bootstrap GET on the permalink instead of the
 ## Phase 3 — Verify and publish
 
 The project CLI parsed the original link in an isolated container based on the production image using one post-page GET and no GraphQL request. The download decoded as a single 1440 × 1920 WebP (91,524 bytes). All 20 new tests pass. Library: 1,236 passed, one skipped. Bot: 911 passed with the same 14 failures as the unchanged baseline. Syntax, Ruff, and pylint error checks passed. Deployment is separate from publication.
+
+## Phase 4 — Deploy
+
+On request, built and deployed the signed revision `bb204fc` from tracked files. Verified the changed source hashes and the SABR imports before switching. The previous image remains available for rollback. The bot started and its process established a Telegram connection.
+
+## Phase 5 — Verify production
+
+The production `ParseService` parsed the reported post, and the download decoded as one 1440 × 1920 WebP (91,524 bytes). The same image also passed the saved Linux.do list replay through both fresh and cache-hit inline paths. No test Telegram message was sent.
