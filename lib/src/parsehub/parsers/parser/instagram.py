@@ -1,5 +1,6 @@
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from ...provider_api.instagram import InstagramAPI, InstagramAPIError, InstagramMediaType, InstagramPost
 from ...types import ImageParseResult, ImageRef, MultimediaParseResult, ParseError, Platform, VideoParseResult, VideoRef
@@ -77,7 +78,8 @@ class InstagramParser(BaseParser):
     async def _parse(self, url: str, shortcode: str, cookie: SecretCookie | None = None) -> InstagramPost:
         try:
             api = InstagramAPI(proxy=self.proxy, cookie=cookie.get_value() if cookie else None, timeout=30)
-            return await api.get_post(shortcode)
+            public_permalink = urlsplit(url).path.rstrip("/").endswith(f"/p/{shortcode}")
+            return await api.get_post(shortcode, try_public_page=public_permalink)
         except InstagramAPIError as e:
             match str(e):
                 case "Fetching Post metadata failed.":
@@ -86,13 +88,13 @@ class InstagramParser(BaseParser):
                     else:
                         raise ParseError("受限视频无法解析: 你必须年满 18 周岁才能观看这个视频") from e
                 case _:
+                    if cookie:
+                        raise ParseError("无法获取帖子内容") from None
                     raise ParseError("无法获取帖子内容") from e
         except Exception as e:
             if cookie:
-                text = f"Instagram 账号可能已被封禁\n\n使用的Cookie: {cookie}"
-            else:
-                text = str(e)
-            raise ParseError(f"无法获取帖子内容(可能为私人内容): {text}") from e
+                raise ParseError("无法获取帖子内容") from None
+            raise ParseError(f"无法获取帖子内容: {e}") from e
 
     @staticmethod
     def get_short_code(url: str) -> str | None:

@@ -1,13 +1,35 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, cast
+from urllib.parse import SplitResult, parse_qs, urlsplit
+
+from bs4 import BeautifulSoup
 
 from ..utils import http
 from ..utils.helpers import get_author_name, to_int
+
+
+def _object_at(value: object, *keys: str) -> dict[str, Any]:
+    for key in keys:
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _relay_args(payload: dict[str, Any], module: str, method: str) -> Iterator[object]:
+    entries = payload.get("require")
+    if not isinstance(entries, list):
+        return
+    for entry in entries:
+        if isinstance(entry, list) and len(entry) == 4 and entry[:2] == [module, method]:
+            if isinstance(entry[3], list):
+                yield from entry[3]
 
 
 class InstagramAPIError(RuntimeError):
@@ -190,37 +212,138 @@ class InstagramAPI:
         self.timeout = timeout
         self.user_agent = user_agent or self.DEFAULT_USER_AGENT
 
-    async def get_post(self, shortcode: str) -> InstagramPost:
-        media = await self.get_shortcode_media(shortcode)
+    async def get_post(self, shortcode: str, *, try_public_page: bool = False) -> InstagramPost:
+        media = await self.get_shortcode_media(shortcode, try_public_page=try_public_page)
         return InstagramPost(media)
 
-    async def get_shortcode_media(self, shortcode: str) -> dict[str, Any]:
-        payload = await self._post_graphql(
-            doc_id=self.SHORTCODE_DOC_ID,
-            variables={
-                "shortcode": shortcode,
-                "__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider": False,
-            },
-        )
+    async def get_shortcode_media(self, shortcode: str, *, try_public_page: bool = False) -> dict[str, Any]:
+        public_navigation = try_public_page and not self.cookie and bool(re.fullmatch(r"[A-Za-z0-9_-]+", shortcode))
+        async with self._new_client() as client:
+            if public_navigation:
+                public_image = await self._get_public_image(client, shortcode)
+                if public_image is not None:
+                    return public_image
+            self._prepare_graphql_client(client)
+            payload = await self._post_graphql(
+                client,
+                doc_id=self.SHORTCODE_DOC_ID,
+                variables={
+                    "shortcode": shortcode,
+                    "__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider": False,
+                },
+            )
 
         media = self._extract_shortcode_media(payload)
         if media is None:
             raise InstagramAPIError("Fetching Post metadata failed.")
         return media
 
-    async def _post_graphql(self, *, doc_id: str, variables: dict[str, Any]) -> dict[str, Any]:
-        async with self._new_client() as client:
-            await self._ensure_csrf_token(client)
-            data = {
-                "variables": json.dumps(variables, separators=(",", ":")),
-                "doc_id": doc_id,
-                "server_timestamps": "true",
-            }
+    async def _get_public_image(self, client: http.AsyncClient, shortcode: str) -> dict[str, Any] | None:
+        # Fetch the permalink in place of the anonymous homepage CSRF bootstrap.
+        # The same client's cookie jar is used if we still need GraphQL.
+        try:
+            response = await client.get(f"{self.INSTAGRAM_URL}p/{shortcode}/", follow_redirects=False)
+        except http.HTTPError:
+            return None
+        if response.status_code != 200:
+            return None
+        return self._parse_public_image(response.text, shortcode)
 
+    def _parse_public_image(self, html: str, shortcode: str) -> dict[str, Any] | None:
+        for script in BeautifulSoup(html, "lxml").select('script[type="application/json"][data-sjs]'):
+            text = script.get_text()
+            if '"xig_polaris_media"' not in text:
+                continue
             try:
-                response = await client.post(self.GRAPHQL_URL, data=data, follow_redirects=False)
-            except http.HTTPError as exc:
-                raise InstagramAPIError(f"请求 Instagram GraphQL 失败: {exc}") from exc
+                payload = json.loads(text)
+            except (ValueError, RecursionError):
+                continue
+            for outer in _relay_args(_object_at(payload), "ScheduledServerJS", "handle"):
+                for inner in _relay_args(_object_at(outer, "__bbox"), "RelayPrefetchedStreamCache", "next"):
+                    post = _object_at(inner, "__bbox", "result", "data", "xig_polaris_media")
+                    media = _object_at(post, "if_not_gated_logged_out")
+                    if post.get("code") == media.get("code") == shortcode:
+                        if image := self._convert_public_image(media):
+                            return image
+        return None
+
+    def _convert_public_image(self, media: dict[str, Any]) -> dict[str, Any] | None:
+        # A video or carousel preview is not a complete image post.
+        if media.get("__typename") != "XIGPolarisImageMedia" or self._media_type(media) != 1:
+            return None
+        width = media.get("original_width")
+        height = media.get("original_height")
+        if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
+            return None
+        candidates = _object_at(media, "image_versions2").get("candidates")
+        if not isinstance(candidates, list):
+            return None
+        url = self._public_image_candidate(candidates, width, height)
+        if url is None:
+            return None
+        # The image record can also contain unrelated optional fields. Only
+        # adapt fields understood by the single-image result.
+        caption = _object_at(media, "caption").get("text")
+        normalized = self._convert_v1_media({
+            "code": media["code"],
+            "pk": media.get("pk"),
+            "media_type": 1,
+            "caption": caption if isinstance(caption, str) else None,
+            "taken_at": media.get("taken_at"),
+            "user": media.get("user"),
+            "image_versions2": {"candidates": [{"url": url, "width": width, "height": height}]},
+        })
+        like_count = media.get("like_count")
+        normalized["edge_media_preview_like"] = {"count": like_count if type(like_count) is int else None}
+        return normalized
+
+    @staticmethod
+    def _public_image_candidate(candidates: list[Any], width: int, height: int) -> str | None:
+        source: str | None = None
+        for index, item in enumerate(candidates):
+            candidate = _object_at(item)
+            url = candidate.get("url")
+            if not isinstance(url, str):
+                continue
+            parts = InstagramAPI._split_image_url(url)
+            if parts is None:
+                continue
+            size = candidate.get("width"), candidate.get("height")
+            if size == (width, height):
+                return url
+            # In Polaris's URL-only variant the first candidate is the source;
+            # its resized/cropped alternatives carry an stp transform instead.
+            if index == 0 and size == (None, None) and "stp" not in parse_qs(parts.query, keep_blank_values=True):
+                source = url
+        return source
+
+    @staticmethod
+    def _split_image_url(url: str) -> SplitResult | None:
+        if "\\" in url or any(char.isspace() for char in url):
+            return None
+        try:
+            parts = urlsplit(url)
+        except ValueError:
+            return None
+        if parts.scheme != "https" or not parts.netloc.lower().endswith(".cdninstagram.com"):
+            return None
+        if parts.hostname != parts.netloc.lower() or not parts.path:
+            return None
+        return parts
+
+    async def _post_graphql(
+        self, client: http.AsyncClient, *, doc_id: str, variables: dict[str, Any]
+    ) -> dict[str, Any]:
+        await self._ensure_csrf_token(client)
+        data = {
+            "variables": json.dumps(variables, separators=(",", ":")),
+            "doc_id": doc_id,
+            "server_timestamps": "true",
+        }
+        try:
+            response = await client.post(self.GRAPHQL_URL, data=data, follow_redirects=False)
+        except http.HTTPError as exc:
+            raise InstagramAPIError(f"请求 Instagram GraphQL 失败: {exc}") from exc
 
         if response.status_code != 200:
             raise InstagramAPIError(f"Instagram GraphQL 返回 HTTP {response.status_code}: {response.text[:500]}")
@@ -376,8 +499,15 @@ class InstagramAPI:
         return values[-1] if values else ""
 
     def _new_client(self) -> http.AsyncClient:
-        cookies = self.DEFAULT_COOKIES | self.cookie
-        headers = {
+        return http.AsyncClient(proxy=self.proxy, timeout=self.timeout)
+
+    def _prepare_graphql_client(self, client: http.AsyncClient) -> None:
+        # Set the API defaults only after navigation; keep the server's CSRF cookie.
+        existing_cookies = {cookie.name for cookie in client.cookies.jar}
+        for name, value in (self.DEFAULT_COOKIES | self.cookie).items():
+            if name not in existing_cookies:
+                client.cookies.set(name, value)
+        client.headers.update({
             "Accept": "*/*",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": "en-US,en;q=0.8",
@@ -386,13 +516,7 @@ class InstagramAPI:
             "User-Agent": self.user_agent,
             "authority": "www.instagram.com",
             "scheme": "https",
-        }
-        return http.AsyncClient(
-            cookies=cookies,
-            headers=headers,
-            proxy=self.proxy,
-            timeout=self.timeout,
-        )
+        })
 
 
 __all__ = [
