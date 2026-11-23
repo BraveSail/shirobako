@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 from ...provider_api.instagram import InstagramAPI, InstagramAPIError, InstagramMediaType, InstagramPost
 from ...types import ImageParseResult, ImageRef, MultimediaParseResult, ParseError, Platform, VideoParseResult, VideoRef
-from ...utils.helpers import SecretCookie, image_ext_from_url
+from ...utils.helpers import SecretCookie, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 
@@ -22,9 +22,13 @@ class InstagramParser(BaseParser):
         post = await self._parse(raw_url, shortcode)
 
         width, height = post.width, post.height
-        # 页脚要用的公共字段: 以前只传 title/content/author, 于是页脚只剩来源
-        # (用户报「页脚只有来源」); 拿不到的项保持 None, 页脚自动跳过那一段
-        stats: dict[str, Any] = {
+        handle = post.author_handle
+        metadata: dict[str, Any] = {
+            "title": post.title,
+            "content": post.caption,
+            "author_name": post.author_name,
+            "author_handle": handle,
+            "author_url": profile_url(Platform.INSTAGRAM, handle),
             "published_at": post.published_at,
             "like_count": post.like_count,
             "view_count": post.view_count,
@@ -43,20 +47,11 @@ class InstagramParser(BaseParser):
                     )
                     for i in post.get_sidecar_nodes()
                 ]
-                return MultimediaParseResult(
-                    media=media,
-                    title=post.title,
-                    content=post.caption,
-                    author_name=post.author_name,
-                    **stats,
-                )
+                return MultimediaParseResult(media=media, **metadata)
             case InstagramMediaType.IMAGE:
                 return ImageParseResult(
                     photo=[ImageRef(url=post.url, width=width, height=height, ext=image_ext_from_url(post.url))],
-                    title=post.title,
-                    content=post.caption,
-                    author_name=post.author_name,
-                    **stats,
+                    **metadata,
                 )
             case InstagramMediaType.VIDEO:
                 return VideoParseResult(
@@ -67,10 +62,7 @@ class InstagramParser(BaseParser):
                         width=width,
                         height=height,
                     ),
-                    title=post.title,
-                    author_name=post.author_name,
-                    content=post.caption,
-                    **stats,
+                    **metadata,
                 )
             case _:
                 raise ParseError("不支持的类型")

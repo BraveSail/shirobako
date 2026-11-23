@@ -92,8 +92,21 @@ class InstagramPost:
         return str(self._node.get("title", ""))
 
     @property
+    def _author(self) -> object:
+        owner = self._node.get("owner")
+        return owner if get_author_name(owner) else self._node.get("user")
+
+    @property
     def author_name(self) -> str:
-        return get_author_name(self._node.get("owner")) or get_author_name(self._node.get("user"))
+        return get_author_name(self._author)
+
+    @property
+    def author_handle(self) -> str:
+        handle = get_author_name(_object_at(self._author), "username")
+        # Only use a real account handle, never a display name or a URL segment.
+        if re.fullmatch(r"[A-Za-z0-9_.]+", handle) and handle.strip("."):
+            return handle
+        return ""
 
     @property
     def caption(self) -> str:

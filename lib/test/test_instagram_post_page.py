@@ -89,6 +89,8 @@ def test_public_post_uses_one_request_for_body_and_full_size_photo(transport):
     assert result.raw_url == PERMALINK
     assert result.content == "原帖正文"
     assert result.author_name == "作者"
+    assert result.author_handle == "example"
+    assert result.author_url == "https://www.instagram.com/example/"
     assert int(result.published_at.timestamp()) == 1_750_000_000
     assert result.like_count == 0 and result.view_count is None
     assert [(photo.url, photo.width, photo.height) for photo in result.media] == [(IMAGE, 1440, 1920)]

@@ -344,13 +344,15 @@ def test_instagram_all_media_branches(media_type):
             "is_video": media_type == "GraphVideo",
             "video_url": VIDEO,
             "display_url": "https://cdn.example/image.jpg",
-            "owner": {"full_name": AUTHOR},
+            "owner": {"full_name": AUTHOR, "username": "author.name"},
             "edge_sidecar_to_children": {"edges": []},
         }
     )
     with patch.object(InstagramParser, "_parse", new=AsyncMock(return_value=post)):
         result = asyncio.run(InstagramParser()._do_parse("https://instagram.com/p/123"))
     assert result.author_name == AUTHOR
+    assert result.author_handle == "author.name"
+    assert result.author_url == "https://www.instagram.com/author.name/"
 
 
 @pytest.mark.parametrize("media_type", ["GraphImage", "GraphVideo", "GraphSidecar"])
@@ -395,6 +397,22 @@ def test_instagram_without_stats_keeps_them_none():
     assert result.view_count is None
     assert result.like_count is None
     assert result.published_at is None
+    assert result.author_handle == result.author_url == ""
+
+
+@pytest.mark.parametrize(
+    "owners,name,handle",
+    [
+        ({"owner": {}, "user": {"full_name": AUTHOR, "username": "example"}}, AUTHOR, "example"),
+        ({"owner": {"full_name": AUTHOR}, "user": {"username": "another"}}, AUTHOR, ""),
+        ({"owner": {"username": "name_only"}}, "name_only", "name_only"),
+        ({"owner": {"full_name": AUTHOR, "username": ".."}}, AUTHOR, ""),
+    ],
+)
+def test_instagram_author_identity_comes_from_one_source(owners, name, handle):
+    post = InstagramPost(owners)
+    assert post.author_name == name
+    assert post.author_handle == handle
 
 
 @pytest.mark.parametrize("rich", [False, True])

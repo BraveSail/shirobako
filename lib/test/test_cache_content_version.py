@@ -48,7 +48,7 @@ def test_a_twitter_entry_without_the_version_is_refused():
 
 def test_a_twitter_entry_with_an_old_version_is_refused():
     data = result_to_cache_dict(_result(Platform.TWITTER))
-    data["content_version"] = _CACHE_CONTENT_VERSION - 1
+    data["content_version"] = 11
     with pytest.raises(ResultRebuildUnavailable):
         result_from_cache_dict(data)
 
@@ -68,3 +68,28 @@ def test_other_platforms_without_the_version_still_roundtrip():
     del data["content_version"]
     rebuilt = result_from_cache_dict(data)
     assert rebuilt.content == "正文"
+
+
+@pytest.mark.parametrize("version", [0, 12])
+def test_old_instagram_entry_is_refused_even_with_display_name(version):
+    data = result_to_cache_dict(_result(Platform.INSTAGRAM))
+    data.update(author_name="作者", content_version=version)
+    with pytest.raises(ResultRebuildUnavailable):
+        result_from_cache_dict(data)
+
+
+def test_current_instagram_entry_keeps_its_author_link():
+    post = _result(Platform.INSTAGRAM)
+    post.author_name = "作者"
+    post.author_handle = "example"
+    post.author_url = "https://www.instagram.com/example/"
+    result = result_from_cache_dict(result_to_cache_dict(post))
+    assert result.author_handle == post.author_handle
+    assert result.author_url == post.author_url
+
+
+@pytest.mark.parametrize("platform", [Platform.TWITTER, Platform.DOUYIN, Platform.BANGUMI, Platform.LINUXDO, Platform.BILIBILI])
+def test_instagram_update_does_not_invalidate_other_versioned_platforms(platform):
+    data = result_to_cache_dict(_result(platform))
+    data["content_version"] = 12
+    assert result_from_cache_dict(data).platform == platform

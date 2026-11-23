@@ -45,7 +45,7 @@ class ResultRebuildUnavailable(RuntimeError):
     """
 
 
-#: 结果层缓存的**正文格式版本**（与 bot 侧 ``CacheParseResult.content_version`` 同一语义）。
+#: 结果层缓存的**内容版本**（与 bot 侧 ``CacheParseResult.content_version`` 同一语义）。
 #:
 #: - 1 = 正文可能含 lib 层标记（twitter 长文 richtext 粗体 ``**``, 2026-10-13 引入）。
 #: - 2 = **粗体的区间换算修正**（2026-10-15）：``from_index``/``to_index`` 是
@@ -76,11 +76,25 @@ class ResultRebuildUnavailable(RuntimeError):
 #:   那个图标」。真封面要从话题页 jetfuel payload 补取，只有重解析才有。
 #: - 12 = twitter trending 的封面**移进引用块**（2026-11-11）：v11 里它是块外的独立
 #:   媒体（排在消息末尾）⇒ 命中就是用户报的「图片应该在话题里面」。
+#: - 13 = Instagram 结果补上作者账号和主页地址；旧条目的作者行仍是纯文字。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
-#: **只对正文格式变过的平台**强制（其余平台格式未变, 强制会让它们的缓存白失效）。
-_CACHE_CONTENT_VERSION = 12
-_CONTENT_VERSION_PLATFORMS = frozenset({"twitter", "douyin", "bangumi", "linuxdo", "bilibili"})
+_CACHE_CONTENT_VERSION = 13
+
+# 仅提升受影响平台的读门槛，不让其他平台白白重解析和重传媒体。
+_MIN_CONTENT_VERSIONS: dict[str, int] = {
+    "twitter": 12,
+    "douyin": 12,
+    "bangumi": 12,
+    "linuxdo": 12,
+    "bilibili": 12,
+    "instagram": 13,
+}
+
+
+def minimum_content_version(platform_id: object) -> int:
+    """Minimum acceptable version for either cache; zero means no version check."""
+    return _MIN_CONTENT_VERSIONS.get(platform_id, 0) if isinstance(platform_id, str) else 0
 
 
 #: 媒体类型标签 —— **序列化必须显式带上**, 否则重建时区分不了 (见模块 docstring)
@@ -305,16 +319,11 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
 
 def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     """字典 → 结果对象。``result_to_cache_dict`` 的逆运算。"""
-    # 正文格式演进 (twitter richtext 粗体): 老条目里存的是没有 ``**`` 的正文,
-    # 复用会让用户以为修复没生效 —— 抛给调用方重解析 (ResultCache.get 会删 key 按未命中处理)。
-    platform_id = data.get("platform")
-    if (
-        platform_id in _CONTENT_VERSION_PLATFORMS
-        and int(data.get("content_version") or 0) < _CACHE_CONTENT_VERSION
-    ):
+    minimum = minimum_content_version(data.get("platform"))
+    if minimum and int(data.get("content_version") or 0) < minimum:
         raise ResultRebuildUnavailable(
-            f"缓存的正文是旧格式 (content_version={data.get('content_version')!r}), "
-            f"应为 {_CACHE_CONTENT_VERSION} —— 重新解析"
+            f"缓存内容版本过旧 (content_version={data.get('content_version')!r}), "
+            f"至少需要 {minimum} —— 重新解析"
         )
 
     # 优先按**具体类名**重建 (平台子类带着平台专属的下载/渲染行为);

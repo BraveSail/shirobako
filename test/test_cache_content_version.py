@@ -11,6 +11,9 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from parsehub.types.serialize import _CACHE_CONTENT_VERSION
+
 from services.cache import CONTENT_VERSION, PersistentCache
 
 BASE = {
@@ -50,8 +53,7 @@ def test_a_twitter_entry_with_the_current_version_hits():
 
 
 def test_a_twitter_entry_from_the_previous_version_is_refreshed():
-    """上一版（v1: 有 `**` 但区间算错）也要重解析 —— 观感与"没修"一样。"""
-    assert _get(_entry_payload(platform="twitter", content_version=CONTENT_VERSION - 1)) is None
+    assert _get(_entry_payload(platform="twitter", content_version=11)) is None
 
 
 def test_other_platforms_are_not_refreshed():
@@ -100,17 +102,17 @@ def test_a_linuxdo_entry_with_an_old_body_is_refreshed():
     老条目里没有 ``{{media:N}}`` 标记 ⇒ 命中就是"图还堆在消息末尾", 与没修一样
     （用户会报「图片原位怎么还是坏的」）。
     """
-    assert _get(_entry_payload(platform="linuxdo", content_version=CONTENT_VERSION - 1)) is None
+    assert _get(_entry_payload(platform="linuxdo", content_version=11)) is None
 
 
 def test_a_bangumi_entry_with_an_old_body_is_refreshed():
     """bgm 同理（2026-10-19 起正文图走原位标记）"""
-    assert _get(_entry_payload(platform="bangumi", content_version=CONTENT_VERSION - 1)) is None
+    assert _get(_entry_payload(platform="bangumi", content_version=11)) is None
 
 
 def test_a_douyin_entry_with_an_old_body_is_refreshed():
     """douyin 同理（2026-10-16 起长图文正文图走原位标记）"""
-    assert _get(_entry_payload(platform="douyin", content_version=CONTENT_VERSION - 1)) is None
+    assert _get(_entry_payload(platform="douyin", content_version=11)) is None
 
 
 def test_platforms_whose_body_format_never_changed_keep_their_cache():
@@ -118,3 +120,26 @@ def test_platforms_whose_body_format_never_changed_keep_their_cache():
     for platform in ("youtube", "zhihu", "pixiv", "facebook"):
         entry = _get(_entry_payload(platform=platform, content_version=0))
         assert entry is not None, platform
+
+
+@pytest.mark.parametrize("version", [None, 12])
+def test_old_instagram_entry_with_a_display_name_is_refreshed(version):
+    assert _get(_entry_payload(platform="instagram", content_version=version)) is None
+
+
+def test_current_instagram_entry_is_reused():
+    payload = _entry_payload(platform="instagram", content_version=CONTENT_VERSION)
+    payload["parse_result"].update(author_handle="example", author_url="https://www.instagram.com/example/")
+    entry = _get(payload)
+    assert entry is not None
+    assert entry.parse_result.author_handle == "example"
+    assert entry.parse_result.author_url == "https://www.instagram.com/example/"
+
+
+@pytest.mark.parametrize("platform", ["twitter", "douyin", "bangumi", "linuxdo", "bilibili"])
+def test_instagram_update_preserves_other_versioned_entries(platform):
+    assert _get(_entry_payload(platform=platform, content_version=12)) is not None
+
+
+def test_both_cache_layers_write_the_same_version():
+    assert CONTENT_VERSION == _CACHE_CONTENT_VERSION
