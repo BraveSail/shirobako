@@ -15,3 +15,11 @@ Read the display name and username from the same owner record, and build the pro
 ## Phase 3 — Verify the payload
 
 Replayed the reported post from the saved public response using a network-disabled copy of the production image. The parser consumed one page response and no GraphQL response. Both fresh and cache-hit inline payloads serialized the unchanged display name as a native link to the actual profile, with the account handle separate. The library suite had 1248 passes and 1 skip; the bot suite had 921 passes and the same 14 failures as the previous baseline. No production state or Telegram messages were changed during verification.
+
+## Phase 4 — Build and verify the release
+
+Built the signed `65bdf80` revision using only tracked files. The four changed runtime files matched Git, the Bun/SABR imports succeeded, and the candidate passed the saved-post replay for both inline paths. Both cache readers retained the existing version requirements for other platforms.
+
+## Phase 5 — Deploy and verify production
+
+Recreated the existing bot service after checking that there were no active media jobs. Kept the previous image available for rollback. The running bot reported revision `65bdf80` and owned an established Telegram connection. A live parse fetched the reported post with one HTTP 200 request. Fresh and cached inline payloads both serialized the original display name as a link to the correct profile and the username separately. Both cache readers rejected old Instagram entries and accepted version 13. No production cache entries were written and no Telegram test message was sent.
