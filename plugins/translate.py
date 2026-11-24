@@ -56,8 +56,8 @@ import re
 from typing import TypeVar
 from urllib.parse import quote
 
-from parsehub.errors import TranslationUnavailable
-from parsehub.provider_api.twitter import Twitter
+from parsehub.provider_api.twitter import Twitter, XTranslationFailure
+from parsehub.utils import http
 from parsehub.utils.helpers import SecretCookie, _quote_line
 
 from core import pl_cfg
@@ -199,6 +199,48 @@ def _build_twitter_client() -> Twitter:
     return Twitter(cookie=cookie, proxy=pl_cfg.roll_parser_proxy("twitter"))
 
 
+def _safe_tweet_id(tweet_id: str) -> str:
+    return tweet_id if re.fullmatch(r"[0-9]{1,20}", tweet_id) else "unknown"
+
+
+def _tweet_id_for_log(url: str) -> str:
+    path = url.split("?", 1)[0].split("#", 1)[0]
+    match = _TWEET_URL_RE.match(path)
+    if match and (match.end() == len(path) or path[match.end()] == "/"):
+        return _safe_tweet_id(match[1])
+    return "unknown"
+
+
+def _log_failure(tweet_id: str, dst_lang: str, error: Exception, *, stage: str, source: str | None = None) -> None:
+    details: dict[str, str | int]
+    if isinstance(error, XTranslationFailure):
+        stage, reason, details = error.stage, error.reason, error.details
+    elif stage == "translate_tweet" and isinstance(error, http.RequestError):
+        stage = "request"
+        reason = "request_timeout" if isinstance(error, http.TimeoutException) else "transport_error"
+        details = {"error_type": type(error).__name__}
+        if error.code == 28:  # CURLE_OPERATION_TIMEDOUT
+            details["curl_code"] = 28
+    else:
+        reason, details = "unexpected_error", {"error_type": type(error).__name__}
+    summary = " ".join(f"{name}={value}" for name, value in details.items())
+    # Never log exception objects or chains here: a decoder's doc and request locals can contain secrets.
+    logger.warning(
+        "#t 翻译失败: tweet_id={} lang={} stage={} reason={} fallback=original{}{}",
+        _safe_tweet_id(tweet_id), dst_lang, stage, reason, f" {summary}" if summary else "",
+        f" source={source}" if source else "",
+    )
+
+
+def log_translation_fallback(url: str, lang: str, error: Exception, *, source: str) -> None:
+    """Log a presentation failure without echoing the URL or exception."""
+    _log_failure(_tweet_id_for_log(url), x_lang_for(lang), error, stage="apply_translation", source=source)
+
+
+def log_translation_outcome(url: str, lang: str, changed: bool, *, label: str) -> None:
+    logger.info("{}: changed={} tweet_id={} lang={}", label, changed, _tweet_id_for_log(url), x_lang_for(lang))
+
+
 async def _translate_id_markdown(client: Twitter, tweet_id: str, dst_lang: str) -> str | None:
     """用既有 Twitter 客户端翻译单条推文 id（优先读 Redis 译文缓存）；不可用或失败返回 ``None``。"""
     key = cache_key("translate", tweet_id, dst_lang)
@@ -207,11 +249,8 @@ async def _translate_id_markdown(client: Twitter, tweet_id: str, dst_lang: str) 
         return cached
     try:
         translated, entities = await client.translate_tweet(tweet_id, dst_lang)
-    except TranslationUnavailable as e:
-        logger.warning(f"#t 翻译不可用: tweet_id={tweet_id} lang={dst_lang} err={e}")
-        return None
     except Exception as e:  # noqa: BLE001 - 翻译失败不能把整条解析弄挂
-        logger.exception(f"#t 翻译异常: tweet_id={tweet_id} err={e}")
+        _log_failure(tweet_id, dst_lang, e, stage="translate_tweet")
         return None
     md = to_markdown(translated, entities)
     if md:
@@ -429,9 +468,9 @@ async def translate_for_display(parse_result: _T, url: str, lang: str) -> _T:
     cloned = copy.copy(parse_result)
     try:
         changed = await apply_translation(cloned, url, lang)
-        logger.info(f"#t 翻译结果: changed={changed}, url={url}")
+        log_translation_outcome(url, lang, changed, label="#t 翻译结果")
     except Exception as e:  # noqa: BLE001 - 翻译失败不能阻断解析与发送
-        logger.warning(f"#t 翻译失败, 照常发原文: url={url} err={e}")
+        log_translation_fallback(url, lang, e, source="display")
         return parse_result
     return cloned if changed else parse_result
 
@@ -441,8 +480,8 @@ async def translate_cache_entry(entry: _T, url: str, lang: str) -> _T:
     pr = entry.parse_result.model_copy(deep=True)  # type: ignore[attr-defined]
     try:
         changed = await apply_translation(pr, url, lang)
-        logger.info(f"#t 缓存命中翻译: changed={changed}, url={url}")
+        log_translation_outcome(url, lang, changed, label="#t 缓存命中翻译")
     except Exception as e:  # noqa: BLE001 - 翻译失败不能让缓存直发失败
-        logger.warning(f"#t 缓存命中翻译失败, 照常发原文: url={url} err={e}")
+        log_translation_fallback(url, lang, e, source="cached_display")
         return entry
     return entry.model_copy(update={"parse_result": pr}) if changed else entry  # type: ignore[attr-defined]

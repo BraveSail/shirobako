@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, NamedTuple
 
+from curl_cffi.requests import Response
 from loguru import logger
 
 from ..errors import TranslationUnavailable
@@ -23,6 +24,130 @@ _INLINE_STYLES: dict[str, str] = {
     "Italic": "*",
     "Strikethrough": "~~",
 }
+
+
+class XTranslationFailure(TranslationUnavailable):
+    """Translation failure with safe diagnostic fields, not the upstream error text."""
+
+    def __init__(self, reason: str, message: str, *, stage: str, **details: str | int) -> None:
+        super().__init__(message)
+        self.stage = stage
+        self.reason = reason
+        self.details = details
+
+
+_TRANSLATION_MEDIA_TYPES = {
+    "application/json": "json",
+    "application/ndjson": "ndjson",
+    "application/x-ndjson": "ndjson",
+    "application/json-seq": "json_seq",
+    "text/event-stream": "sse",
+    "text/html": "html",
+    "text/plain": "plain",
+    "application/octet-stream": "binary",
+}
+
+
+def _translation_mime(response: Response) -> str:
+    mime = (response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    return _TRANSLATION_MEDIA_TYPES.get(mime, "other" if mime else "missing")
+
+
+def _body_kind(text: str, start: int = 0) -> str:
+    """Describe a prefix, not its contents or an inferred framing protocol."""
+    for offset in range(start, len(text)):
+        if text[offset] != "\ufeff" and not text[offset].isspace():
+            break
+    else:
+        return "empty"
+    text = text[offset:offset + 80].lower()
+    if text.startswith(("{", "[")):
+        return "json_like"
+    if text.startswith(("data:", "event:", "id:", "retry:", ":")):
+        return "sse_like"
+    if text.startswith(("<!doctype html", "<html")):
+        return "html_like"
+    return "other"
+
+
+def _x_error_code(payload: object) -> dict[str, int]:
+    if not isinstance(payload, dict):
+        return {}
+    errors = payload.get("errors")
+    first_error = errors[0] if isinstance(errors, list) and errors else None
+    for item in (payload.get("error"), first_error, payload):
+        code = item.get("code") if isinstance(item, dict) else None
+        if type(code) is int and code == 131:
+            return {"x_code": 131}
+    return {}
+
+
+def _translation_failure(
+    response: Response, reason: str, message: str, *, stage: str, **details: str | int,
+) -> XTranslationFailure:
+    return XTranslationFailure(
+        reason, message, stage=stage, http_status=response.status_code, mime=_translation_mime(response),
+        body_bytes=len(response.content), **details,
+    )
+
+
+def _translation_http_error(response: Response) -> XTranslationFailure:
+    status = response.status_code
+    if status == 401:
+        reason, message = "http_auth", "X 翻译被拒（HTTP 401），登录态可能已失效"
+    elif status == 403:
+        reason, message = "http_forbidden", "X 翻译被拒（HTTP 403）"
+    elif status == 429:
+        reason, message = "http_rate_limited", "X 翻译被限流（HTTP 429）"
+    elif status >= 500:
+        reason, message = "http_upstream_error", f"X 翻译服务异常（HTTP {status}）"
+    else:
+        reason, message = "http_error", f"X 翻译请求失败（HTTP {status}）"
+    codes: dict[str, int] = {}
+    if _translation_mime(response) == "json" and len(response.content) <= 64 * 1024:
+        try:
+            codes = _x_error_code(response.json())
+        except (ValueError, LookupError, RecursionError):
+            pass  # 可选的错误码取不到时仍保留 HTTP 失败原因。
+    return _translation_failure(response, reason, message, stage="http", **codes)
+
+
+def _decode_translation(response: Response) -> tuple[str, dict]:
+    if not 200 <= response.status_code < 400:
+        raise _translation_http_error(response)
+    try:
+        payload = response.json()
+    except json.JSONDecodeError as exc:
+        extra = exc.msg == "Extra data"
+        shape = {"tail": _body_kind(exc.doc, exc.pos)} if extra else {"body_kind": _body_kind(exc.doc)}
+        raise _translation_failure(
+            response, "json_extra_data" if extra else "invalid_json", "X 翻译响应不是单个合法 JSON",
+            stage="decode", json_line=exc.lineno, json_col=exc.colno, json_offset=exc.pos, **shape,
+        ) from None
+    except (UnicodeDecodeError, LookupError):
+        raise _translation_failure(response, "invalid_encoding", "X 翻译响应编码无法解读", stage="decode") from None
+
+    if not isinstance(payload, dict):
+        raise _translation_failure(response, "unexpected_payload", "X 翻译响应不是对象", stage="payload", field="root")
+    # result 是真实响应字段；保留对 value 形态的兼容。
+    field = "result"
+    value = payload.get(field)
+    if not value:
+        field = "value"
+        value = payload.get(field)
+    if payload.get("error") or (payload.get("errors") and not value):
+        raise _translation_failure(
+            response, "upstream_error", "X 翻译接口返回错误", stage="payload", **_x_error_code(payload),
+        )
+    if not value:
+        raise _translation_failure(response, "missing_translation", "X 没有返回译文（缺 result/value）", stage="payload")
+    if not isinstance(value, dict):
+        raise _translation_failure(response, "unexpected_payload", "X 翻译结果不是对象", stage="payload", field=field)
+    text = str(value.get("text") or "").strip()
+    if not text:
+        raise _translation_failure(response, "empty_translation", "X 没有返回译文（text 为空）", stage="payload")
+    entities = value.get("entities")
+    return text, entities if isinstance(entities, dict) else {}
 
 
 class Twitter:
@@ -866,7 +991,7 @@ class Twitter:
                 **必须带登录 cookie** —— 匿名调用一律 401 空 body。
         """
         if not self.check_cookie():
-            raise TranslationUnavailable("X 翻译需要登录态（auth_token / ct0 缺失）")
+            raise XTranslationFailure("missing_login", "X 翻译需要登录态（auth_token / ct0 缺失）", stage="request")
 
         cookie = self.cookie or {}
         headers = {
@@ -886,24 +1011,7 @@ class Twitter:
                 cookies=cookie,
             )
 
-        if response.status_code in (401, 403):
-            raise TranslationUnavailable(f"X 翻译被拒（HTTP {response.status_code}），登录态可能已失效")
-        if response.status_code >= 500:
-            raise TranslationUnavailable(f"X 翻译服务异常（HTTP {response.status_code}）")
-        response.raise_for_status()
-
-        payload = response.json()
-        if error := payload.get("error"):
-            raise TranslationUnavailable(f"X 翻译失败: {error}")
-        # **顶层键是 ``result``**，不是 APK 里 Retrofit 声明的 ``value`` ——
-        # 实测响应：``{"result": {"content_type": "POST", "text": "...", "entities": {}}}``
-        # （``ApiGrokTranslateItemResponse`` 的字段在 App 侧叫 value，但 JSON 里是 result）
-        value = payload.get("result") or payload.get("value") or {}
-        text_value = str(value.get("text") or "").strip()
-        if not text_value:
-            raise TranslationUnavailable("X 没有返回译文（该推文可能不可翻译）")
-        entities = value.get("entities")
-        return text_value, entities if isinstance(entities, dict) else {}
+        return _decode_translation(response)
 
 
 @dataclass

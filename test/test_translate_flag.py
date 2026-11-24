@@ -22,7 +22,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
+from curl_cffi.requests import Headers, Response
 
 from parsehub.errors import TranslationUnavailable
 from parsehub.provider_api.twitter import Twitter
@@ -136,22 +142,17 @@ class TestRequiresLogin:
             asyncio.run(Twitter(cookie={"auth_token": "x"}).translate_tweet("20", "zh-cn"))
 
 
-def _patch_client(monkeypatch, *, status: int = 200, payload: dict | None = None, captured: dict | None = None):
+def _patch_client(
+    monkeypatch, *, status: int = 200, payload: dict | None = None, captured: dict | None = None,
+    raw: bytes | None = None, content_type: str = "application/json", failure: Exception | None = None,
+):
     """装一个假 HTTP 客户端，记录请求并回固定响应。"""
     captured = captured if captured is not None else {}
-
-    class _Resp:
-        status_code = status
-        text = ""
-
-        @staticmethod
-        def json() -> dict:
-            return payload or {}
-
-        @staticmethod
-        def raise_for_status() -> None:
-            if status >= 400:
-                raise RuntimeError(f"HTTP {status}")
+    response = Response()
+    response.status_code = status
+    response.reason = "PRIVATE_STATUS_REASON"
+    response.headers = Headers({"Content-Type": content_type, "Set-Cookie": "PRIVATE_RESPONSE_COOKIE"})
+    response.content = raw if raw is not None else json.dumps(payload or {}).encode()
 
     class _Client:
         def __init__(self, *a, **kw) -> None:
@@ -165,7 +166,9 @@ def _patch_client(monkeypatch, *, status: int = 200, payload: dict | None = None
 
         async def post(self, url, json=None, headers=None, cookies=None):
             captured.update(url=url, body=json, headers=headers)
-            return _Resp()
+            if failure is not None:
+                raise failure
+            return response
 
     monkeypatch.setattr("parsehub.provider_api.twitter.http.AsyncClient", _Client)
     return captured
@@ -245,6 +248,127 @@ class TestResponses:
         _patch_client(monkeypatch, payload={"result": {"text": "  "}})
         with pytest.raises(TranslationUnavailable, match="没有返回译文"):
             asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("1", "zh-cn"))
+
+
+class TestFailureDiagnostics:
+    @pytest.fixture(autouse=True)
+    def no_translation_cache(self, monkeypatch):
+        from plugins import translate
+
+        monkeypatch.setattr(translate, "get_optional", AsyncMock(return_value=None))
+        set_cache = AsyncMock()
+        monkeypatch.setattr(translate, "set_with_ttl", set_cache)
+        yield
+        set_cache.assert_not_awaited()
+
+    @staticmethod
+    def _capture_failure(client, action=None, *, level="WARNING") -> tuple[list, list]:
+        from plugins import translate
+
+        log_lines, records = [], []
+
+        def sink(line):
+            log_lines.append(str(line))
+            records.append(line.record)
+
+        handler = translate.logger.add(sink, level=level, format="{message}", diagnose=True)
+        try:
+            if action:
+                action()
+            else:
+                assert asyncio.run(translate._translate_id_markdown(client, "2123", "zh-tw")) is None
+        finally:
+            translate.logger.remove(handler)
+        return log_lines, records
+
+    @pytest.mark.parametrize(
+        ("status", "content_type", "raw", "expected"),
+        [
+            (200, "application/x-ndjson; note=PRIVATE_HEADER", b'{"result": null}\n{"text":"PRIVATE_BODY"}',
+             "stage=decode reason=json_extra_data mime=ndjson json_line=2 json_col=1 tail=json_like"),
+            (200, "text/plain", b'{"result": null}\ndata: PRIVATE_BODY\n\n',
+             "reason=json_extra_data mime=plain json_line=2 tail=sse_like"),
+            (200, "text/html", b" " * 81 + b"<!DOCTYPE html><p>PRIVATE_BODY</p>",
+             "stage=decode reason=invalid_json mime=html json_line=1 json_col=82 body_kind=html_like"),
+            (200, "application/json", b"\xff PRIVATE_BODY", "reason=invalid_encoding"),
+            (401, "application/json", b'{}', "reason=http_auth"),
+            (403, "text/html", b"<html>PRIVATE_BODY</html>", "reason=http_forbidden"),
+            (429, "text/PRIVATE_HEADER", b"PRIVATE_BODY", "reason=http_rate_limited mime=other"),
+            (500, "application/json", b'{"errors":[{"code":131,"message":"PRIVATE_BODY"}]}',
+             "stage=http reason=http_upstream_error x_code=131"),
+            (429, "application/json", b'{"errors":[{"code":7777,"message":"PRIVATE_BODY"}]}',
+             "reason=http_rate_limited"),
+            (200, "application/json", b'{"error":{"code":"PRIVATE_BODY","message":"PRIVATE_BODY"}}',
+             "reason=upstream_error"),
+            (200, "application/json", b'["PRIVATE_BODY"]', "reason=unexpected_payload field=root"),
+            (200, "application/json", b'{"result":"PRIVATE_BODY"}', "reason=unexpected_payload field=result"),
+            (200, "application/json", b'{"value":"PRIVATE_BODY"}', "stage=payload reason=unexpected_payload field=value"),
+            (200, "application/json", b'{"data":"PRIVATE_BODY"}', "reason=missing_translation"),
+            (200, "application/json", b'{"result":{"text":"  "}}', "reason=empty_translation"),
+        ],
+    )
+    def test_provider_failure_is_diagnostic_without_sensitive_data(self, monkeypatch, status, content_type, raw, expected):
+        captured = _patch_client(monkeypatch, status=status, raw=raw, content_type=content_type)
+        client = Twitter(cookie={"auth_token": "PRIVATE_AUTH", "ct0": "PRIVATE_CSRF"})
+        lines, records = self._capture_failure(client)
+        assert len(records) == 1 and records[0]["exception"] is None
+        line = lines[0]
+        for field in (f"http_status={status}", f"body_bytes={len(raw)}", "tweet_id=2123", "lang=zh-tw",
+                      "fallback=original", *expected.split()):
+            assert field in line
+        assert "PRIVATE_" not in line and "x_code=7777" not in line
+        assert captured["body"]["id"] == "2123"
+
+    def test_transport_failure_keeps_curl_code_not_exception_text(self, monkeypatch):
+        from parsehub.utils import http
+
+        _patch_client(monkeypatch, failure=http.TimeoutException("PRIVATE_PROXY_URL", 28))
+        lines, records = self._capture_failure(Twitter(cookie=dict(COOKIE)))
+        assert len(records) == 1 and records[0]["exception"] is None
+        assert "stage=request reason=request_timeout" in lines[0] and "curl_code=28" in lines[0]
+        assert "PRIVATE_PROXY_URL" not in lines[0] and "http_status=" not in lines[0]
+
+    def test_direct_provider_call_preserves_native_transport_exception(self, monkeypatch):
+        from parsehub.utils import http
+
+        _patch_client(monkeypatch, failure=http.TimeoutException("PRIVATE_PROXY_URL", 28))
+        with pytest.raises(http.TimeoutException):
+            asyncio.run(Twitter(cookie=dict(COOKIE)).translate_tweet("2123", "zh-tw"))
+
+    def test_fallback_outcome_does_not_log_query_parameters(self, monkeypatch):
+        from plugins import translate
+
+        _patch_client(monkeypatch, status=429)
+        monkeypatch.setattr(translate, "_build_twitter_client", lambda: Twitter(cookie=dict(COOKIE)))
+        original = SimpleNamespace(content="原文", media=[object()])
+
+        def run():
+            shown = asyncio.run(translate.translate_for_display(original, "https://x.com/u/status/2123?key=PRIVATE_URL", "zh-hant"))
+            assert shown is original
+
+        lines, records = self._capture_failure(None, run, level="INFO")
+        assert any("changed=False" in line for line in lines)
+        assert not any("PRIVATE_" in line for line in lines)
+        assert all(r["exception"] is None for r in records)
+
+    def test_unexpected_failure_keeps_original_without_logging_exception_chain(self, monkeypatch):
+        from plugins import translate
+
+        def fail():
+            raise RuntimeError("PRIVATE_OUTER") from ValueError("PRIVATE_CAUSE")
+
+        monkeypatch.setattr(translate, "_build_twitter_client", fail)
+        original = SimpleNamespace(content="原文", media=[object()])
+
+        def run():
+            shown = asyncio.run(translate.translate_for_display(original, "https://x.com/u/status/2123?key=PRIVATE_URL", "zh-hant"))
+            assert shown is original
+
+        lines, records = self._capture_failure(None, run)
+        assert len(records) == 1 and records[0]["exception"] is None
+        assert "reason=unexpected_error" in lines[0] and "error_type=RuntimeError" in lines[0]
+        assert "tweet_id=2123" in lines[0] and "lang=zh-tw" in lines[0]
+        assert "PRIVATE_" not in lines[0]
 
 
 class TestIndicesAreOnTranslatedText:

@@ -30,7 +30,13 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.translate import apply_translation, translate_cache_entry, translate_for_display
+from plugins.translate import (
+    apply_translation,
+    log_translation_fallback,
+    log_translation_outcome,
+    translate_cache_entry,
+    translate_for_display,
+)
 from plugins.filters import platform_filter
 from plugins.helpers import (
     build_rich_markdown,
@@ -297,9 +303,9 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     if translate:
         try:
             changed = await apply_translation(parse_result, raw_url, lang)
-            logger.info(f"inline #t 翻译: changed={changed}, url={raw_url}")
+            log_translation_outcome(raw_url, lang, changed, label="inline #t 翻译")
         except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住预览
-            logger.warning(f"inline #t 翻译失败, 用原文: url={raw_url} err={e}")
+            log_translation_fallback(raw_url, lang, e, source="inline_preview")
 
     results = await build_inline_results(parse_result, cli, lang, config, spoiler_tag=spoiler_tag)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
