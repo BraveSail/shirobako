@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from markdown import markdown
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Document, html_blocks, visible_text
 
 from ..utils import http
 from ..utils.helpers import UA, get_author_name
@@ -15,6 +17,7 @@ class Coolapk:
     text_content: str = ""
     imgs: list[str] | None = None
     author_name: str = ""
+    document: Document | None = None
 
     @classmethod
     async def parse(cls, url: str, proxy: str | None = None) -> "Coolapk":
@@ -34,14 +37,27 @@ class Coolapk:
                     raise ValueError("获取内容失败")
                 raise ValueError("获取内容失败, 分享时请保留 shareKey 或 s 参数")
             markdown_content = MarkdownConverter(heading_style="ATX").convert(str(content))
-            text_content = "".join(BeautifulSoup(markdown(markdown_content), "lxml").find_all(string=True))
-            imgs = [f"https:{i['src']}" for i in content.find_all("img", {"class": "message-image"})]
-            return cls(title, markdown_content, text_content, imgs, author_name=author_name)
+            imgs: list[str] = []
+            media: dict[str, int] = {}
+            for img in content.find_all("img"):
+                if "message-image" not in img.get("class", []) or not img.get("src"):
+                    img.decompose()
+                    continue
+                src = urljoin(url, str(img["src"]))
+                media.setdefault(src, len(imgs))
+                imgs.append(src)
+                img.attrs = {"src": src}
+            blocks = html_blocks(content, base_url=url, media=media)
+            text_content = "\n".join(filter(None, (visible_text((block,)) for block in blocks)))
+            return cls(title, markdown_content, text_content, imgs, author_name=author_name, document=Document(blocks))
 
         feed_element = soup.find(class_="feed-message")
         if feed_element and (feed_content := feed_element.text.strip()):
             message_image_group = soup.find(class_="message-image-group")
-            imgs = [f"https:{i['src']}" for i in message_image_group.find_all("img")] if message_image_group else []
+            imgs = (
+                [urljoin(url, str(i["src"])) for i in message_image_group.select("img[src]")]
+                if message_image_group else []
+            )
             return cls("", "", feed_content, imgs, author_name=author_name)
 
         raise ValueError("获取内容失败, 分享时请保留 shareKey 或 s 参数")

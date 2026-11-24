@@ -1,10 +1,12 @@
 import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from markdown import markdown
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Document, html_blocks, visible_text
 
 from ..utils import http
 from ..utils.helpers import get_author_name
@@ -29,7 +31,7 @@ class Douban:
         self.cookie = cookie
 
     async def parse(self, url: str) -> "DoubanTopic":
-        return DoubanTopic.parse(await self.fetch_topic_data(url))
+        return DoubanTopic.parse(await self.fetch_topic_data(url), base_url=url)
 
     @staticmethod
     def get_topic_id(url: str) -> str:
@@ -86,22 +88,47 @@ class DoubanTopic:
     video: DoubanVideo | None = None
     photos: list[DoubanPhoto] = field(default_factory=list)
     author_name: str = ""
+    document: Document | None = None
 
     @classmethod
-    def parse(cls, data: dict) -> "DoubanTopic":
+    def parse(cls, data: dict, *, base_url: str = IMAGE_REFERER) -> "DoubanTopic":
         content = data.get("content") or ""
         markdown_content = MarkdownConverter(heading_style="ATX").convert(content).strip() if content else ""
-        text_content = "".join(BeautifulSoup(markdown(markdown_content), "lxml").find_all(string=True)).strip()
-
+        soup = BeautifulSoup(content, "lxml")
         video_info = data.get("video_info") or {}
+        video = parse_video(video_info) if video_info else None
+        layout = data.get("image_layout", "horizontal")
+        photos = []
+        media = {urljoin(base_url, video.url): 0} if video and layout != "horizontal" else {}
+        aliases: dict[str, str] = {}
+        for photo in data.get("photos", []):
+            if parsed := parse_photo(photo):
+                if layout != "horizontal":
+                    index = len(photos) + int(video is not None)
+                    # A thumbnail or original GIF can represent the selected MP4.
+                    image = photo.get("image") or {}
+                    actual = urljoin(base_url, parsed.url)
+                    media.setdefault(actual, index)
+                    for url in ((image.get(k) or {}).get("url") for k in ("large", "normal")):
+                        if url:
+                            aliases.setdefault(urljoin(base_url, url), actual)
+                photos.append(parsed)
+        for img in soup.find_all("img"):
+            for key in ("data-original", "data-src", "data-actualsrc", "src"):
+                if src := img.get(key):
+                    relative = urljoin(base_url, str(src))
+                    if actual := aliases.get(relative):
+                        img[key] = actual
+        blocks = html_blocks(soup, base_url=base_url, media=media)
         return cls(
             title=data.get("title") or "",
             author_name=get_author_name(data.get("author")),
             markdown_content=markdown_content,
-            text_content=text_content,
-            video=parse_video(video_info) if video_info else None,
-            photos=[p for photo in data.get("photos", []) if (p := parse_photo(photo))],
-            image_layout=data.get("image_layout", "horizontal"),
+            text_content="\n".join(filter(None, (visible_text((block,)) for block in blocks))).strip(),
+            video=video,
+            photos=photos,
+            image_layout=layout,
+            document=Document(blocks),
         )
 
 

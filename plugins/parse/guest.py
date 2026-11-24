@@ -43,6 +43,7 @@ from plugins.parse.inline_rich import (
     cache_media_blocks,
     cached_rich_message,
     edit_inline_rich_message,
+    has_structured_body,
     result_summary_text,
     with_cover_fallback,
 )
@@ -120,7 +121,7 @@ async def _send_first_frame(
         "view_label": _t("查看"),
         "raw_url": raw_url,
     }
-    if getattr(parse_result, "x_status", None) is not None:
+    if has_structured_body(parse_result):
         content = build_delivery_blocks(parse_result, hide_content=spoiler_tag, **options)
     else:
         content = build_progress_markdown(parse_result, spoiler_tag=spoiler_tag, **options)
@@ -216,7 +217,7 @@ async def _deliver(
             sent = await answer(content)
     except Exception as e:
         logger.warning(f"guest 带媒体发送失败, 退回纯文字: {type(e).__name__}: {str(e)[:120]}")
-        # 原生 X 降级也保留原生正文，不退回旧 Markdown。
+        # 结构化正文降级也保留原生正文，不退回旧 Markdown。
         fallback = without_media() if without_media is not None else markdown or content
         sent = await answer(fallback)
     logger.info(f"guest 结果已发送: inline_message_id={getattr(sent, 'inline_message_id', None)}")
@@ -382,7 +383,7 @@ async def _answer(
             "hide_content": spoiler_tag,
         }
         without_media = None
-        if getattr(parse_result, "x_status", None) is not None:
+        if has_structured_body(parse_result):
             render = partial(build_delivery_blocks, parse_result, raw_url=raw_url, **options)
             blocks = render(media_blocks=media_blocks)
             markdown = ""

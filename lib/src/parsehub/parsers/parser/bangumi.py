@@ -12,6 +12,8 @@
 
 import html
 
+from parsehub.types.document import Block, Document, TextRun, paragraph, visible_text
+
 from ...provider_api.bangumi import (
     BangumiBlog,
     BangumiError,
@@ -69,6 +71,7 @@ class BangumiParser(BaseParser):
         return BangumiParseResult(
             title=blog.title,
             markdown_content=blog.markdown_content,
+            document=blog.document,
             media=_refs(blog.images),
             author_name=blog.author_name,
             # bgm 没有 @用户名：标识可能是数字 uid（老用户）或 slug（新用户），
@@ -96,6 +99,7 @@ class BangumiParser(BaseParser):
         return BangumiParseResult(
             title=index.title,
             markdown_content=_render_index_markdown(index),
+            document=_render_index_document(index),
             author_name=index.author_name,
             author_handle=index.author_handle,
             author_url=profile_url(Platform.BANGUMI, user_id=index.author_handle),
@@ -115,6 +119,7 @@ class BangumiParser(BaseParser):
         return BangumiParseResult(
             title=topic.title,
             markdown_content=topic.markdown_content,
+            document=topic.document,
             media=_refs(topic.images),
             author_name=topic.author_name,
             author_handle=topic.author_handle,
@@ -141,6 +146,45 @@ _INDEX_CHAR_BUDGET = 30000
 #: 简介最多占的字符数 —— 目录说明可能很长（有的把整个榜单前 100 名也写进去），
 #: 不能让它一个人把条目列表挤没。
 _INDEX_SUMMARY_BUDGET = 12000
+
+
+def _render_index_document(index: BangumiIndex) -> Document:
+    blocks: list[Block] = []
+    used = 0
+    for block in index.summary_blocks:
+        size = len(visible_text((block,))) + 2
+        if used + size > _INDEX_SUMMARY_BUDGET:
+            # Keep the excerpt of a single long paragraph without breaking a run's link.
+            remaining = max(0, _INDEX_SUMMARY_BUDGET - used)
+            if block.runs and remaining:
+                runs = []
+                for run in block.runs:
+                    if remaining <= 0:
+                        break
+                    runs.append(TextRun(run.text[:remaining], run.url, run.styles))
+                    remaining -= len(run.text)
+                blocks.append(paragraph(runs))
+            blocks.append(paragraph("…"))
+            used = _INDEX_SUMMARY_BUDGET
+            break
+        blocks.append(block)
+        used += size
+    if blocks and index.entries:
+        blocks.append(Block("rule"))
+    for entry in index.entries:
+        runs = []
+        if entry.rank:
+            runs.extend((TextRun(f"{entry.rank}.", styles=("bold",)), TextRun(" · ")))
+        runs.append(TextRun(entry.name, entry.url))
+        for suffix in (" / ".join(entry.jobs), entry.info):
+            if suffix:
+                runs.append(TextRun(f" · {suffix}"))
+        used += sum(len(run.text) for run in runs) + 1
+        if used > _INDEX_CHAR_BUDGET:
+            blocks.append(paragraph("…"))
+            break
+        blocks.append(Block("paragraph", runs=tuple(runs), role="index_entry"))
+    return Document(tuple(blocks))
 
 
 def _render_index_markdown(index: BangumiIndex) -> str:

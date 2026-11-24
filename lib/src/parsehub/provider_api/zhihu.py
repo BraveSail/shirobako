@@ -29,15 +29,16 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Self, cast
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from ..utils import http
 
 __all__ = ["get_x_zse_96", "ZhihuAPI", "ZhihuQA", "ZhihuZhuanLan", "ZhihuPin", "ZhihuPinType", "ZhihuMedia"]
 
 from bs4 import BeautifulSoup
-from markdown import markdown
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Document, html_blocks, visible_text
 
 from ..utils.helpers import get_author_name
 
@@ -62,16 +63,27 @@ class ZhihuConverter(MarkdownConverter):
         return f"![{alt}]({src}{title_part})"
 
 
-def _zhihu_contenc_fmt(content: str) -> tuple[str, str, list[str]]:
+def _zhihu_contenc_fmt(
+    content: str, *, base_url: str, attachments: bool = True,
+) -> tuple[str, str, list[str], Document]:
     soup = BeautifulSoup(content, "lxml")
     markdown_content = ZhihuConverter(heading_style="ATX").convert(str(soup))
-    plaintext_content = "".join(BeautifulSoup(markdown(markdown_content), "lxml").find_all(string=True))
-    imgs = [
-        str(i["src"])
-        for i in soup.find_all("img")
-        if not str(i["src"]).startswith("data:image/svg") and "/equation" not in str(i["src"])  # 过滤掉 svg 和 equation
-    ]
-    return markdown_content, plaintext_content, imgs
+    imgs = []
+    media: dict[str, int] = {}
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or "")
+        if src.startswith("data:image/svg"):
+            img.replace_with(str(img.get("alt") or ""))
+        elif not src or "/equation" in src or not attachments:
+            img.decompose()
+        else:
+            url = urljoin(base_url, src)
+            media.setdefault(url, len(imgs))
+            imgs.append(url)
+            img.attrs = {"src": url}
+    blocks = html_blocks(soup, base_url=base_url, media=media)
+    text = "\n".join(filter(None, (visible_text((block,)) for block in blocks)))
+    return markdown_content, text, imgs, Document(blocks)
 
 
 @dataclass(kw_only=True)
@@ -81,17 +93,19 @@ class ZhihuQA:
     markdown_answer: str | None = None
     plaintext_answer: str | None = None
     author_name: str = ""
+    document: Document | None = None
 
     @classmethod
-    def parse(cls, data: dict) -> Self:
+    def parse(cls, data: dict, *, base_url: str = "https://www.zhihu.com/") -> Self:
         question = data["question"]["title"]
         answer = data["content"]
-        markdown_content, plaintext_content, imgs = _zhihu_contenc_fmt(answer)
+        markdown_content, plaintext_content, imgs, document = _zhihu_contenc_fmt(answer, base_url=base_url)
         return cls(
             question=question,
             imgs=imgs,
             markdown_answer=markdown_content,
             plaintext_answer=plaintext_content,
+            document=document,
             author_name=get_author_name(data.get("author")),
         )
 
@@ -103,17 +117,19 @@ class ZhihuZhuanLan:
     markdown_content: str = ""
     plaintext_content: str = ""
     author_name: str = ""
+    document: Document | None = None
 
     @classmethod
-    def parse(cls, data: dict) -> Self:
+    def parse(cls, data: dict, *, base_url: str = "https://zhuanlan.zhihu.com/") -> Self:
         title = data["title"]
         content = data["content"]
-        markdown_content, plaintext_content, imgs = _zhihu_contenc_fmt(content)
+        markdown_content, plaintext_content, imgs, document = _zhihu_contenc_fmt(content, base_url=base_url)
         return cls(
             title=title,
             imgs=imgs,
             markdown_content=markdown_content,
             plaintext_content=plaintext_content,
+            document=document,
             author_name=get_author_name(data.get("author")),
         )
 
@@ -141,9 +157,10 @@ class ZhihuPin:
     markdown_content: str = ""
     plaintext_content: str = ""
     author_name: str = ""
+    document: Document | None = None
 
     @classmethod
-    def parse(cls, result: dict) -> "ZhihuPin":
+    def parse(cls, result: dict, *, base_url: str = "https://www.zhihu.com/") -> "ZhihuPin":
         content: list = result["content"]
         title = ""
         text = ""
@@ -178,13 +195,16 @@ class ZhihuPin:
                             duration=video_info["duration"],
                         )
                     )
-        markdown_content, plaintext_content, imgs = _zhihu_contenc_fmt(text)
+        markdown_content, plaintext_content, _, document = _zhihu_contenc_fmt(
+            text, base_url=base_url, attachments=False,
+        )
         return cls(
             title=title,
             media=media,
             markdown_content=markdown_content,
             plaintext_content=plaintext_content,
             type=t,
+            document=document,
             author_name=get_author_name(result.get("author")),
         )
 
@@ -252,24 +272,25 @@ class ZhihuAPI:
         qid, aid = self._get_qa_id(raw_url)
         if aid:
             result = await self._answers(aid)
-            return ZhihuQA.parse(result)
+            return ZhihuQA.parse(result, base_url=raw_url)
         result = await self._questions_answers(qid)
         data = result["data"]
         if data:
             result = await self._answers(data[0]["id"])
-            return ZhihuQA.parse(result)
+            return ZhihuQA.parse(result, base_url=f"https://www.zhihu.com/question/{qid}/answer/{data[0]['id']}")
         result = await self._questions(qid)
-        return ZhihuQA(question=result["title"], imgs=[], author_name=get_author_name(result.get("author")))
+        return ZhihuQA(question=result["title"], imgs=[], author_name=get_author_name(result.get("author")),
+                       document=Document())
 
     async def parse_zl(self, raw_url: str) -> ZhihuZhuanLan:
         zl_id = self._get_zl_id(raw_url)
         result = await self._zl(zl_id)
-        return ZhihuZhuanLan.parse(result)
+        return ZhihuZhuanLan.parse(result, base_url=raw_url)
 
     async def parse_pin(self, raw_url: str) -> ZhihuPin:
         pin_id = self._get_pin_id(raw_url)
         result = await self._pin(pin_id)
-        return ZhihuPin.parse(result)
+        return ZhihuPin.parse(result, base_url=raw_url)
 
     async def _questions(self, question_id: int | str) -> dict:
         """获取问题"""

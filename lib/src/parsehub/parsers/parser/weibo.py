@@ -18,6 +18,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import Document, TextRun, paragraph, plain
 from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
@@ -77,6 +78,7 @@ class WeiboParser(BaseParser):
         if isinstance(weibo, WeiboTVContent):
             return WeiboVideoParseResult(
                 content=self.f_text(weibo.text),
+                document=plain(weibo.text.strip()),
                 author_name=weibo.author_name,
                 published_at=weibo.published_at,
                 view_count=weibo.play_count,
@@ -90,7 +92,11 @@ class WeiboParser(BaseParser):
             )
 
         data = weibo.data
-        text = self.f_text(data.content, data.topics)
+        source = data.content
+        topics = data.topics
+        runs = self._topic_runs(source, topics)
+        document = Document((paragraph(runs),)) if runs else Document()
+        text = self._legacy_topic_text(runs) if topics else self.f_text(source)
         media: list[VideoRef | ImageRef | LivePhotoRef | AniRef] = []
 
         if not data.pic_infos and data.page_info and data.page_info.object_type == MediaType.VIDEO:
@@ -99,6 +105,7 @@ class WeiboParser(BaseParser):
             if playback:
                 return WeiboVideoParseResult(
                     content=text,
+                    document=document,
                     author_name=data.author_name,
                     published_at=data.published_at,
                     view_count=page_media.play_count if page_media else None,
@@ -123,6 +130,7 @@ class WeiboParser(BaseParser):
         if not media_info:
             return WeiboMultimediaParseResult(
                 content=text,
+                document=document,
                 media=[],
                 author_name=data.author_name,
                 published_at=data.published_at,
@@ -178,6 +186,7 @@ class WeiboParser(BaseParser):
             photos = [m for m in media if isinstance(m, ImageRef | LivePhotoRef)]
             return WeiboImageParseResult(
                 content=text,
+                document=document,
                 photo=photos,
                 author_name=data.author_name,
                 published_at=data.published_at,
@@ -186,6 +195,7 @@ class WeiboParser(BaseParser):
             )
         return WeiboMultimediaParseResult(
             content=text,
+            document=document,
             media=media,
             author_name=data.author_name,
             published_at=data.published_at,
@@ -193,14 +203,14 @@ class WeiboParser(BaseParser):
             reply_count=data.reply_count,
         )
 
-    def f_text(self, text: str | None, topics: Sequence[str] | None = None) -> str:
+    def f_text(self, text: str | None, topics: Sequence[dict[str, str]] | None = None) -> str:
         # text = re.sub(r'<a  href="https://video.weibo.com.*?>.*的微博视频.*</a>', "", text)
         # text = re.sub(r"<[^>]+>", " ", text)
         text = self.hashtag_handler(text or "", topics)
         return text.strip()
 
     @staticmethod
-    def hashtag_handler(desc: str, topics: Sequence[str] | None = None) -> str:
+    def hashtag_handler(desc: str, topics: Sequence[dict[str, str]] | None = None) -> str:
         """把 ``#话题#`` 剥成 ``话题``（保留原有的可见形态，只换边界判据）。
 
         :param topics: **服务端给的**话题（``Data.topics``: name + 话题页 url）。
@@ -209,22 +219,39 @@ class WeiboParser(BaseParser):
             没给（老接口/字段缺失）时退回正则，行为与本参数引入前一致。
         """
         if topics:
-            # 用服务端给的话题页地址做成链接（与其它平台的标签形态一致: 保留 `#`
-            # 且**可点**）。以前这里是"剥壳成纯文本"——话题不可点, 是唯一与其它
-            # 平台不一致的地方。
-            named = [t for t in topics if (t or {}).get("name")]
-            for topic in sorted(named, key=lambda t: len(t["name"]), reverse=True):
-                name = topic["name"]
-                url = topic.get("url") or f"https://s.weibo.com/weibo?q=%23{quote(name)}%23"
-                desc = desc.replace(
-                    f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>'
-                )
-            return desc
+            return WeiboParser._legacy_topic_text(WeiboParser._topic_runs(desc, topics))
 
         hashtags = re.findall(r" ?#[^#]+# ?", desc)
         for hashtag in hashtags:
             desc = desc.replace(hashtag, f" {hashtag.strip().removesuffix('#')} ")
         return desc
+
+    @staticmethod
+    def _topic_runs(source: str, topics: Sequence[dict[str, str]]) -> tuple[TextRun, ...]:
+        urls = {
+            f"#{name}#": topic.get("url") or f"https://s.weibo.com/weibo?q=%23{quote(name, safe='')}%23"
+            for topic in topics if topic and (name := topic.get("name"))
+        }
+        if not urls:
+            return (TextRun(source),) if source else ()
+        pattern = re.compile("|".join(re.escape(label) for label in sorted(urls, key=len, reverse=True)))
+        runs = []
+        cursor = 0
+        for match in pattern.finditer(source):
+            if cursor < match.start():
+                runs.append(TextRun(source[cursor:match.start()]))
+            runs.append(TextRun(match.group(), urls[match.group()]))
+            cursor = match.end()
+        if cursor < len(source):
+            runs.append(TextRun(source[cursor:]))
+        return tuple(runs)
+
+    @staticmethod
+    def _legacy_topic_text(runs: tuple[TextRun, ...]) -> str:
+        return "".join(
+            f'<a href="{html.escape(run.url, quote=True)}">{html.escape(run.text)}</a>' if run.url else run.text
+            for run in runs
+        )
 
 
 __all__ = ["WeiboParser"]

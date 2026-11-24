@@ -12,6 +12,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import plain
 from ...utils import http
 from ...utils.helpers import UA
 from ..base import BaseParser
@@ -54,6 +55,7 @@ class XHSParser(BaseParser):
                     title=result.title,
                     author_name=result.author_name,
                     content=desc,
+                    document=plain(desc),
                 )
             case XHSPostType.IMAGE:
                 media_list = result.media or []
@@ -77,6 +79,7 @@ class XHSParser(BaseParser):
                     title=result.title,
                     author_name=result.author_name,
                     content=desc,
+                    document=plain(desc),
                 )
             case _:
                 raise ParseError("不支持的类型")

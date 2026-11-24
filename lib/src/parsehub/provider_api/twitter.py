@@ -4,17 +4,17 @@ from __future__ import annotations
 import base64
 import json
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, NamedTuple
+from typing import Literal
 
 from curl_cffi.requests import Response
 from loguru import logger
 
 from ..errors import TranslationUnavailable
 from ..types import ParseError
-from ..types.x_status import TextRun, text_runs
+from ..types.document import Block, TextRun, paragraph
+from ..types.x_status import _utf16_boundaries, _web_url, text_runs
 from ..utils import http
 from ..utils.helpers import UA, to_datetime, to_int
 
@@ -1149,6 +1149,7 @@ class TwitterArticle:
     title: str
     content: str
     media: list[TwitterVideo | TwitterPhoto] | None = None
+    blocks: tuple[Block, ...] = ()
 
 
 @dataclass
@@ -1176,204 +1177,200 @@ class TwitterAni:
     thumb_url: str | None = None
 
 
-class _Insertion(NamedTuple):
-    """待插入原文的 Markdown 标记。"""
-
-    idx: int
-    text: str
-    kind: str  # "start" | "end" | "atomic"
-    length: int = 0
-
-
 class ArticleRenderer:
-    """将 Twitter Article JSON 解析并渲染为 Markdown。"""
+    """Read DraftJS blocks and UTF-16 ranges once; project legacy Markdown from them."""
 
-    # 行内样式 → Markdown 标记
-    _INLINE_STYLES: dict[str, str] = {
-        "Bold": "**",
-        "Italic": "*",
-        "Strikethrough": "~~",
+    _STYLE = {
+        "bold": "bold", "italic": "italic", "strikethrough": "strike",
+        "underline": "underline", "code": "code",
     }
-
-    # 块级类型 → 格式化函数
-    _BLOCK_FORMATTERS: dict[str, Callable[[str], str]] = {
-        "header-one": lambda t: f"# {t}",
-        "header-two": lambda t: f"## {t}",
-        "header-three": lambda t: f"### {t}",
-        "blockquote": lambda t: "\n".join(f"> {line}" for line in t.split("\n")),
-        "ordered-list-item": lambda t: f"1. {t}",
-        "unordered-list-item": lambda t: f"- {t}",
-    }
+    _HEADINGS = {f"header-{name}": i for i, name in enumerate(("one", "two", "three", "four", "five", "six"), 1)}
+    _LIST = {"unordered-list-item": False, "ordered-list-item": True}
 
     def __init__(self, article_data: dict):
         self._data = article_data
-        self._media_dict: dict = {}
-        self._media_result: list[TwitterPhoto | TwitterVideo] = []
-
-    # ── 公共入口 ──────────────────────────────
+        self._media: list[TwitterPhoto | TwitterVideo] = []
+        self._media_by_id: dict[str, int] = {}
 
     def render(self) -> TwitterArticle:
-        content_state = self._data.get("content_state", {})
-        blocks = content_state.get("blocks", [])
-        entity_map = {str(item["key"]): item["value"] for item in content_state.get("entityMap", [])}
-        title = self._data.get("title", "")
+        self._media.clear()
+        self._media_by_id.clear()
+        state = self._data.get("content_state") or {}
+        entity_map = state.get("entityMap") or {}
+        if isinstance(entity_map, list):
+            entity_map = {str(item["key"]): item["value"] for item in entity_map if isinstance(item, dict)}
+        blocks = []
+        if cover := self._photo((self._data.get("cover_media") or {}).get("media_info") or {}):
+            self._media.append(cover)
+            blocks.append(Block("media", index=0, url=cover.url))
+        for item in self._data.get("media_entities") or ():
+            info = item.get("media_info") or {}
+            media = None
+            if info.get("__typename") == "ApiImage":
+                media = self._photo(info)
+            elif info.get("__typename") == "ApiVideo":
+                preview = self._photo(info.get("preview_image") or {})
+                if url := self._best_mp4_url(info.get("variants") or []):
+                    media = TwitterVideo(url, preview.height if preview else 0, preview.width if preview else 0,
+                                         info.get("duration_millis") or 0, preview.url if preview else None)
+                else:
+                    media = preview
+            if media:
+                if item.get("media_id") is not None:
+                    self._media_by_id[str(item["media_id"])] = len(self._media)
+                self._media.append(media)
 
-        self._parse_media_entities()
-        cover_info = self._data.get("cover_media", {}).get("media_info", {}) or {}
-        cover_url = cover_info.get("original_img_url", "")
+        entries = []
+        for raw in state.get("blocks") or ():
+            kind = raw.get("type", "unstyled")
+            children = self._block(raw, entity_map)
+            entries.append((kind, max(0, to_int(raw.get("depth")) or 0), children))
+        blocks.extend(self._group_lists(entries))
+        legacy = "\n\n".join(self._markdown(block, cover=i == 0 and bool(cover)) for i, block in enumerate(blocks))
+        return TwitterArticle(self._data.get("title", ""), legacy, list(self._media) or None, tuple(blocks))
 
-        md_lines: list[str] = []
-        if cover_url:
-            md_lines.append(f"![Cover Image]({cover_url})\n")
-            # 封面**写进了正文就必须也在媒体列表里**：正文的 ``![](url)`` 要靠
-            # ``media_urls`` 换成上传媒体引用，对不上就被剥掉（用户看到正文里
-            # 少一张图）。封面是 ``cover_media``，不在 ``media_entities`` 里，
-            # 所以得单独补一个 —— 按正文出现顺序排在**最前**。
-            width = to_int(cover_info.get("original_img_width")) or 0
-            height = to_int(cover_info.get("original_img_height")) or 0
-            self._media_result.insert(
-                0,
-                TwitterPhoto(url=cover_url, width=width, height=height),
-            )
-
-        for block in blocks:
-            md_lines.append(self._render_block(block, entity_map))
-
-        return TwitterArticle(
-            title=title,
-            content="\n\n".join(md_lines),
-            media=self._media_result or None,
-        )
-
-    # ── 媒体解析 ──────────────────────────────
-
-    def _parse_media_entities(self) -> None:
-        for media in self._data.get("media_entities", []):
-            media_id = media.get("media_id")
-            media_info = media.get("media_info", {})
-            typename = media_info.get("__typename")
-
-            if typename == "ApiImage":
-                self._parse_image(media_id, media_info)
-            elif typename == "ApiVideo":
-                self._parse_video(media_id, media_info)
-
-    def _parse_image(self, media_id, info: dict) -> None:
-        url = info.get("original_img_url", "")
-        if media_id and url:
-            self._media_dict[media_id] = {"type": "image", "url": url}
-        self._media_result.append(
-            TwitterPhoto(
-                url=url,
-                height=info.get("original_img_height", 0),
-                width=info.get("original_img_width", 0),
-            )
-        )
-
-    def _parse_video(self, media_id, info: dict) -> None:
-        preview = info.get("preview_image", {})
-        preview_url = preview.get("original_img_url", "")
-        video_url = self._best_mp4_url(info.get("variants", []))
-
-        if media_id and preview_url:
-            self._media_dict[media_id] = {
-                "type": "video",
-                "preview_url": preview_url,
-                "video_url": video_url,
-            }
-        self._media_result.append(
-            TwitterVideo(
-                url=video_url,
-                height=preview.get("original_img_height", 0),
-                width=preview.get("original_img_width", 0),
-                duration_millis=info.get("duration_millis", 0),
-                thumb_url=preview_url,
-            )
-        )
+    @staticmethod
+    def _photo(info: dict) -> TwitterPhoto | None:
+        url = info.get("original_img_url") or ""
+        return TwitterPhoto(url, to_int(info.get("original_img_height")) or 0,
+                            to_int(info.get("original_img_width")) or 0) if url else None
 
     @staticmethod
     def _best_mp4_url(variants: list) -> str:
-        mp4s = [v for v in variants if v.get("content_type") == "video/mp4"]
-        if not mp4s:
-            return ""
-        return str(max(mp4s, key=lambda v: v.get("bit_rate", 0)).get("url", ""))
+        mp4s = [v for v in variants if v.get("content_type") == "video/mp4" and v.get("url")]
+        return str(max(mp4s, key=lambda v: v.get("bit_rate", 0))["url"]) if mp4s else ""
 
-    # ── Block 渲染 ────────────────────────────
+    def _atomic(self, entity: dict) -> tuple[Block, ...]:
+        if entity.get("type") == "DIVIDER":
+            return (Block("rule"),)
+        if entity.get("type") != "MEDIA":
+            return ()
+        data = entity.get("data") or {}
+        blocks = []
+        for item in data.get("mediaItems") or ():
+            index = self._media_by_id.get(str(item.get("mediaId")))
+            if index is not None:
+                blocks.append(Block("media", index=index, url=self._media[index].url))
+        return tuple(blocks)
 
-    def _render_block(self, block: dict, entity_map: dict) -> str:
-        b_type = block.get("type", "unstyled")
-        text = block.get("text", "")
+    def _block(self, raw: dict, entity_map: dict) -> tuple[Block, ...]:
+        text = raw.get("text") or ""
+        kind = raw.get("type", "unstyled")
+        offsets = _utf16_boundaries(text)
+        styles: list[tuple[int, int, str]] = []
+        links: list[tuple[int, int, str]] = []
+        atomics: dict[int, tuple[int, tuple[Block, ...]]] = {}
 
-        insertions = self._collect_inline_styles(block)
-        insertions += self._collect_entities(block, entity_map)
-        insertions.sort(key=self._insertion_sort_key)
+        def span(item: dict) -> tuple[int, int] | None:
+            start, length = item.get("offset"), item.get("length")
+            if (type(start) is int and type(length) is int and length >= 0
+                    and start in offsets and start + length in offsets):
+                return offsets[start], offsets[start + length]
+            return None
 
-        final_text = self._apply_insertions(text, insertions)
-        formatter = self._BLOCK_FORMATTERS.get(b_type)
-        return formatter(final_text) if formatter else final_text
-
-    @staticmethod
-    def _collect_inline_styles(block: dict) -> list[_Insertion]:
-        result: list[_Insertion] = []
-        for style in block.get("inlineStyleRanges", []):
-            marker = ArticleRenderer._INLINE_STYLES.get(style["style"])
-            if not marker:
+        for item in raw.get("inlineStyleRanges") or ():
+            if (bounds := span(item)) and (style := self._STYLE.get(str(item.get("style", "")).lower())):
+                styles.append((*bounds, style))
+        for item in raw.get("entityRanges") or ():
+            if not (bounds := span(item)):
                 continue
-            offset, length = style["offset"], style["length"]
-            result.append(_Insertion(offset, marker, "start", length))
-            result.append(_Insertion(offset + length, marker, "end", length))
-        return result
+            entity = entity_map.get(str(item.get("key"))) or {}
+            if entity.get("type") == "LINK":
+                url = _web_url(str((entity.get("data") or {}).get("url") or ""))
+                if url:
+                    links.append((*bounds, url))
+            elif atomic := self._atomic(entity):
+                atomics[bounds[0]] = (bounds[1], atomic)
+        boundaries = sorted({0, len(text)} | {p for a, b, _ in styles + links for p in (a, b)}
+                            | {p for a, (b, _) in atomics.items() for p in (a, b)})
+        blocks: list[Block] = []
+        runs: list[TextRun] = []
 
-    def _collect_entities(self, block: dict, entity_map: dict) -> list[_Insertion]:
-        result: list[_Insertion] = []
-        for ent in block.get("entityRanges", []):
-            offset, length = ent["offset"], ent["length"]
-            ent_data = entity_map.get(str(ent["key"]), {})
-            ent_type = ent_data.get("type")
+        def flush() -> None:
+            if runs:
+                payload = tuple(runs)
+                if level := self._HEADINGS.get(kind):
+                    blocks.append(Block("heading", runs=payload, level=level))
+                elif kind == "blockquote":
+                    blocks.append(Block("quote", children=(paragraph(payload),)))
+                elif kind == "code-block":
+                    blocks.append(Block("code", runs=payload))
+                else:
+                    blocks.append(paragraph(payload))
+                runs.clear()
 
-            if ent_type == "LINK":
-                url = ent_data.get("data", {}).get("url", "")
-                result.append(_Insertion(offset, "[", "start", length))
-                result.append(_Insertion(offset + length, f"]({url})", "end", length))
+        skip = 0
+        for i, start in enumerate(boundaries):
+            if start < skip:
+                continue
+            if start in atomics:
+                flush()
+                skip, atomic = atomics[start]
+                blocks.extend(atomic)
+            if i + 1 >= len(boundaries) or start < skip:
+                continue
+            end = boundaries[i + 1]
+            url = next((url for a, b, url in links if a <= start < b), "")
+            style_set = tuple(s for s in self._STYLE.values() if any(a <= start < b and t == s for a, b, t in styles))
+            value = text[start:end]
+            if runs and (runs[-1].url, runs[-1].styles) == (url, style_set):
+                value = runs.pop().text + value
+            runs.append(TextRun(value, url, style_set))
+        flush()
+        return tuple(blocks) or (paragraph(()),)
 
-            elif ent_type == "MEDIA":
-                md = self._media_entity_to_md(ent_data)
-                if md:
-                    result.append(_Insertion(offset, md, "atomic", length))
+    def _group_lists(self, entries: list[tuple[str, int, tuple[Block, ...]]]) -> tuple[Block, ...]:
+        out = []
+        i = 0
+        while i < len(entries):
+            kind, depth, blocks = entries[i]
+            if kind not in self._LIST:
+                out.extend(blocks)
+                i += 1
+                continue
+            items = []
+            while i < len(entries) and entries[i][:2] == (kind, depth):
+                item = entries[i][2]
+                i += 1
+                start = i
+                while i < len(entries) and entries[i][0] in self._LIST and entries[i][1] > depth:
+                    i += 1
+                if start < i:
+                    item += self._group_lists(entries[start:i])
+                items.append(item)
+            out.append(Block("list", items=tuple(items), ordered=self._LIST[kind]))
+        return tuple(out)
 
-            elif ent_type == "DIVIDER":
-                result.append(_Insertion(offset, "\n---\n", "atomic", length))
-
-        return result
-
-    def _media_entity_to_md(self, ent_data: dict) -> str:
-        media_items = ent_data.get("data", {}).get("mediaItems", [])
-        if not media_items:
-            return ""
-        obj = self._media_dict.get(media_items[0].get("mediaId"))
-        if not obj:
-            return ""
-
-        if obj["type"] == "image":
-            return f"![Image]({obj['url']})"
-        if obj["type"] == "video":
-            p, v = obj["preview_url"], obj["video_url"]
-            return f"[![Video]({p})]({v})" if v else f"![Video Preview]({p})"
-        return ""
-
-    # ── 文本拼装 ──────────────────────────────
-
-    @staticmethod
-    def _insertion_sort_key(ins: _Insertion) -> tuple:
-        weight = {"end": 1, "atomic": 0, "start": -1}.get(ins.kind, 0)
-        return -ins.idx, weight, ins.length
-
-    @staticmethod
-    def _apply_insertions(text: str, insertions: list[_Insertion]) -> str:
-        chars = list(text)
-        for ins in insertions:
-            if ins.kind == "atomic" and ins.idx < len(chars):
-                chars[ins.idx] = ins.text
-            else:
-                chars.insert(ins.idx, ins.text)
-        return "".join(chars)
+    def _markdown(self, block: Block, *, cover: bool = False) -> str:
+        markers = {"bold": "**", "italic": "*", "strike": "~~", "code": "`"}
+        parts = []
+        active: tuple[str, ...] = ()
+        for run in block.runs:
+            desired = tuple(style for style in run.styles if style in markers)
+            common = 0
+            for old, new in zip(active, desired, strict=False):
+                if old != new:
+                    break
+                common += 1
+            parts.extend(markers[style] for style in reversed(active[common:]))
+            parts.extend(markers[style] for style in desired[common:])
+            parts.append(f"[{run.text}]({run.url})" if run.url else run.text)
+            active = desired
+        parts.extend(markers[style] for style in reversed(active))
+        text = "".join(parts)
+        if block.kind == "heading":
+            return "#" * block.level + " " + text
+        if block.kind == "quote":
+            children = "\n\n".join(self._markdown(child) for child in block.children)
+            return "\n".join(f"> {line}" for line in children.split("\n"))
+        if block.kind == "code":
+            return f"```\n{text}\n```"
+        if block.kind == "list":
+            marker = "1. " if block.ordered else "- "
+            return "\n\n".join(marker + "\n  ".join(self._markdown(child) for child in item) for item in block.items)
+        if block.kind == "media":
+            media = self._media[block.index]
+            if isinstance(media, TwitterVideo):
+                return f"[![Video]({media.thumb_url})]({block.url})" if media.thumb_url else f"[Video]({block.url})"
+            return f"![{'Cover Image' if cover else 'Image'}]({block.url})" + ("\n" if cover else "")
+        return "\n---\n" if block.kind == "rule" else text

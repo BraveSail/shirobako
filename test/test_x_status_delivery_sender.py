@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from parsehub import Platform
 from parsehub.types import AniRef, ImageFile, ImageRef, MultimediaParseResult, VideoFile, VideoRef
+from parsehub.types.document import Block, Document, paragraph
 from parsehub.types.x_status import TextRun, XPost, XStatus
 from pyrogram import Client, enums, raw, utils
 from pyrogram.errors import MessageIdInvalid, WebpageCurlFailed
@@ -27,6 +28,7 @@ from services.media import ProcessedMedia
 
 _t = t_["en-us"]
 _SOURCE = "https://x.com/user/status/2095537240726450480"
+_DOCUMENT_SOURCE = "https://www.pixiv.net/artworks/12345"
 _LINK = "https://example.org/a_(b)?x=1&y=2"
 _LITERAL = "    😀 <b>&amp;</b> **literal** ||not a spoiler||\n#not_a_heading {{poll:0}}\n"
 _LINK_LABEL = "🔗 read"
@@ -83,9 +85,9 @@ def _assert_caption(rpc):
     assert not any(kind is raw.types.MessageEntitySpoiler for kind, _, _ in spans)
 
 
-def _set_note(wire, mode, *, formatted=True):
+def _set_note(wire, mode, *, formatted=True, source=_SOURCE):
     command = {ParseMode.RAW: "raw", ParseMode.ZIP: "zip", ParseMode.PREVIEW: "jxjx"}[mode]
-    prefix = f"/{command} {_SOURCE} 🧪\n"
+    prefix = f"/{command} {source} 🧪\n"
     wire.msg.text = f"{prefix}==  {_NOTE}  ==\nignored\n==second=="
     wire.msg.command = wire.msg.text[1:].split()
     if formatted:
@@ -107,7 +109,7 @@ def _set_note(wire, mode, *, formatted=True):
         ]
 
 
-async def _parse_from_message(monkeypatch, wire, result):
+async def _parse_from_message(monkeypatch, wire, result, *, source=_SOURCE):
     monkeypatch.setattr(handlers, "get_session", nullcontext)
     wire.msg.from_user = User(id=_PEER.user_id, language_code="en-us")
     monkeypatch.setattr(handlers, "UserService", lambda _: SimpleNamespace(ensure_lang=AsyncMock(return_value="en-us")))
@@ -118,8 +120,8 @@ async def _parse_from_message(monkeypatch, wire, result):
         handlers, "AdminUserService", lambda _: SimpleNamespace(is_whitelisted=AsyncMock(return_value=True)),
     )
     monkeypatch.setattr(handlers, "ParseService", lambda: SimpleNamespace(
-        get_raw_url=AsyncMock(return_value=_SOURCE),
-        parser=SimpleNamespace(get_platform=lambda url: result.parse_result.platform if url == _SOURCE else None),
+        get_raw_url=AsyncMock(return_value=source),
+        parser=SimpleNamespace(get_platform=lambda url: result.parse_result.platform if url == source else None),
     ))
     monkeypatch.setattr(handlers, "parse_cache", SimpleNamespace(get=AsyncMock(return_value=None), set=AsyncMock()))
 
@@ -230,7 +232,7 @@ class _Wire:
 
 
 def _reject_legacy(*args, **kwargs):
-    pytest.fail("The native X status must not use the legacy renderer")
+    pytest.fail("A structured result must not use the legacy renderer")
 
 
 @pytest.mark.parametrize("overwrite", [False, True])
@@ -259,12 +261,19 @@ def test_final_status_sends_literal_blocks(monkeypatch, overwrite):
     asyncio.run(run())
 
 
-def test_final_status_caches_the_original_when_sending_a_display_override(monkeypatch, tmp_path):
+@pytest.mark.parametrize("repeat_media", [False, True])
+def test_final_status_caches_the_original_when_sending_a_display_override(monkeypatch, tmp_path, repeat_media):
+    from parsehub.types.document import Block, Document, paragraph
+
     local = tmp_path / "photo.jpg"
     local.write_bytes(b"offline upload")
     media = [ImageRef(url="https://example.org/photo.jpg")]
     original = _result("ORIGINAL", media=media)
     display = _result("TRANSLATION", media=media)
+    if repeat_media:
+        image = Block("media", index=0)
+        original.document = Document((paragraph("ORIGINAL"), image, paragraph("between"), image))
+        display.document = Document((paragraph("TRANSLATION"), image, paragraph("between"), image))
     write_cache = AsyncMock()
     monkeypatch.setattr(delivery, "persistent_cache", SimpleNamespace(set=write_cache))
 
@@ -281,6 +290,7 @@ def test_final_status_caches_the_original_when_sending_a_display_override(monkey
         key, entry = write_cache.await_args.args
         assert key == _SOURCE
         assert entry.parse_result.x_status == original.x_status
+        assert entry.parse_result.document == original.document
         (item,) = entry.media
         assert FileId.decode(item.file_id).media_id == _PHOTO.id
 
@@ -412,5 +422,81 @@ def test_legacy_gif_note_still_uses_the_markup_adapter(monkeypatch):
         await _parse_from_message(monkeypatch, wire, PipelineResult(result))
         (query,) = wire.select(_RPCS.SendMessage)
         assert (raw.types.MessageEntityBold, "legacy note", None) in _caption_spans(query)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mode", [ParseMode.RAW, ParseMode.ZIP, ParseMode.PREVIEW])
+def test_non_x_document_caption_and_note_on_sdk_wire(monkeypatch, tmp_path, mode):
+    monkeypatch.setattr(delivery, "build_caption", _reject_legacy)
+    output = tmp_path / "output"
+    output.mkdir()
+    if mode == ParseMode.PREVIEW:
+        media = [AniRef(url=f"https://example.org/{i}.gif") for i in range(6)]
+        processed = []
+    else:
+        photo = output / "photo.jpg"
+        photo.write_bytes(b"offline upload")
+        media = [ImageRef(url="https://example.org/photo.jpg")]
+        processed = [ProcessedMedia(ImageFile(path=photo, width=1, height=1))]
+    parsed = MultimediaParseResult(
+        content="LEGACY", media=media,
+        document=Document((paragraph((TextRun(_LITERAL), TextRun(_LINK_LABEL, _LINK, ("bold",)))),)),
+    )
+    parsed.platform = Platform.PIXIV
+    parsed.raw_url = _DOCUMENT_SOURCE
+
+    async def run():
+        wire = _Wire(monkeypatch, config=SettingsConfig(noprogress=True, custom_content=True, hide_source=True))
+        monkeypatch.setattr(wire.cli.parser, "unparse", _reject_legacy)
+        _set_note(wire, mode, source=_DOCUMENT_SOURCE)
+        await _parse_from_message(monkeypatch, wire, PipelineResult(parsed, processed, output), source=_DOCUMENT_SOURCE)
+        rpc = _RPCS.SendMessage if mode == ParseMode.PREVIEW else _RPCS.SendMedia
+        (query,) = wire.select(rpc)
+        assert query.message.startswith(_LITERAL + _LINK_LABEL)
+        assert (raw.types.MessageEntityTextUrl, _LINK_LABEL, _LINK) in _caption_spans(query)
+        _assert_note(query)
+        assert wire.modes[query.message] is enums.ParseMode.DISABLED
+
+    asyncio.run(run())
+
+
+def test_non_x_document_final_send_writes_original_document_to_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(helpers, "build_rich_markdown", _reject_legacy)
+    monkeypatch.setattr(rich_blocks, "markdown_to_blocks", _reject_legacy)
+    local = tmp_path / "photo.jpg"
+    local.write_bytes(b"offline upload")
+    media = [ImageRef(url="https://example.org/photo.jpg")]
+    original, display = (
+        MultimediaParseResult(
+            content="LEGACY", media=media, document=Document((paragraph(text), Block("media", index=0))),
+        )
+        for text in ("ORIGINAL", _LITERAL)
+    )
+    original.platform = display.platform = Platform.PIXIV
+    original.raw_url = display.raw_url = _DOCUMENT_SOURCE
+    write_cache = AsyncMock()
+    monkeypatch.setattr(delivery, "persistent_cache", SimpleNamespace(set=write_cache))
+
+    async def run():
+        wire = _Wire(monkeypatch)
+        await delivery.send_rich_media(
+            wire.sender, display, [ProcessedMedia(ImageFile(path=local, width=1, height=1))],
+            _t=_t, raw_url=_DOCUMENT_SOURCE, cache_parse_result=original,
+        )
+        (query,) = wire.select(_RPCS.SendMessage)
+        assert _LITERAL in _text(query.rich_message.blocks)
+        write_cache.assert_awaited_once()
+        assert write_cache.await_args is not None
+        key, entry = write_cache.await_args.args
+        assert key == _DOCUMENT_SOURCE
+        assert entry.parse_result.document == original.document
+        (item,) = entry.media
+        assert FileId.decode(item.file_id).media_id == _PHOTO.id
+
+        await delivery.send_cached(wire.sender, entry, key, _t=_t)
+        warm = wire.select(_RPCS.SendMessage)[-1]
+        assert "ORIGINAL" in _text(warm.rich_message.blocks)
+        assert _LITERAL not in _text(warm.rich_message.blocks)
 
     asyncio.run(run())

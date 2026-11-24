@@ -22,6 +22,7 @@ from plugins.filters import (
 )
 from plugins.helpers import format_label
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
+from plugins.parse.inline_rich import has_structured_body
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
 from plugins.parse.sender import (
     MessageSender,
@@ -161,7 +162,7 @@ async def _post_text(
 
 
 def _caption_note(req: ParseRequest, parse_result: Any) -> str | CaptionNote:
-    if getattr(parse_result, "x_status", None) is not None:
+    if has_structured_body(parse_result):
         if req.include_custom_content and req.msg.text:
             return extract_caption_note(req.msg.text, req.msg.entities or ())
         return ""
@@ -380,10 +381,10 @@ async def handle_parse(req: ParseRequest) -> bool:
             return True
 
         if req.mode == ParseMode.RAW:
-            await send_raw(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, result.parse_result))
+            await send_raw(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, parse_result))
             return True
         if req.mode == ParseMode.ZIP:
-            await send_zip(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, result.parse_result))
+            await send_zip(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, parse_result))
             return True
 
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")

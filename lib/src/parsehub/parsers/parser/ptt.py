@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
-from ...provider_api.ptt import PttAPI, PttArticle
+from ...provider_api.ptt import PttAPI, PttArticle, PttPush
 from ...types import ImageRef, Platform, RichTextParseResult
+from ...types.document import Block, Document, TextRun, paragraph, visible_text
 from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
@@ -42,6 +43,7 @@ class PttParser(BaseParser):
         return PttRichTextParseResult(
             title=article.title,
             markdown_content=self._render(article),
+            document=self._document(article),
             author_name=article.author_name,
             author_handle=article.author_handle,
             # PTT 没有个人主页，作者就只显示名字（不拼链接）
@@ -54,6 +56,40 @@ class PttParser(BaseParser):
             reply_count=len(article.pushes) or None,
             tags=[article.board] if article.board else None,
         )
+
+    @staticmethod
+    def _shown_pushes(article: PttArticle) -> list[PttPush]:
+        body_text = visible_text(article.body_blocks) if article.body_blocks is not None else article.body
+        budget = max(_PUSH_MIN_BUDGET, _TOTAL_BUDGET - len(body_text))
+        max_pushes = min(_MAX_PUSHES, budget // _PUSH_RENDER_COST)
+        shown = []
+        used = 0
+        for push in article.pushes:
+            cost = len(f"> {push.tag or '→'} {push.user}: {push.content}".rstrip()) + 2
+            if len(shown) >= max_pushes or (shown and used + cost > budget):
+                break
+            shown.append(push)
+            used += cost
+        return shown
+
+    @staticmethod
+    def _document(article: PttArticle) -> Document:
+        blocks = list(article.body_blocks or ())
+        if article.body_blocks is None and article.body:
+            blocks.append(paragraph(article.body))
+        if article.pushes:
+            shown = PttParser._shown_pushes(article)
+            pushes = []
+            for push in shown:
+                label = f"{push.tag or '→'} {push.user}:"
+                content = push.runs or ((TextRun(push.content),) if push.content else ())
+                runs = (TextRun(label + " "), *content) if content else (TextRun(label),)
+                pushes.append(Block("quote", children=(paragraph(runs),)))
+            if remaining := len(article.pushes) - len(shown):
+                pushes.append(Block("quote", children=(paragraph(f"…還有 {remaining} 條推文未顯示"),)))
+            blocks.append(Block("details", runs=(TextRun(f"推文（{len(article.pushes)} 條）"),),
+                                children=tuple(pushes), independent=True))
+        return Document(tuple(blocks))
 
     @staticmethod
     def _render(article: PttArticle) -> str:
@@ -76,21 +112,12 @@ class PttParser(BaseParser):
             # 「显示更多」是客户端行为（不可控，只能让消息变矮）。
             #
             # 条数也有上限: 富文本正文 32768 字符上限，每条引用渲染约 50 字符。
-            budget = max(_PUSH_MIN_BUDGET, _TOTAL_BUDGET - len(article.body))
-            max_pushes = min(_MAX_PUSHES, budget // _PUSH_RENDER_COST)
             lines: list[str] = []
-            used = 0
-            shown = 0
-            for push in article.pushes:
-                tag = push.tag or "→"
-                line = f"> {tag} {push.user}: {push.content}".rstrip()
-                if shown >= max_pushes or (shown and used + len(line) + 2 > budget):
-                    break
-                lines.append(line)
+            shown = PttParser._shown_pushes(article)
+            for push in shown:
+                lines.append(f"> {push.tag or '→'} {push.user}: {push.content}".rstrip())
                 lines.append("")
-                used += len(line) + 2
-                shown += 1
-            remaining = len(article.pushes) - shown
+            remaining = len(article.pushes) - len(shown)
             if remaining > 0:
                 lines.append(f"> …還有 {remaining} 條推文未顯示")
             summary = f"推文（{len(article.pushes)} 條）"

@@ -45,6 +45,7 @@ from plugins.parse.inline_rich import (
     cache_media_blocks,
     cached_rich_message,
     edit_inline_rich_message,
+    has_structured_body,
     result_summary_text,
     rich_cache_entry,
     upload_media_for_cache,
@@ -351,7 +352,7 @@ async def _upload_and_cache_inline_media(
     ``media_urls`` 是原始 URL 表 (与 media 平铺对齐) —— 存进缓存, 缓存命中时正文外链图
     才能换成上传媒体引用 (见 ``inline_rich.rich_cache_entry``)。
     """
-    upload_options = {"preserve_animations": True} if getattr(parse_result, "x_status", None) is not None else {}
+    upload_options = {"preserve_animations": True} if has_structured_body(parse_result) else {}
     uploaded = await upload_media_for_cache(cli, media, **upload_options)
     if not uploaded:
         return None
@@ -484,13 +485,13 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 "media_urls": media_urls,
                 "hide_content": spoiler_tag,
             }
-            native_status = getattr(parse_result, "x_status", None) is not None
+            structured = has_structured_body(parse_result)
             legacy_edit: dict[str, Any] = (
-                {} if native_status else {"markdown": build_rich_markdown(parse_result, **render_options)}
+                {} if structured else {"markdown": build_rich_markdown(parse_result, **render_options)}
             )
             logger.debug(
                 f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "
-                f"native_status={native_status}, sensitive={parse_result.is_sensitive}"
+                f"structured={structured}, sensitive={parse_result.is_sensitive}"
             )
             # 两条路都先自己上传拿 file_id: 编辑时就用 file_id 引用 (不再上传), 同时这条
             # inline 消息的媒体也进了缓存 —— 以前 inline 从不写, 每次选中都得重新下载。
@@ -503,7 +504,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             # 也不会把本地文件再上传一遍。
             cached_blocks = cache_media_blocks(entry)[4] if entry is not None else None
             delivery_media = cached_blocks or media_blocks
-            if native_status:
+            if structured:
                 blocks = build_delivery_blocks(
                     parse_result, raw_url=raw_url, media_blocks=delivery_media, **render_options
                 )
@@ -593,7 +594,7 @@ def build_inline_rich_content(
         两条路径行为必须一致)。
     """
     _t = t_[lang]
-    if getattr(parse_result, "x_status", None) is not None:
+    if has_structured_body(parse_result):
         blocks = build_delivery_blocks(
             parse_result,
             config=config,

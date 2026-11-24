@@ -415,9 +415,16 @@ def build_delivery_caption(
     raw_url: str = "",
     media_caption: bool = False,
 ) -> tuple[str, list[MessageEntity] | None]:
-    """Return native entities for typed X statuses; None keeps legacy HTML parsing."""
-    if getattr(parse_result, "x_status", None) is not None:
-        return build_x_status_caption(
+    """Render native entities when structured source data is available."""
+    caption_builder = None
+    if getattr(parse_result, "document", None) is not None:
+        from plugins.parse.document_caption import build_document_caption
+
+        caption_builder = build_document_caption
+    elif getattr(parse_result, "x_status", None) is not None:
+        caption_builder = build_x_status_caption
+    if caption_builder is not None:
+        return caption_builder(
             parse_result,
             config=config,
             custom_content=custom_content,
@@ -446,10 +453,11 @@ async def send_raw(
 ) -> None:
     """Raw 模式：将文件以原始文档形式上传。"""
     logger.debug("Raw 模式, 直接上传文件")
-    await reporter.report_result(result.parse_result, _t("上 传 中..."))
+    display_result = result.display_result or result.parse_result
+    await reporter.report_result(display_result, _t("上 传 中..."))
     try:
         caption, entities = build_delivery_caption(
-            result.parse_result,
+            display_result,
             config=sender.config,
             _t=_t,
             custom_content=custom_content,
@@ -522,10 +530,11 @@ async def send_zip(
     custom_content: str | CaptionNote = "",
 ) -> None:
     logger.debug("Zip 模式, 开始打包")
-    await reporter.report_result(result.parse_result, _t("打 包 中..."))
+    display_result = result.display_result or result.parse_result
+    await reporter.report_result(display_result, _t("打 包 中..."))
     try:
         caption, entities = build_delivery_caption(
-            result.parse_result,
+            display_result,
             config=sender.config,
             _t=_t,
             custom_content=custom_content,
@@ -542,7 +551,7 @@ async def send_zip(
     finally:
         result.cleanup()
 
-    await reporter.report_result(result.parse_result, _t("上 传 中..."))
+    await reporter.report_result(display_result, _t("上 传 中..."))
     try:
         await sender.upload_document()
         await sender.document(str(pack_path), caption=caption, caption_entities=entities)
@@ -659,33 +668,25 @@ async def send_rich_media(
 
     if raw_url and media:
         cached_media = extract_cache_media(getattr(message, "rich_message", None))
-        # ⚠️ **全有才写**（2026-10-08）: 服务端返回的结构里若有一项没认出来（嵌套在引用块里、
-        # 或某个分支拿不到 file_id），条目里就会少一项。而下面那两个计数是**按数量**推的 ——
-        # 少一项时 `quoted_items` 仍会算成 1，于是缓存命中时把**正文的媒体**放进引用卡片、
-        # 正文反而没图（用户报「缓存正文又没图了」）。
-        # 宁可这次不写（下次重新解析 + 上传，只是贵一点），也不要写一条**位置错**的缓存。
+        is_document = getattr(parse_result, "document", None) is not None
+        # A document may display one downloaded image several times. The mapper
+        # checks the order, identities and coverage; the old positional path
+        # still requires a strict one-to-one count.
         expected = len(media)
-        if len(cached_media) == expected:
+        if is_document or len(cached_media) == expected:
             # 缓存里媒体是平铺的: 末尾 N 项属于被引用块、其前 M 项属于被回复块
             # (用占位符数量推, 两者一一对应)
             quoted_items = min(len(quoted_placeholders), len(cached_media))
             reply_items = min(len(reply_placeholders), len(cached_media) - quoted_items)
-            await persistent_cache.set(
-                raw_url,
-                rich_cache_entry(
-                    cache_parse_result or parse_result,
-                    cached_media,
-                    quoted_media_count=quoted_items,
-                    reply_media_count=reply_items,
-                    # 投票要进缓存 —— 否则"第二次发同一条链接"占位符渲染不出来
-                    polls=getattr(parse_result, "polls", None),
-                    # 原始 URL 也进缓存: 缓存命中时正文外链图才能换成上传媒体引用
-                    urls=media_urls,
-                ),
+            render_options = {"rendered_blocks": rich.blocks} if is_document else {}
+            entry = rich_cache_entry(
+                cache_parse_result or parse_result, cached_media,
+                quoted_media_count=quoted_items, reply_media_count=reply_items,
+                polls=getattr(parse_result, "polls", None), urls=media_urls, **render_options,
             )
-            logger.debug(
-                f"富文本媒体已写入缓存: count={len(cached_media)}, 引用{quoted_items} 回复{reply_items}"
-            )
+            if entry is not None:
+                await persistent_cache.set(raw_url, entry)
+                logger.debug(f"富文本媒体已写入缓存: count={len(entry.media or [])}")
         else:
             logger.warning(
                 f"媒体提取数量不符, 本次不写 file_id 缓存: 期望{expected} 提取到{len(cached_media)}"

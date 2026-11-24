@@ -1,5 +1,6 @@
 from ...provider_api.snapchat import SnapchatError, fetch_video
 from ...types import ParseError, Platform, VideoParseResult, VideoRef
+from ...types.document import plain
 from ..base.base import BaseParser
 
 
@@ -25,6 +26,7 @@ class Snapchatarse(BaseParser):
         return VideoParseResult(
             title=video.title,
             content=video.description,
+            document=plain(video.description),
             author_name=video.author_name,
             author_handle=video.author_handle,
             author_url=video.author_url,

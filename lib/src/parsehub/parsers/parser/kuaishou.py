@@ -2,6 +2,7 @@ from loguru import logger
 
 from ...provider_api.kuaishou import KuaiShouAPI, KuaishouParser
 from ...types import ImageParseResult, ImageRef, ParseError, Platform, VideoParseResult, VideoRef
+from ...types.document import Document
 from ...utils.helpers import SecretCookie, image_ext_from_url
 from ..base.base import BaseParser
 
@@ -50,6 +51,7 @@ class KuaiShouParser(BaseParser):
 
                 return VideoParseResult(
                     title=content,
+                    document=Document(),
                     author_name=ksp.get_author_name(),
                     video=VideoRef(
                         url=video.url,
@@ -68,6 +70,7 @@ class KuaiShouParser(BaseParser):
             else:
                 return VideoParseResult(
                     title=result.title,
+                    document=Document(),
                     author_name=result.author_name,
                     video=VideoRef(
                         url=result.video_url,
@@ -83,12 +86,14 @@ class KuaiShouParser(BaseParser):
             if img:
                 return ImageParseResult(
                     title=content,
+                    document=Document(),
                     photo=[ImageRef(url=i.url, height=i.h, width=i.w, ext=i.e) for i in img],
                     author_name=ksp.get_author_name(),
                 )
             if cover:
                 return ImageParseResult(
                     title=content,
+                    document=Document(),
                     photo=[ImageRef(url=cover, ext=image_ext_from_url(cover))],
                     author_name=ksp.get_author_name(),
                 )

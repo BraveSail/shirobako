@@ -12,7 +12,7 @@ from db import get_session
 from log import logger
 from plugins.context import get_config_target
 from plugins.helpers import build_progress_markdown, format_label
-from plugins.parse.inline_rich import build_delivery_blocks, edit_inline_rich_message
+from plugins.parse.inline_rich import build_delivery_blocks, edit_inline_rich_message, has_structured_body
 from plugins.parse.rich_blocks import markdown_to_blocks
 from plugins.parse.sender import MessageSender
 from repo.settings import SettingsConfig
@@ -73,7 +73,7 @@ def _render_progress(
         "custom_content": custom_content,
         "raw_url": raw_url,
     }
-    if getattr(parse_result, "x_status", None) is not None:
+    if has_structured_body(parse_result):
         return build_delivery_blocks(parse_result, hide_content=spoiler_tag, **options)
     return build_progress_markdown(parse_result, spoiler_tag=spoiler_tag, **options)
 

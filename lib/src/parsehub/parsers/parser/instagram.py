@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from ...provider_api.instagram import InstagramAPI, InstagramAPIError, InstagramMediaType, InstagramPost
 from ...types import ImageParseResult, ImageRef, MultimediaParseResult, ParseError, Platform, VideoParseResult, VideoRef
+from ...types.document import plain
 from ...utils.helpers import SecretCookie, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
@@ -23,9 +24,11 @@ class InstagramParser(BaseParser):
 
         width, height = post.width, post.height
         handle = post.author_handle
+        caption = post.caption
         metadata: dict[str, Any] = {
             "title": post.title,
-            "content": post.caption,
+            "content": caption,
+            "document": plain(caption),
             "author_name": post.author_name,
             "author_handle": handle,
             "author_url": profile_url(Platform.INSTAGRAM, handle),

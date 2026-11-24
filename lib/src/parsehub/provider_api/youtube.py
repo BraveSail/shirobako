@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from ..types.document import TextRun
 from ..utils import http
 from ..utils.helpers import to_datetime
 
@@ -207,6 +208,7 @@ class YoutubePostVideo:
     video_id: str
     title: str = ""
     cover_url: str = ""
+    title_runs: tuple[TextRun, ...] = ()
 
 
 @dataclass
@@ -231,6 +233,7 @@ class YoutubePost:
     images: list[YoutubePostImage] = field(default_factory=list)
     video: YoutubePostVideo | None = None
     poll: YoutubePostPoll | None = None
+    text_runs: tuple[TextRun, ...] = ()
 
 
 def post_id_from_url(url: str) -> str:
@@ -388,6 +391,28 @@ def _text_of(node: Any) -> str:
     return "".join(parts)
 
 
+def _source_runs(node: Any) -> tuple[TextRun, ...]:
+    if not isinstance(node, dict):
+        return ()
+    if isinstance(text := node.get("simpleText"), str):
+        return (TextRun(text),) if text else ()
+    if not isinstance(source := node.get("runs"), list):
+        return ()
+    runs: list[TextRun] = []
+    for run in source:
+        if not isinstance(run, dict) or not isinstance(text := run.get("text"), str) or not text:
+            continue
+        try:
+            url = _unwrap_redirect(_run_link_url(run))
+            target = urllib.parse.urlsplit(url)
+            if target.scheme not in {"http", "https"} or not target.netloc:
+                url = ""
+        except ValueError:
+            url = ""
+        runs.append(TextRun(text, url))
+    return tuple(runs)
+
+
 _COMPACT_COUNT_RE = re.compile(r"\s*([\d.,]+)\s*([KMB]?)", re.I)
 
 
@@ -454,6 +479,7 @@ def _collect_attachment(
                 video_id=video_id,
                 title=_text_of(renderer.get("title")).strip(),
                 cover_url=cover_url,
+                title_runs=_source_runs(renderer.get("title")),
             )
 
     if renderer := attachment.get("pollRenderer"):
@@ -538,6 +564,7 @@ def parse_post_page(html: str, *, url: str = "") -> YoutubePost:
         images=images,
         video=video,
         poll=poll,
+        text_runs=_source_runs(renderer.get("contentText")),
     )
 
 

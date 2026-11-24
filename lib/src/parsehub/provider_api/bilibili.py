@@ -4,7 +4,7 @@ import json
 import re
 import time
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
@@ -13,6 +13,7 @@ from typing import Any, Self, cast
 
 from loguru import logger
 
+from ..types.document import Block, TextRun, paragraph
 from ..utils import http
 from ..utils.helpers import get_author_name, media_placeholder, to_int
 
@@ -409,6 +410,38 @@ class BiliReply:
         )
 
 
+def _bili_web_url(value: str) -> str:
+    try:
+        url = urllib.parse.urljoin("https://www.bilibili.com/", value)
+        parsed = urllib.parse.urlsplit(url)
+        return url if parsed.scheme in {"http", "https"} and parsed.netloc else ""
+    except ValueError:
+        return ""
+
+
+def bili_topic_runs(text: str, topics: Sequence[Mapping[str, str]] | None = None) -> tuple[TextRun, ...]:
+    """Map Bili's source topic labels, without interpreting HTML or Markdown."""
+    if not text:
+        return ()
+    urls = {f"#{t['name']}#": t.get("url", "") for t in topics or () if t.get("name")}
+    if topics and not urls:
+        return (TextRun(text),)
+    labels = sorted(urls, key=len, reverse=True)
+    pattern = "|".join(map(re.escape, labels)) if labels else r"#[^#\r\n]+#"
+    runs: list[TextRun] = []
+    offset = 0
+    for match in re.finditer(pattern, text):
+        if match.start() > offset:
+            runs.append(TextRun(text[offset:match.start()]))
+        label = match.group()
+        url = urls.get(label) or f"https://search.bilibili.com/all?keyword={urllib.parse.quote(label[1:-1])}"
+        runs.append(TextRun(label, _bili_web_url(url)))
+        offset = match.end()
+    if offset < len(text):
+        runs.append(TextRun(text[offset:]))
+    return tuple(runs)
+
+
 @dataclass(kw_only=True)
 class BiliDynamic:
     title: str | None = ""
@@ -434,6 +467,10 @@ class BiliDynamic:
     #: 板头图与正文段落里的图同在 ``images`` 里，但语义不同 —— 渲染层要把这几张
     #: 提到标题上方并用分割线与标题隔开，所以数目必须单独记下来。
     banner_count: int = 0
+    source_content: str | None = None
+    # Opus paragraphs carry their own structure and media positions. None means
+    # the body is a literal description with separate attachments.
+    body_blocks: tuple[Block, ...] | None = None
 
     @property
     def video_url(self) -> str:
@@ -468,6 +505,9 @@ class BiliDynamic:
         result.like_count = to_int(stat.get("count"))
 
         result.topics = cls._get_desc_topics(module_dynamic)
+        source = (module_dynamic.get("desc") or {}).get("text")
+        if isinstance(source, str) and source.strip() == result.content:
+            result.source_content = source
         result.forward = cls._resolve_forward(item, module_dynamic)
         return result
 
@@ -478,11 +518,14 @@ class BiliDynamic:
         节点自带 ``jump_url``（话题页 / 搜索页），比自己按名字拼 URL 权威；
         节点 ``text`` 是 ``#话题#``（两侧都带 #，B 站的形态），这里存**不含 #** 的名字。
         """
-        desc = module_dynamic.get("desc") or {}
+        return BiliDynamic._topics_in((module_dynamic.get("desc") or {}).get("rich_text_nodes"))
+
+    @staticmethod
+    def _topics_in(nodes: list[dict] | None) -> list[dict[str, str]]:
         out: list[dict[str, str]] = []
         seen: set[str] = set()
-        for node in desc.get("rich_text_nodes") or []:
-            if node.get("type") != "RICH_TEXT_NODE_TYPE_TOPIC":
+        for node in nodes or []:
+            if not isinstance(node, dict) or node.get("type") != "RICH_TEXT_NODE_TYPE_TOPIC":
                 continue
             name = str(node.get("text") or "").strip().strip("#").strip()
             if not name or name in seen:
@@ -673,8 +716,28 @@ class BiliDynamic:
                 out.append(str(text))
         return "".join(out)
 
+    @staticmethod
+    def _opus_nodes_runs(nodes: list[dict] | None) -> tuple[TextRun, ...]:
+        out: list[TextRun] = []
+        for node in nodes or []:
+            if not isinstance(node, dict):
+                continue
+            word = node.get("word") or {}
+            link = node.get("link") or {}
+            text = word.get("words") or node.get("text") or link.get("show_text")
+            if not text:
+                continue
+            url = node.get("jump_url") or link.get("url") or ""
+            if url:
+                out.append(TextRun(str(text), _bili_web_url(str(url))))
+            else:
+                out.extend(bili_topic_runs(str(text)))
+        return tuple(out)
+
     @classmethod
-    def _render_opus_paragraphs(cls, paragraphs: list[dict], images: list["BiliImage"]) -> str:
+    def _render_opus_paragraphs(
+        cls, paragraphs: list[dict], images: list["BiliImage"], *, body: list[Block] | None = None,
+    ) -> str:
         """opus 段落 → markdown。图片按段序追加到 ``images`` 并留 ``{{media:N}}`` 原位标记。
 
         段落类型（B 站 opus）：1=文本、2=图片、8=标题；其余（列表/代码/引用/链接卡片）
@@ -698,6 +761,8 @@ class BiliDynamic:
                         )
                     )
                     blocks.append(media_placeholder(len(images) - 1))
+                    if body is not None:
+                        body.append(Block("media", index=len(images) - 1, url=_bili_web_url(images[-1].url)))
                 continue
             if heading := para.get("heading"):
                 text = cls._opus_nodes_text(heading.get("nodes"))
@@ -706,18 +771,26 @@ class BiliDynamic:
                     # 会被当成 B 站话题边界（``#话题#``）链接化，把标题连同后面的正文
                     # 一起吞进 <a> 里。加粗在正文和引用块里都安全。
                     blocks.append(f"**{text.strip()}**")
+                if body is not None and (runs := cls._opus_nodes_runs(heading.get("nodes"))):
+                    level = min(6, max(1, to_int(heading.get("level")) or 1))
+                    body.append(Block("heading", runs, level=level))
                 continue
             # 文本段落；列表/代码/引用等也尽量取 nodes 文本
-            text = cls._opus_nodes_text((para.get("text") or {}).get("nodes"))
+            nodes = (para.get("text") or {}).get("nodes")
+            text = cls._opus_nodes_text(nodes)
+            native_nodes = nodes
             if not text.strip():
                 for holder in ("list", "code", "blockquote", "link_card"):
                     holder_data = para.get(holder) or {}
                     if isinstance(holder_data, dict):
                         text = cls._opus_nodes_text(holder_data.get("nodes"))
                         if text.strip():
+                            native_nodes = holder_data.get("nodes")
                             break
             if text.strip():
                 blocks.append(text.strip())
+            if body is not None and (runs := cls._opus_nodes_runs(native_nodes)):
+                body.append(paragraph(runs))
         return "\n\n".join(blocks)
 
     @classmethod
@@ -740,15 +813,18 @@ class BiliDynamic:
             if p.get("url")
         ]
         images: list[BiliImage] = list(banner)
+        body = [Block("media", index=i, role="banner", url=_bili_web_url(image.url)) for i, image in enumerate(banner)]
         # 有完整段落（详情页路径 / 未折叠的短动态）→ 按段渲染，图片原位；
         # 否则退回接口的截断摘要（has_more=true，只有前几段纯文本 + 顶部图）
         if paragraphs and not summary.get("has_more"):
-            if content := cls._render_opus_paragraphs(paragraphs, images):
+            content = cls._render_opus_paragraphs(paragraphs, images, body=body)
+            if content:
                 return cls(
                     title=opus.get("title") or "",
                     content=content,
                     images=images or None,
                     banner_count=len(banner),
+                    body_blocks=tuple(body),
                 )
         if not banner and (pics := opus.get("pics")):
             # 详情页路径没拿到 banner 时用接口那份（残留兜底：老响应/字段改名）
@@ -756,10 +832,14 @@ class BiliDynamic:
                 BiliImage(url=p["url"], live_url=p.get("live_url"), width=p.get("width"), height=p.get("height"))
                 for p in pics
             ]
+        if len(body) == len(banner):
+            if runs := bili_topic_runs(summary.get("text") or "", cls._topics_in(summary.get("rich_text_nodes"))):
+                body.append(paragraph(runs))
         return cls(
             title=opus.get("title") or "",
             content=summary.get("text") or "",
             images=images or None,
+            body_blocks=tuple(body),
         )
 
     @classmethod

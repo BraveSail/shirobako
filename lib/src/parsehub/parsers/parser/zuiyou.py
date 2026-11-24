@@ -1,5 +1,6 @@
 from ...provider_api.zuiyou import MediaType, ZuiYou
 from ...types import ImageRef, MultimediaParseResult, Platform, VideoRef
+from ...types.document import plain
 from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
@@ -14,6 +15,7 @@ class ZuiYouParser(BaseParser):
         zy = await ZuiYou(self.proxy).parse(raw_url)
         return MultimediaParseResult(
             content=zy.content,
+            document=plain(zy.content),
             author_name=zy.author_name,
             media=[
                 VideoRef(url=i.url, thumb_url=i.thumb_url)

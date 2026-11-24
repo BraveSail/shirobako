@@ -1,5 +1,6 @@
 import html
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, ClassVar
 from urllib.parse import urlparse, urlsplit, urlunparse
 
@@ -22,6 +23,8 @@ from ...types import (
     RichTextParseResult,
     VideoRef,
 )
+from ...types.document import Block, Document
+from ...types.x_document import bind_x_attachments, document_from_x
 from ...types.x_status import TextRun, XPost, XStatus, XTrending
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
@@ -329,11 +332,10 @@ class TwitterParser(BaseParser):
         return TwitterParser._youtube_quote(await TwitterParser._youtube_link(text)), []
 
     @staticmethod
-    async def _related_youtube(post: TwitterTweet | None, *, legacy: bool) -> TextRun | None:
+    async def _related_youtube(post: TwitterTweet | None) -> TextRun | None:
         if post is None:
             return None
-        # Article 仍用旧正文；普通 status 的候选链接取自原文片段，而不是 Markdown。
-        text = post.full_text if legacy else "".join(f" {run.url} " if run.url else run.text for run in post.segments)
+        text = "".join(f" {run.url} " if run.url else run.text for run in post.segments)
         return await TwitterParser._youtube_link(text)
 
     @staticmethod
@@ -389,6 +391,43 @@ class TwitterParser(BaseParser):
             reply=related(tweet.reply_to, "reply", reply_youtube),
             quoted=related(tweet.quoted_status, "quoted", quoted_youtube),
             trending=trending,
+        )
+
+    @staticmethod
+    def _document(tweet: TwitterTweet, status: XStatus, media: list[AnyMediaRef],
+                  main_end: int, reply_end: int) -> Document:
+        def part(source: TwitterTweet | None, start: int, end: int) -> tuple[tuple[Block, ...], tuple[Block, ...]]:
+            used: set[int] = set()
+
+            def shifted(block: Block) -> Block:
+                if block.kind == "media" and block.index >= 0:
+                    index = start + block.index
+                    used.add(index)
+                    return replace(block, index=index)
+                return replace(block, children=tuple(map(shifted, block.children)),
+                               items=tuple(tuple(map(shifted, item)) for item in block.items))
+
+            body = tuple(map(shifted, source.article.blocks)) if source and source.article else ()
+            attachments = tuple(Block("media", index=i, url=media[i].url) for i in range(start, end) if i not in used)
+            return body, attachments
+
+        cover = status.trending.cover_index if status.trending else None
+        main_article, main = part(tweet, 0, cover if cover is not None else main_end)
+        reply_article, reply = part(tweet.reply_to, main_end, reply_end)
+        quoted_article, quoted = part(tweet.quoted_status, reply_end, len(media))
+
+        def signer(source: TwitterTweet) -> XPost:
+            return XPost((), source.author_name or "", source.author_handle or "",
+                         profile_url(Platform.TWITTER, source.author_handle or ""))
+
+        if (source := tweet.reply_to) and status.reply is None and (reply_article or reply):
+            status = replace(status, reply=signer(source))
+        if (source := tweet.quoted_status) and status.quoted is None and (quoted_article or quoted):
+            status = replace(status, quoted=signer(source))
+        return bind_x_attachments(
+            document_from_x(status, article=main_article if tweet.article else None),
+            main=main, reply=reply, quoted=quoted, trending_url=media[cover].url if cover is not None else "",
+            reply_article=reply_article, quoted_article=quoted_article,
         )
 
     @staticmethod
@@ -455,25 +494,36 @@ class TwitterParser(BaseParser):
             media.append(ImageRef(url=tweet.trending.cover))
 
         # 每个关联帖只走原有的一次卡片查询流程，同一份标题/链接同时给结构和旧引用行。
-        legacy = tweet.article is not None
-        reply_youtube = await TwitterParser._related_youtube(tweet.reply_to, legacy=legacy)
-        quoted_youtube = await TwitterParser._related_youtube(tweet.quoted_status, legacy=legacy)
+        reply_youtube = await TwitterParser._related_youtube(tweet.reply_to)
+        quoted_youtube = await TwitterParser._related_youtube(tweet.quoted_status)
         reply_yt_quote = TwitterParser._youtube_quote(reply_youtube)
         quoted_yt_quote = TwitterParser._youtube_quote(quoted_youtube)
 
         # 媒体顺序 = [正文..., 被回复..., 被引用...]（渲染层从末尾往前切两个引用块）。
         # YouTube 链接卡片只有文字，不占媒体索引。
-        reply_media = TwitterParser.to_media_refs(tweet.reply_to.media if tweet.reply_to else None)
-        quoted_media = TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None)
+        def related_media(source: TwitterTweet | None) -> list[AnyMediaRef]:
+            if source is None:
+                return []
+            return [*TwitterParser.to_media_refs(source.article.media if source.article else None),
+                    *TwitterParser.to_media_refs(source.media)]
+
+        reply_media = related_media(tweet.reply_to)
+        quoted_media = related_media(tweet.quoted_status)
+        main_end = len(media)
         media.extend(reply_media)
+        reply_end = len(media)
         media.extend(quoted_media)
 
         # 计数 = 各档**真会渲染出引用块**时的媒体数。判据是数据层有没有那条推文
         # （不是"正文里有没有 `> ` 形态的文字"）。
-        quoted_total = len(quoted_media) if (tweet.quoted_status and TwitterParser._build_quoted_block(tweet)) else 0
+        quoted_total = (
+            len(quoted_media)
+            if (tweet.quoted_status and (tweet.quoted_status.article or TwitterParser._build_quoted_block(tweet)))
+            else 0
+        )
         reply_total = (
             len(reply_media)
-            if (tweet.reply_to and (TwitterParser._build_quote(tweet) or reply_yt_quote))
+            if (tweet.reply_to and (tweet.reply_to.article or TwitterParser._build_quote(tweet) or reply_yt_quote))
             else 0
         )
         # 投票: 结构化数据按**占位符出现顺序**收集 (reply → 主帖 → quoted) ——
@@ -486,12 +536,17 @@ class TwitterParser(BaseParser):
         if tweet.quoted_status and TwitterParser._build_quoted_block(tweet):
             if qid := (tweet.quoted_status.tweet_id or tweet.quoted_status_id):
                 quote_ids["quoted"] = qid
+        status = TwitterParser._native_status(
+            tweet, reply_youtube=reply_youtube, quoted_youtube=quoted_youtube, cover_index=cover_index,
+        )
+        document = TwitterParser._document(tweet, status, media, main_end, reply_end)
         if article := tweet.article:
-            return TwitterArticleParseResult(
+            result = TwitterArticleParseResult(
                 markdown_content=TwitterParser._compose(
                     article.content, tweet, reply_yt=reply_yt_quote, quoted_yt=quoted_yt_quote
                 ),
                 title=article.title,
+                document=document,
                 media=media,
                 author_name=tweet.author_name,
                 author_handle=tweet.author_handle,
@@ -509,6 +564,10 @@ class TwitterParser(BaseParser):
                 hashtags=TwitterParser._hashtags(tweet),
                 polls=polls,
             )
+            # The article is a DraftJS document, not the surrounding post teaser.
+            # Preserve the translated reply/quote roles without targeting that teaser.
+            result.x_status = replace(status, main=replace(status.main, segments=()))
+            return result
         return MultimediaParseResult(
             content=TwitterParser._compose(
                 tweet.full_text, tweet, reply_yt=reply_yt_quote, quoted_yt=quoted_yt_quote
@@ -527,9 +586,8 @@ class TwitterParser(BaseParser):
             quote_ids=quote_ids,
             hashtags=TwitterParser._hashtags(tweet),
             polls=polls,
-            x_status=TwitterParser._native_status(
-                tweet, reply_youtube=reply_youtube, quoted_youtube=quoted_youtube, cover_index=cover_index,
-            ),
+            x_status=status,
+            document=document,
         )
 
 

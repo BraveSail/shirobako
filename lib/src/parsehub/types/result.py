@@ -19,6 +19,7 @@ from ..errors import DeleteError, DownloadError
 from ..utils.downloader import download
 from ..utils.helpers import run_sync, to_datetime, to_int
 from .callback import ProgressCallback
+from .document import Document
 from .media_file import AniFile, AnyMediaFile, BrokenMedia, ImageFile, LivePhotoFile, VideoFile
 from .media_ref import AniRef, AnyMediaRef, ImageRef, LivePhotoRef, VideoRef
 from .platform import Platform
@@ -150,6 +151,7 @@ class ParseResult(ABC):  # noqa: B024
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        document: Document | None = None,
         x_status: XStatus | None = None,
     ):
         """
@@ -234,6 +236,7 @@ class ParseResult(ABC):  # noqa: B024
         self.polls: list[Poll] = list(polls or [])
         """投票的结构化数据; 顺序 = 正文里 ``{{poll:N}}`` 占位符的出现顺序"""
         self.x_status = x_status
+        self.document = document
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -545,6 +548,7 @@ class VideoParseResult(ParseResult):
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        document: Document | None = None,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -570,6 +574,7 @@ class VideoParseResult(ParseResult):
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
+            document=document,
         )
 
 
@@ -602,6 +607,7 @@ class ImageParseResult(ParseResult):
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        document: Document | None = None,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -627,6 +633,7 @@ class ImageParseResult(ParseResult):
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
+            document=document,
         )
 
 
@@ -659,6 +666,7 @@ class MultimediaParseResult(ParseResult):
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        document: Document | None = None,
         x_status: XStatus | None = None,
     ):
         super().__init__(
@@ -684,6 +692,7 @@ class MultimediaParseResult(ParseResult):
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
+            document=document,
             x_status=x_status,
         )
 
@@ -723,6 +732,7 @@ class RichTextParseResult(ParseResult):
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        document: Document | None = None,
     ):
         """
         :param title: 标题
@@ -753,6 +763,7 @@ class RichTextParseResult(ParseResult):
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
+            document=document,
         )
 
     def __repr__(self) -> str:

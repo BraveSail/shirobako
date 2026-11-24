@@ -56,6 +56,7 @@ from dataclasses import replace
 from urllib.parse import quote
 
 from parsehub.provider_api.twitter import Twitter, XTranslationFailure
+from parsehub.types.x_document import replace_x_document_text
 from parsehub.types.x_status import TextRun, XPost, XStatus, text_runs
 from parsehub.utils import http
 from parsehub.utils.helpers import SecretCookie, _quote_line
@@ -504,6 +505,8 @@ async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
         translated = await _translate_x_status(status, main_id, quote_ids, dst_lang)
         if translated is status:
             return False
+        if (document := getattr(parse_result, "document", None)) is not None:
+            parse_result.document = replace_x_document_text(document, translated)  # type: ignore[attr-defined]
         parse_result.x_status = translated  # type: ignore[attr-defined]
         return True
 

@@ -18,7 +18,14 @@ from ...types import (
     PollOption,
     VideoRef,
 )
-from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
+from ...types.document import Block, Document, TextRun, paragraph
+from ...utils.helpers import (
+    format_author_label,
+    format_author_link,
+    format_quote_block,
+    image_ext_from_url,
+    profile_url,
+)
 from ..base.base import BaseParser
 
 #: 话题页地址模板 —— 实测**就是这个搜索页**（用户给的链接）：
@@ -37,7 +44,7 @@ def _topic_label(topic: str) -> str:
     """
     if not topic:
         return ""
-    url = TOPIC_PAGE_URL.format(name=quote(topic))
+    url = TOPIC_PAGE_URL.format(name=quote(topic, safe=""))
     return f'<a href="{html.escape(url, quote=True)}">{html.escape(topic)}</a>'
 
 
@@ -87,6 +94,7 @@ class ThreadsParser(BaseParser):
         )
         return MultimediaParseResult(
             content=content,
+            document=self._document(post, media, len(reply_media), reply_has_poll, main_has_poll),
             media=media,
             author_name=post.author_name,
             author_handle=post.author_handle,
@@ -101,6 +109,39 @@ class ThreadsParser(BaseParser):
             # 帖子话题 → **作者行末尾**的片段（``… @某人 > 話題``，跟着 threads 自己的显示走）
             topic_label=_topic_label(post.topic),
         )
+
+    @staticmethod
+    def _document(
+        post: ThreadsPost, media: list[AnyMediaRef], reply_media_count: int, reply_has_poll: bool, main_has_poll: bool,
+    ) -> Document:
+        def body(source: ThreadsPost) -> list[Block]:
+            runs = source.caption_runs if source.caption_runs is not None else (TextRun(source.content),)
+            return [paragraph(runs)] if any(r.text for r in runs) else []
+
+        def snippet(source: ThreadsPost) -> tuple[Block, ...]:
+            runs = source.snippet_runs if source.snippet_runs is not None else (TextRun(source.snippet),)
+            return (Block("quote", children=(paragraph(runs),), role="quoted"),) if any(r.text for r in runs) else ()
+
+        attachments = tuple(Block("media", index=i, url=ref.url) for i, ref in enumerate(media))
+        main_count = len(media) - reply_media_count
+        blocks = []
+        if reply := post.reply_to:
+            children = body(reply)
+            if reply_has_poll:
+                children.append(Block("poll", index=0))
+            children.extend(snippet(reply))
+            children.extend(attachments[main_count:])
+            label = format_author_label(reply.author_name, reply.author_handle)
+            runs = (TextRun(label, profile_url(Platform.THREADS, reply.author_handle)),) if label else ()
+            if runs or children:
+                blocks.append(Block("quote", runs=runs, children=tuple(children), role="reply"))
+        blocks.extend(body(post))
+        if main_has_poll:
+            blocks.append(Block("poll", index=int(reply_has_poll)))
+        blocks.extend(snippet(post))
+        blocks.extend(attachments[:main_count])
+        topic = (TextRun(post.topic, TOPIC_PAGE_URL.format(name=quote(post.topic, safe=""))),) if post.topic else ()
+        return Document(tuple(blocks), topic=topic)
 
     @staticmethod
     def _has_poll(post: ThreadsPost | None) -> bool:

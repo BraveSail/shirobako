@@ -51,6 +51,7 @@ class XiaoHeiHeParser(BaseParser):
             "published_at": xhh.published_at,
             "like_count": xhh.like_count,
             "reply_count": xhh.reply_count,
+            "document": xhh.document,
         }
         match xhh.type:
             case XiaoHeiHePostType.VIDEO:

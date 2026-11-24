@@ -22,6 +22,7 @@ from typing import Any
 from loguru import logger
 
 from ..utils.helpers import to_int
+from .document import TextRun, document_from_dict
 from .media_ref import AniRef, ImageRef, LivePhotoRef, MediaRef, VideoRef
 from .platform import Platform
 from .post import PostType
@@ -35,7 +36,7 @@ from .result import (
     RichTextParseResult,
     VideoParseResult,
 )
-from .x_status import TextRun, XPost, XStatus, XTrending
+from .x_status import XPost, XStatus, XTrending
 
 
 class ResultRebuildUnavailable(RuntimeError):
@@ -79,9 +80,11 @@ class ResultRebuildUnavailable(RuntimeError):
 #:   媒体（排在消息末尾）⇒ 命中就是用户报的「图片应该在话题里面」。
 #: - 13 = Instagram 结果补上作者账号和主页地址；旧条目的作者行仍是纯文字。
 #: - 14 = 普通 X status 改用原生 DTO，独立 Article 不迁移。
+#: - 15 = 保存共享 Document；旧版本读门槛不变。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
-_CACHE_CONTENT_VERSION = X_STATUS_CONTENT_VERSION = 14
+_CACHE_CONTENT_VERSION = 15
+X_STATUS_CONTENT_VERSION = 14
 
 # 仅提升受影响平台的读门槛，不让其他平台白白重解析和重传媒体。
 _MIN_CONTENT_VERSIONS: dict[str, int] = {
@@ -346,6 +349,8 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
     }
     if result.x_status is not None:
         payload["x_status"] = asdict(result.x_status)
+    if result.document is not None:
+        payload["document"] = asdict(result.document)
     return payload
 
 
@@ -414,8 +419,6 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
             # content 是派生属性: 只喂 markdown_content, 由它算 content
             return target(media=media, markdown_content=data.get("markdown_content", ""), **common)
         if param == "media":
-            if (x_status := data.get("x_status")) is not None:
-                return target(media=media, content=content, x_status=_x_status_from_payload(x_status), **common)
             return target(media=media, content=content, **common)
         raise ValueError(f"不认识的结果类型, 无法重建: {target.__name__}")
 
@@ -445,6 +448,10 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
 
     # raw_url 不在构造参数里 (基类里初始为空串), 重建后单独赋回
     result.raw_url = data.get("raw_url", "")
+    if (x_status := data.get("x_status")) is not None:
+        result.x_status = _x_status_from_payload(x_status)
+    if (document := data.get("document")) is not None:
+        result.document = document_from_dict(document)
     if (platform_id := data.get("platform")) is not None:
         # 平台枚举改名/移除时 (老缓存) 留 None 而不是抛异常 —— 渲染退化成"拿不到来源"
         result.platform = _platform_from_id(platform_id)

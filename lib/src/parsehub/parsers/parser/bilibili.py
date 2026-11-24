@@ -3,13 +3,14 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse
+from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urljoin, urlparse
 
 from loguru import logger
 
-from ...provider_api.bilibili import BiliAPI, BiliDynamic, BiliImage, BiliReply
+from ...provider_api.bilibili import BiliAPI, BiliDynamic, BiliImage, BiliReply, bili_topic_runs
 from ...types import (
     DownloadResult,
     ImageParseResult,
@@ -21,6 +22,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import Block, Document, TextRun, paragraph, plain, visible_text
 from ...utils.helpers import (
     UA,
     format_author_link,
@@ -89,13 +91,92 @@ class BiliParse(BaseParser):
         return comment, rest.strip()
 
     @staticmethod
-    def _forward_text_is_covered(extra: str, forward: BiliDynamic) -> bool:
+    def _forward_text_is_covered(extra: str, forward: BiliDynamic, *, body: str | None = None) -> bool:
         """``//@`` 段的原文是否已被引用块内容覆盖 (覆盖了就别重复渲染)。"""
         normalize = lambda s: re.sub(r"[\s#《》「」【】:：!！?？。，,.·\u200b]", "", s or "")  # noqa: E731
         target = normalize(extra)
         if not target:
             return True
-        return target in normalize(f"{forward.title or ''}{forward.content or ''}")
+        source = (forward.content or "") if body is None else body
+        return target in normalize(f"{forward.title or ''}{source}")
+
+    @staticmethod
+    def _media_blocks(
+        refs: Sequence[BiliImage | ImageRef | LivePhotoRef | VideoRef], offset: int = 0, *, role: str = "",
+    ) -> tuple[Block, ...]:
+        return tuple(
+            Block("media", index=i, url=urljoin("https://www.bilibili.com/", ref.url) if ref.url else "", role=role)
+            for i, ref in enumerate(refs, offset)
+        )
+
+    @staticmethod
+    def _source_body(dynamic: BiliDynamic, text: str, offset: int = 0) -> tuple[Block, ...]:
+        if dynamic.body_blocks is not None:
+            return tuple(replace(b, index=b.index + offset) if b.kind == "media" else b for b in dynamic.body_blocks)
+        refs = dynamic.images or []
+        count = dynamic.banner_count
+        body = (paragraph(runs),) if (runs := bili_topic_runs(text, dynamic.topics)) else ()
+        return (
+            *BiliParse._media_blocks(refs[:count], offset, role="banner"),
+            *body,
+            *BiliParse._media_blocks(refs[count:], offset + count),
+        )
+
+    @staticmethod
+    def _dynamic_document(dynamic: BiliDynamic, forward_offset: int) -> Document:
+        text = dynamic.source_content if dynamic.source_content is not None else dynamic.content or ""
+        forward = dynamic.forward
+        extra = ""
+        if forward and dynamic.body_blocks is None:
+            text, extra = BiliParse._split_forward_comment(text)
+        blocks = list(BiliParse._source_body(dynamic, text))
+        if forward:
+            title = (forward.title or "").strip()
+            source = forward.source_content if forward.source_content is not None else forward.content or ""
+            original = visible_text(forward.body_blocks) if forward.body_blocks is not None else source
+            children: list[Block] = []
+            if extra and not BiliParse._forward_text_is_covered(extra, forward, body=original):
+                children.append(paragraph(bili_topic_runs(extra, forward.topics)))
+            if title:
+                children.append(paragraph((TextRun(title, forward.video_url),)))
+            children.extend(BiliParse._source_body(forward, source if source.strip() != title else "", forward_offset))
+            if children:
+                url = profile_url(Platform.BILIBILI, user_id=str(forward.author_mid or ""))
+                signer = BiliParse._signer(forward.author_name, url)
+                blocks.append(Block("quote", runs=signer, children=tuple(children), role="quoted"))
+        return Document(tuple(blocks))
+
+    @staticmethod
+    def _signer(name: str, url: str) -> tuple[TextRun, ...]:
+        return (TextRun(name, url),) if name else ()
+
+    @staticmethod
+    def _comment_document(
+        base: Any, page_url: str, chain: list[BiliReply], media: Sequence[Any], video_start: int,
+    ) -> Document:
+        video = BiliParse._media_blocks(media[video_start:], video_start)
+        if title := (getattr(base, "title", "") or "").strip():
+            video = (paragraph((TextRun(title, page_url),)), *video)
+        blocks = [Block(
+            "quote", role="reply", url=page_url, children=video,
+            runs=BiliParse._signer(getattr(base, "author_name", ""), getattr(base, "author_url", "") or ""),
+        )]
+        offset = 0
+        for i, reply in enumerate(chain):
+            end = offset + len(reply.images or ())
+            pictures = BiliParse._media_blocks(media[offset:end], offset)
+            children = plain(reply.content).blocks
+            if pictures:
+                children += (Block("collage", children=pictures),) if len(pictures) > 1 else pictures
+            if i == len(chain) - 1:
+                blocks.extend(children)
+            else:
+                url = profile_url(Platform.BILIBILI, user_id=str(reply.author_mid or ""))
+                blocks.append(Block(
+                    "quote", runs=BiliParse._signer(reply.author_name, url), children=children, role="reply",
+                ))
+            offset = end
+        return Document(tuple(blocks))
 
     @classmethod
     def _render_forward(cls, forward: BiliDynamic, extra_text: str = "") -> str:
@@ -284,6 +365,7 @@ class BiliParse(BaseParser):
         card = BiliParse._render_video_card(
             base, page_url, placeholder=f"{{{{media:{video_start}}}}}"
         )
+        base.document = BiliParse._comment_document(base, page_url, chain, media_items, video_start)
         base.content = f"{card}\n\n{content}" if card and content else (card or content)
         base.title = ""
         base.author_name = target.author_name
@@ -310,6 +392,7 @@ class BiliParse(BaseParser):
             content = self.hashtag_handler(dynamic.content or "", dynamic.topics)
             photos: list[LivePhotoRef | ImageRef] = []
             photos.extend(BiliParse._to_refs(dynamic.images))
+            document = self._dynamic_document(dynamic, len(photos))
 
             # 转发动态: 被转发的原动态渲染成引用块 (文字 + 它自己的媒体)
             quoted_media_count = 0
@@ -334,6 +417,7 @@ class BiliParse(BaseParser):
                 # B 站没有 @用户名, 主页靠 UID: 名字本身会渲染成 space 链接
                 author_url=profile_url(Platform.BILIBILI, user_id=dynamic.author_mid),
                 content=content,
+                document=document,
                 photo=photos,
                 published_at=dynamic.published_at,
                 like_count=dynamic.like_count,
@@ -460,6 +544,7 @@ class BiliParse(BaseParser):
             # B 站没有 @用户名, 主页靠 UID: 名字本身会渲染成 space 链接
             author_url=profile_url(Platform.BILIBILI, user_id=owner.get("mid")),
             content=content,
+            document=plain(desc if content else ""),
             published_at=view.get("pubdate"),
             view_count=(view.get("stat") or {}).get("view"),
             video=VideoRef(

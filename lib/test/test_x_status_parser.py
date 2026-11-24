@@ -215,7 +215,11 @@ def test_article_does_not_use_markdown_as_typed_status_source(quote_article):
     else:
         result = _parse(article)
         assert isinstance(result, TwitterArticleParseResult)
-        assert not getattr(result, "x_status", None)
+        # The status metadata can carry translation targets for surrounding cards,
+        # but the article body must never be treated as a translated teaser.
+        assert result.x_status.main.segments == ()
+        article_body, = result.document.blocks
+        assert [run.text for run in article_body.runs] == ["Article body"]
         assert result.markdown_content == "Article body"
     assert "x_status" not in result.to_dict()
 

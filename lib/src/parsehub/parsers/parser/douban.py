@@ -37,7 +37,8 @@ class DoubanParser(BaseParser):
 
         if topic.image_layout == "horizontal":
             return DoubanImageParseResult(
-                title=topic.title, photo=photos, content=topic.text_content, author_name=topic.author_name
+                title=topic.title, photo=photos, content=topic.text_content, author_name=topic.author_name,
+                document=topic.document,
             )
 
         # 图片和视频在正文里有位置关系, 交给 RichText 由 markdown 保留顺序
@@ -46,7 +47,8 @@ class DoubanParser(BaseParser):
             media.append(self.to_video_ref(topic.video))
         media.extend(photos)
         return DoubanRichTextParseResult(
-            title=topic.title, media=media, markdown_content=topic.markdown_content, author_name=topic.author_name
+            title=topic.title, media=media, markdown_content=topic.markdown_content, author_name=topic.author_name,
+            document=topic.document,
         )
 
     @staticmethod

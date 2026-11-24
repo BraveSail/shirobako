@@ -2,6 +2,7 @@ from typing import Union
 
 from ...provider_api.pipix import Pipix
 from ...types import ImageParseResult, ParseError, Platform, VideoParseResult, VideoRef
+from ...types.document import Document
 from ..base.base import BaseParser
 
 
@@ -20,6 +21,7 @@ class PipixParser(BaseParser):
         if ppx.video_url:
             return VideoParseResult(
                 title=ppx.content,
+                document=Document(),
                 author_name=ppx.author_name,
                 video=VideoRef(
                     url=ppx.video_url,
@@ -30,7 +32,9 @@ class PipixParser(BaseParser):
                 ),
             )
         else:
-            return ImageParseResult(title=ppx.content, photo=ppx.img_url, author_name=ppx.author_name)
+            return ImageParseResult(
+                title=ppx.content, document=Document(), photo=ppx.img_url, author_name=ppx.author_name
+            )
 
 
 __all__ = ["PipixParser"]

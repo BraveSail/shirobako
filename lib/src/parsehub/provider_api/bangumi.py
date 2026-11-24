@@ -33,13 +33,16 @@ import html
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from loguru import logger
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Block, Document, TextRun, html_blocks
 
 from ..types.platform import Platform
 from ..utils import http
@@ -133,6 +136,7 @@ class BangumiBlog:
     published_at: datetime | None = None
     tags: list[str] = field(default_factory=list)
     images: list[BangumiImage] = field(default_factory=list)
+    document: Document | None = None
 
     @staticmethod
     def get_id_by_url(url: str) -> str:
@@ -183,13 +187,16 @@ class BangumiBlog:
         published_at = cls._parse_time(soup)
         tags = [t.get_text(strip=True) for t in soup.select(".header .tags .badge_tag") if t.get_text(strip=True)]
 
-        images = _extract_images(entry)
+        base_url = BLOG_API.format(blog_id=blog_id)
+        images = _extract_images(entry, base_url)
         # 图片 URL → 下标: ``_simplify`` 把正文里的图换成 ``{{media:N}}`` 原位标记，
         # 渲染层再换成媒体引用 —— 图出现在**文章原位**，而不是堆到消息末尾。
         image_index = {img.url: index for index, img in enumerate(images)}
         # 纯文本在**清理之后**取（清理会补 alt 文本、去掉图与样式外壳）——
         # 反过来取会把 markdown 标记或图片 alt 混进去
-        _simplify(entry, image_index)
+        _simplify(entry, base_url)
+        document = Document(html_blocks(entry, base_url=base_url, media=image_index))
+        _legacy_body(entry, image_index)
         # 纯文本兜底里不能留原位标记（那是 lib ↔ 渲染层的协议，不是给用户看的文字）
         text_content = MEDIA_PLACEHOLDER_RE.sub("", entry.get_text("\n", strip=True))
         markdown_content = _to_markdown(str(entry))
@@ -205,6 +212,7 @@ class BangumiBlog:
             published_at=published_at,
             tags=tags,
             images=images,
+            document=document,
         )
 
     # ------------------------------------------------------------------ 元信息
@@ -248,7 +256,7 @@ class BangumiBlog:
 
 # ------------------------------------------------------------------ 正文
 
-def _extract_images(entry: Any) -> list[BangumiImage]:
+def _extract_images(entry: Any, base_url: str = "https://bgm.tv/") -> list[BangumiImage]:
     """正文里的**上传图**（表情不算）。判据看 **src 路径**，不能只看 class。
 
     表情是 ``/img/smiles/…``（alt 形如 ``(bgm116)``）—— 它是文字的一部分，
@@ -264,15 +272,15 @@ def _extract_images(entry: Any) -> list[BangumiImage]:
         cls = img.get("class") or []
         if "/img/smiles/" in src or "smile" in cls:
             continue
-        url = _absolute_url(src)
+        url = urljoin(base_url, src.strip()) if src.strip() else ""
         if not url or url in seen:
             continue
         seen.add(url)
         images.append(BangumiImage(url=url))
     return images
 
-def _simplify(entry: Any, image_index: Mapping[str, int] | None = None) -> None:
-    """把 bgm 特有的写法归一成标准标签，再交给 markdownify。
+def _simplify(entry: Any, base_url: str = "https://bgm.tv/") -> None:
+    """Normalize Bangumi BBCode's HTML before either body projection.
 
     分派依据是 **style**（`[u]/[s]/[mask]` 都是 span，只有 style 不同）：
 
@@ -282,10 +290,7 @@ def _simplify(entry: Any, image_index: Mapping[str, int] | None = None) -> None:
     - ``font-weight:bold`` → ``<strong>``（编辑器出的写法，指南里没有）
     - ``color`` / ``font-size`` → 富文本没有颜色与字号 ⇒ **只保留文字**
 
-    :param image_index: 上传图 URL → 它在 ``media`` 列表里的下标。给了就在
-        **原位置**留 ``{{media:N}}``（渲染层换成媒体引用 ⇒ 图出现在文章里，
-        而不是堆到末尾 —— 用户报「没有图片原位」）。``None``、或某张图的 URL
-        不在表里时退回 ``decompose()``（图仍会以末尾附加媒体的形式出现）。
+
     """
     # 表情 → 它的 alt 文本（用户定案：转成文本）
     for img in entry.find_all("img"):
@@ -294,22 +299,16 @@ def _simplify(entry: Any, image_index: Mapping[str, int] | None = None) -> None:
         if "/img/smiles/" in src or "smile" in cls:
             img.replace_with(str(img.get("alt") or "").strip())
         else:
-            index = image_index.get(_absolute_url(src)) if image_index else None
-            if index is None:
-                img.decompose()
-            else:
-                img.replace_with(media_placeholder(index))
+            img.attrs = {"src": urljoin(base_url, src.strip()) if src.strip() else ""}
 
     for span in entry.find_all("span"):
         style = str(span.get("style") or "").lower().replace(" ", "")
         if "background-color" in style:
-            # 马赛克：包一层标记，转完 markdown 再换成 ||…||（markdownify 认不出它）
             # 块内不能有换行 —— Telegram 的剧透是**行内**的，跨行会破掉
             for br in span.find_all("br"):
                 br.replace_with(" ")
-            span.insert_before(_MASK_MARKERS[0])
-            span.insert_after(_MASK_MARKERS[1])
-            span.unwrap()
+            span.name = "tg-spoiler"
+            span.attrs = {}
         elif "text-decoration:underline" in style:
             span.name = "u"
             span.attrs = {}
@@ -329,6 +328,20 @@ def _simplify(entry: Any, image_index: Mapping[str, int] | None = None) -> None:
         quote.attrs = {}
     for q in entry.find_all("q"):
         q.unwrap()
+
+
+def _legacy_body(entry: Any, image_index: Mapping[str, int] | None = None) -> None:
+    """Project normalized source nodes to the legacy Markdown conventions."""
+    for img in entry.find_all("img"):
+        index = image_index.get(img["src"]) if image_index else None
+        if index is None:
+            img.decompose()
+        else:
+            img.replace_with(media_placeholder(index))
+    for spoiler in entry.find_all("tg-spoiler"):
+        spoiler.insert_before(_MASK_MARKERS[0])
+        spoiler.insert_after(_MASK_MARKERS[1])
+        spoiler.unwrap()
 
 def _is_episode_page(soup: BeautifulSoup) -> bool:
     """这个页面是不是**章节讨论**（``/ep/<id>``）。
@@ -438,6 +451,7 @@ class BangumiIndex:
     #: 目录简介（markdown）—— 页面上就是 ``.line_detail`` 那段说明
     summary_markdown: str = ""
     entries: list[BangumiIndexEntry] = field(default_factory=list)
+    summary_blocks: tuple[Block, ...] = ()
 
     @staticmethod
     def get_id_by_url(url: str) -> str:
@@ -496,6 +510,7 @@ class BangumiIndex:
 
         # 简介：``.line_detail`` 里那段说明（含外链、换行）—— 复用正文转换器
         summary = _to_markdown(str(line)).strip() if line is not None else ""
+        summary_blocks = html_blocks(line, base_url=INDEX_API.format(index_id=index_id), media={}) if line else ()
 
         entries: list[BangumiIndexEntry] = []
         # 条目的节点 id 是 ``item_person<数字>`` / ``item_subject<数字>``
@@ -523,6 +538,7 @@ class BangumiIndex:
             author_avatar=author_avatar,
             summary_markdown=summary,
             entries=entries,
+            summary_blocks=summary_blocks,
         )
 
 
@@ -569,6 +585,7 @@ class BangumiFloor:
     """
     image_urls: list[str] = field(default_factory=list)
     """这一层自己的图片（用来切分引用块媒体）"""
+    blocks: tuple[Block, ...] = ()
 
 
 @dataclass
@@ -615,6 +632,7 @@ class BangumiTopic:
     context_url: str = ""
     floors: list[BangumiFloor] = field(default_factory=list)
     """解析出来的楼层（仅供核对/测试，**不再渲染**）"""
+    document: Document | None = None
 
     @staticmethod
     def _topic_ref(url: str) -> tuple[str, str]:
@@ -691,18 +709,20 @@ class BangumiTopic:
             raise BangumiError(f"话题 {topic_id} 页面结构不认识（bgm.tv 可能改版了）")
 
         title, context_name, context_url = cls._parse_header(soup, kind="ep" if is_episode else "")
+        page_kind = "ep" if is_episode else kind or ("group" if soup.select_one("#pageHeader h1") else "subject")
+        page_url = _TOPIC_APIS[page_kind].format(topic_id=topic_id)
 
         # ⚠️ **图片先抽**：解析楼层时会 `decompose()` 掉嵌在父楼正文里的楼中楼节点，
         # 那之后楼中楼里的图就找不到了（它们在树上已经不存在）。
         images: list[BangumiImage] = []
         seen: set[str] = set()
         for node in soup.select(_FLOOR_BODY_SELECTOR):
-            for img in _extract_images(node):
+            for img in _extract_images(node, page_url):
                 if img.url not in seen:
                     seen.add(img.url)
                     images.append(img)
 
-        all_floors = cls._collect_floors(soup, main_post)
+        all_floors = cls._collect_floors(soup, main_post, page_url)
         # 整帖统计（页脚用）: 状态数是**所有楼层**的表情回应人数之和
         state_count = cls._parse_state_count(html)
 
@@ -710,9 +730,8 @@ class BangumiTopic:
         # 页面上没有用户的楼主帖，但那段章节信息就在主楼的位置（用户：「主楼就抓 ep.1 …」）。
         # 章节信息**没有就留空**（用户：「没有就保持空白」）⇒ opening 为 None，
         # 一级吐槽于是不引任何东西（章节页的第一层吐槽**不是**主楼，不能顶替）。
-        episode_body = cls._parse_episode_desc(soup) if is_episode else ""
         if is_episode:
-            opening = BangumiFloor(markdown=episode_body) if episode_body else None
+            opening = cls._parse_episode_desc(soup, page_url)
         else:
             opening = next((f for f in all_floors if f.label == "#1"), None)
             if opening is None and all_floors:
@@ -834,9 +853,11 @@ class BangumiTopic:
         # 「讨论」用**可翻译片段占位符**（``{{t:讨论}}``）—— 渲染层按用户语言替换
         # （lib 不认识用户语言；形态与 poll 占位符同一套）。
         origin_line = ""
+        origin: tuple[TextRun, ...] = ()
         if episode_name:
             url = f"https://bgm.tv/ep/{topic_id}"
             origin_line = f'**<a href="{url}">{html.escape(episode_name)}</a>**'
+            origin = (TextRun(episode_name, url, ("bold",)),)
         elif context_name:
             label = (
                 f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'
@@ -846,9 +867,19 @@ class BangumiTopic:
             # ⚠️ f-string 里要写**四个**花括号: `{{{{t:讨论}}}}` —— f-string 把每对 `{{` 折成
             # 一个 `{`，两个花括号打出来只有一层（踩过：输出成了 `{t:讨论}`，匹配不上）。
             origin_line = f"**{label}** » {{{{t:讨论}}}}"
+            origin = (TextRun(context_name, context_url, ("bold",)), TextRun(" » "),
+                      TextRun("讨论", styles=("localize",)))
 
         markdown_content = cls._compose(context_quote, body)
         text_content = cls._to_text(context_name, context_quote, plain)
+        slots = {image.url: i for i, image in enumerate(images)}
+        blocks = _reindex_floor(current.blocks, slots) if current else ()
+        if has_context and context_floor and context_floor.blocks:
+            quote = Block(
+                "quote", runs=cls._floor_signature(context_floor), role="reply",
+                children=_reindex_floor(context_floor.blocks, slots),
+            )
+            blocks = (quote, *blocks)
 
         return BangumiTopic(
             topic_id=topic_id,
@@ -868,6 +899,7 @@ class BangumiTopic:
             context_name=context_name,
             context_url=context_url,
             origin_line=origin_line,
+            document=Document(blocks, origin=origin),
             state_count=state_count,
             reply_count=reply_count if reply_count is not None else max(1, len(all_floors)) - 1,
             floors=[f for f in all_floors if f is not opening],
@@ -886,7 +918,7 @@ class BangumiTopic:
         return re.sub(r"\s+", " ", node.get_text(" ", strip=True)) if node else ""
 
     @classmethod
-    def _parse_episode_desc(cls, soup: BeautifulSoup) -> str:
+    def _parse_episode_desc(cls, soup: BeautifulSoup, base_url: str) -> BangumiFloor | None:
         """章节页的**主楼内容**：``div.epDesc``（时长/首播 + 简介 + STAFF）。
 
         这是章节页唯一的"主楼" —— 页面上没有用户的楼主帖，官方这段章节信息就是
@@ -900,13 +932,16 @@ class BangumiTopic:
         """
         node = soup.select_one("#columnEpA .epDesc") or soup.select_one(".epDesc")
         if node is None:
-            return ""
+            return None
         for anchor in node.select("a"):
             href = str(anchor.get("href") or "")
             if "/edit" in href or "patch.bgm38" in href:
                 anchor.decompose()
         _simplify(node)
-        return _to_markdown(str(node)).strip()
+        blocks = html_blocks(node, base_url=base_url, media={})
+        _legacy_body(node)
+        markdown = _to_markdown(str(node)).strip()
+        return BangumiFloor(markdown=markdown, blocks=blocks) if markdown or blocks else None
 
     @staticmethod
     def _parse_reply_count(soup: BeautifulSoup) -> int | None:
@@ -993,7 +1028,7 @@ class BangumiTopic:
         return re.sub(r"\s+", " ", title), "", ""
 
     @classmethod
-    def _collect_floors(cls, soup: BeautifulSoup, main_post: Any | None) -> list[BangumiFloor]:
+    def _collect_floors(cls, soup: BeautifulSoup, main_post: Any | None, base_url: str) -> list[BangumiFloor]:
         """按页面顺序收集楼层：主楼 → 一级回复（含各自的楼中楼）。
 
         楼中楼**在 DOM 上嵌在父楼的正文容器里**（``div.topic_reply_<父id>``），
@@ -1029,14 +1064,16 @@ class BangumiTopic:
                     nodes.append((sub, True, parent_dom_id))
 
         floors = [
-            cls._parse_floor(node, is_sub=is_sub, parent_dom_id=parent_dom_id)
+            cls._parse_floor(node, is_sub=is_sub, parent_dom_id=parent_dom_id, base_url=base_url)
             for node, is_sub, parent_dom_id in reversed(nodes)
         ]
         floors.reverse()
         return floors
 
     @classmethod
-    def _parse_floor(cls, node: Any, *, is_sub: bool, parent_dom_id: str = "") -> BangumiFloor:
+    def _parse_floor(
+        cls, node: Any, *, is_sub: bool, parent_dom_id: str = "", base_url: str = "https://bgm.tv/",
+    ) -> BangumiFloor:
         small = node.select_one(".post_actions small")
         label = ""
         published_at = ""
@@ -1064,6 +1101,7 @@ class BangumiTopic:
         markdown = ""
         plain = ""
         image_urls: list[str] = []
+        blocks: tuple[Block, ...] = ()
         if body is not None:
             # 摘掉嵌套的楼中楼（它们会单独成条），只留这一层自己的文字
             for nested in body.find_all(id=re.compile(r"^post_\d+$")):
@@ -1073,11 +1111,14 @@ class BangumiTopic:
             for action in body.find_all("div", class_="post_actions"):
                 action.decompose()
             # 图片要在 `_simplify` 之前取（它会 `decompose()` 掉图）
-            image_urls = [i.url for i in _extract_images(body)]
+            image_urls = [i.url for i in _extract_images(body, base_url)]
             plain = body.get_text("\n", strip=True)
             # 原位标记先用**本层内**下标（``_build`` 知道最终 media 顺序后，
             # 会给上下文层的标记整体加偏移）
-            _simplify(body, {url: index for index, url in enumerate(image_urls)})
+            image_index = {url: index for index, url in enumerate(image_urls)}
+            _simplify(body, base_url)
+            blocks = html_blocks(body, base_url=base_url, media=image_index)
+            _legacy_body(body, image_index)
             markdown = _to_markdown(str(body))
 
         return BangumiFloor(
@@ -1091,9 +1132,26 @@ class BangumiTopic:
             plain=plain,
             image_urls=image_urls,
             parent_dom_id=parent_dom_id,
+            blocks=blocks,
         )
 
     # ------------------------------------------------------------------ 组装
+
+    @staticmethod
+    def _floor_signature(floor: BangumiFloor) -> tuple[TextRun, ...]:
+        name = floor.author_name
+        handle = floor.author_handle
+        url = profile_url(Platform.BANGUMI, user_id=handle)
+        runs = []
+        if name and handle and name.casefold() != handle.casefold():
+            runs.extend((TextRun(name, url, ("italic",)), TextRun(f" @{handle}", styles=("italic", "code"))))
+        elif name or handle:
+            runs.append(TextRun(f"@{handle}" if handle else name, url, ("italic",)))
+        if runs:
+            runs.extend(
+                TextRun(f" · {value}", styles=("italic",)) for value in (floor.label, floor.published_at) if value
+            )
+        return tuple(runs)
 
     @classmethod
     def _compose(cls, context_quote: str, body: str) -> str:
@@ -1138,6 +1196,17 @@ class BangumiTopic:
         if plain:
             lines.append(plain)
         return "\n".join(x for x in lines if x)
+
+
+def _reindex_floor(blocks: tuple[Block, ...], slots: Mapping[str, int]) -> tuple[Block, ...]:
+    """Floor-local images become absolute slots in the selected result only."""
+    return tuple(
+        replace(block, index=slots[block.url]) if block.kind == "media" else replace(
+            block, children=_reindex_floor(block.children, slots),
+            items=tuple(_reindex_floor(item, slots) for item in block.items),
+        )
+        for block in blocks if block.kind != "media" or block.url in slots
+    )
 
 
 __all__ = [

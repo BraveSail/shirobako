@@ -19,6 +19,7 @@ from parsehub.types import (
     VideoFile,
     VideoRef,
 )
+from parsehub.types.document import Block, Document, paragraph
 from parsehub.types.x_status import TextRun, XPost, XStatus
 from PIL import Image
 from pyrogram.errors import WebpageCurlFailed
@@ -37,6 +38,7 @@ from services.cache import CacheEntry, CacheMediaType
 from services.media import ProcessedMedia
 
 URL = "https://x.com/a/status/123"
+DOCUMENT_URL = "https://www.pixiv.net/artworks/12345"
 MID = "BQAAAH8EAACb7f-02gbl1xUz2F4"
 DEST = "https://example.org/(literal)?x=1&y=2"
 COVER = "https://example.org/cover.jpg"
@@ -195,7 +197,7 @@ class FakeTelegram:
 
 @pytest.fixture
 def setup(monkeypatch, tmp_path):
-    def prepare(result, *, missing=(), allowed=True, cached=None, config=CONFIG):
+    def prepare(result, *, missing=(), allowed=True, cached=None, config=CONFIG, url=URL):
         @asynccontextmanager
         async def session():
             yield None
@@ -220,7 +222,7 @@ def setup(monkeypatch, tmp_path):
         monkeypatch.setattr(pipeline, "process_media_files", AsyncMock(return_value=processed))
         cache_write = AsyncMock()
         persistent_write = AsyncMock()
-        service = SimpleNamespace(get_raw_url=AsyncMock(return_value=URL), parse=AsyncMock(return_value=result))
+        service = SimpleNamespace(get_raw_url=AsyncMock(return_value=url), parse=AsyncMock(return_value=result))
         for module in (guest, inline):
             monkeypatch.setattr(module, "get_session", session)
             monkeypatch.setattr(module, "ParseService", lambda: service)
@@ -288,6 +290,59 @@ def _choose(cli, query=URL, *, mid: str | None = MID):
             ),
         )
     )
+
+
+@pytest.mark.parametrize("surface", ["preview", "chosen", "guest", "warm-preview", "warm-guest"])
+def test_non_x_document_skips_legacy_on_inline_and_guest_sdk_wire(setup, monkeypatch, surface):
+    from plugins import helpers
+    from plugins.parse import rich_blocks
+
+    def reject_legacy(*args, **kwargs):
+        pytest.fail("A non-X document must not use a legacy renderer")
+
+    result = MultimediaParseResult(
+        content="legacy body", media=[ImageRef(url="https://example.org/photo.jpg")],
+        document=Document((paragraph(LITERAL), Block("media", index=0))),
+    )
+    result.platform = Platform.PIXIV
+    result.raw_url = DOCUMENT_URL
+    _, persistent_write = setup(result, url=DOCUMENT_URL)
+    for module, name in (
+        (helpers, "build_rich_markdown"), (rich_blocks, "markdown_to_blocks"),
+        (inline, "build_rich_markdown"), (inline, "markdown_to_blocks"),
+        (guest, "build_progress_markdown"), (guest, "build_rich_markdown"),
+        (guest, "markdown_to_blocks"), (reporters, "build_progress_markdown"),
+        (reporters, "markdown_to_blocks"),
+    ):
+        monkeypatch.setattr(module, name, reject_legacy)
+    cli = FakeTelegram(reject_edits=surface == "guest", reject_guest_media=True)
+    if surface == "preview":
+        messages = [_inline_preview(cli, DOCUMENT_URL).rich_message]
+        assert not _photos(messages[0])
+    elif surface == "chosen" or surface.startswith("warm-"):
+        _choose(cli, DOCUMENT_URL)
+        messages = [edit.rich_message for edit in cli.edits if edit.rich_message is not None]
+        assert _photos(messages[-1]) == [101]
+        if surface.startswith("warm-"):
+            persistent_write.assert_awaited_once()
+            assert persistent_write.await_args is not None
+            _, entry = persistent_write.await_args.args
+            setup(result, url=DOCUMENT_URL, cached=entry)
+            cli = FakeTelegram()
+            if surface == "warm-preview":
+                messages = [_inline_preview(cli, DOCUMENT_URL).rich_message]
+            else:
+                _guest(cli, DOCUMENT_URL)
+                messages = [answer.rich_message for answer in cli.guest]
+            assert len(messages) == 1 and _photos(messages[0]) == [101]
+    else:
+        _guest(cli, DOCUMENT_URL)
+        messages = [entry.rich_message for entry in cli.guest]
+        assert len(messages) == 3
+        assert not _photos(messages[0]) and _photos(messages[1]) == [101] and not _photos(messages[-1])
+    for message in messages:
+        assert LITERAL in _text(message)
+        assert "legacy body" not in _text(message)
 
 
 def test_inline_preview_is_native_and_translation_leaves_parse_cache_original(setup):

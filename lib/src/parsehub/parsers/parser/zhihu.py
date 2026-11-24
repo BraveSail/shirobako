@@ -1,3 +1,5 @@
+from parsehub.types.document import Document
+
 from ...provider_api.zhihu import ZhihuAPI, ZhihuPin, ZhihuPinType, ZhihuQA, ZhihuZhuanLan
 from ...types import (
     ImageParseResult,
@@ -26,25 +28,30 @@ class ZhihuParser(BaseParser):
         match result:
             case ZhihuQA():
                 if not result.markdown_answer:
-                    return MultimediaParseResult(title=result.question, author_name=result.author_name)
+                    return MultimediaParseResult(
+                        title=result.question, author_name=result.author_name, document=Document(),
+                    )
                 return RichTextParseResult(
                     title=result.question,
                     author_name=result.author_name,
                     media=[ImageRef(url=i, ext=image_ext_from_url(i)) for i in result.imgs],
                     markdown_content=result.markdown_answer,
+                    document=result.document,
                 )
             case ZhihuZhuanLan():
                 return RichTextParseResult(
                     title=result.title,
                     author_name=result.author_name,
                     markdown_content=result.markdown_content,
+                    document=result.document,
                     media=[ImageRef(url=i, ext=image_ext_from_url(i)) for i in result.imgs],
                 )
             case ZhihuPin():
                 match result.type:
                     case ZhihuPinType.TEXT:
                         return ImageParseResult(
-                            title=result.title, content=result.plaintext_content, author_name=result.author_name
+                            title=result.title, content=result.plaintext_content, author_name=result.author_name,
+                            document=result.document,
                         )
                     case ZhihuPinType.IMAGE:
                         return ImageParseResult(
@@ -61,6 +68,7 @@ class ZhihuParser(BaseParser):
                                 )
                                 for i in result.media
                             ],
+                            document=result.document,
                         )
                     case ZhihuPinType.VIDEO:
                         v = result.media[0]
@@ -71,6 +79,7 @@ class ZhihuParser(BaseParser):
                             video=VideoRef(
                                 url=v.url, thumb_url=v.thumb_url, height=v.height, width=v.width, duration=v.duration
                             ),
+                            document=result.document,
                         )
 
 

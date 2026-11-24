@@ -17,12 +17,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from loguru import logger
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Block, Document, TextRun, html_blocks
 
 from ..types.platform import Platform
 from ..utils import http
@@ -113,6 +117,7 @@ class LinuxDoTopic:
     #: ``reply_media_count`` 里 —— 声明出来渲染层就不用靠位置猜 (以前靠"两个块互相
     #: 兜底", 正文里一插行就可能错位)。
     quote_roles: list[str] = field(default_factory=list)
+    document: Document | None = None
 
     @staticmethod
     def _split_url(url: str) -> tuple[str, str]:
@@ -324,10 +329,12 @@ class LinuxDoTopic:
         # 渲染层再换成媒体引用 —— 图出现在**文章原位**，而不是堆到消息末尾。
         # （本层图排在 media 列表最前，所以本层下标就是最终下标；上下文层的标记下标
         #  从 ``len(images)`` 起 —— 见 ``_context_quotes(image_offset=...)``。）
-        context_quotes, context_images, context_polls = cls._context_quotes(
-            posts, first, image_offset=len(images)
+        base_url = f"https://linux.do/t/topic/{topic_id}/{first.get('post_number') or 1}"
+        context_quotes, context_images, context_polls, context_blocks = cls._context_quotes(
+            posts, first, image_offset=len(images), base_url=base_url,
         )
         image_index = {i.url: n for n, i in enumerate(images)}
+        blocks = cls._native_body(soup, raw_polls, image_index, len(context_polls), base_url)
         # ⚠️ 必须在取纯文本**之前**清 lightbox: 它的包裹里除了 img 还有一段**说明文字**
         # (``span.filename`` 文件名 + ``span.informations`` 的"分辨率 体积", 如 ``746×330 24.3 KB``)。
         # 纯图楼层(markdown 为空)拿 text_content 当正文, 晚清理这些元信息就会跟图一起显示
@@ -407,6 +414,7 @@ class LinuxDoTopic:
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
             # 当前这一层的楼层号 —— 分享楼层时用它标出"这是第几楼"
             post_number=to_int(first.get("post_number")),
+            document=Document((*context_blocks, *blocks)),
         )
 
     #: 引用块在正文里的占位标记 (转 markdown 后再替换成渲染结果)
@@ -414,8 +422,8 @@ class LinuxDoTopic:
 
     @classmethod
     def _post_to_quote(
-        cls, post: dict[str, Any], poll_offset: int, image_offset: int = 0
-    ) -> tuple[str, list[LinuxDoImage], list[LinuxDoPoll]]:
+        cls, post: dict[str, Any], poll_offset: int, image_offset: int, base_url: str,
+    ) -> tuple[str, list[LinuxDoImage], list[LinuxDoPoll], Block | None]:
         """把**另一层**的内容渲染成引用块 + 它自己的图片 + 它自己的投票。
 
         返回 ``(引用块 markdown, 该层的图片, 该层的投票)``：
@@ -437,7 +445,7 @@ class LinuxDoTopic:
         floor = post.get("post_number")
         head = f"{author} · #{floor}" if floor else author
         if not cooked:
-            return "", [], []
+            return "", [], [], None
 
         soup = BeautifulSoup(cooked, "lxml")
         images = cls._extract_images(soup)  # 图片先取出来 (下标按块内顺序分配)
@@ -446,12 +454,15 @@ class LinuxDoTopic:
         for aside in soup.find_all("aside", class_="quote"):
             aside.decompose()
         raw_polls = [p for p in (post.get("polls") or []) if isinstance(p, dict)]
+        children = cls._native_body(soup, raw_polls, image_index, poll_offset, base_url)
+        signature = cls._signature(str(post.get("name") or ""), username, floor)
+        quote = Block("quote", runs=signature, children=children, role="reply") if children or signature else None
         # ⚠️ 必须在取纯文本**之前**把 lightbox 换成标记: 包裹里还有文件名/分辨率文字
         cls._strip_lightbox(soup, image_index)
         polls = cls._simplify(soup, polls=raw_polls, offset=poll_offset)
         text = soup.get_text("\n", strip=True)
         # 没文字也出引用块 (sign_only) —— 纯图楼层只有署名 + 标记行
-        return format_quote_block(text, head, sign_only=True), images, polls
+        return format_quote_block(text, head, sign_only=True), images, polls, quote
 
     @staticmethod
     def _quote_to_plain(block: str) -> str:
@@ -462,8 +473,8 @@ class LinuxDoTopic:
 
     @classmethod
     def _context_quotes(
-        cls, posts: list[dict[str, Any]], current: dict[str, Any], image_offset: int = 0
-    ) -> tuple[list[str], list[LinuxDoImage], list[LinuxDoPoll]]:
+        cls, posts: list[dict[str, Any]], current: dict[str, Any], image_offset: int, base_url: str,
+    ) -> tuple[list[str], list[LinuxDoImage], list[LinuxDoPoll], list[Block]]:
         """当前楼层的上下文: 引用块 (**从远到近**) + 这些层的图片 + 这些层的投票。
 
         用户要求: 分享某一层时要把**主楼**也带上 (那一层常是在回应主楼/前文);
@@ -478,6 +489,7 @@ class LinuxDoTopic:
         """
         wanted = current.get("post_number")
         blocks: list[str] = []
+        native: list[Block] = []
         images: list[LinuxDoImage] = []
         polls: list[LinuxDoPoll] = []
         targets: list[dict[str, Any]] = []
@@ -492,14 +504,95 @@ class LinuxDoTopic:
                 targets.append(rp)
 
         for post in targets:
-            block, post_images, post_polls = cls._post_to_quote(
-                post, poll_offset=len(polls), image_offset=image_offset + len(images)
+            floor_url = f"{base_url.rsplit('/', 1)[0]}/{post.get('post_number') or 1}"
+            block, post_images, post_polls, quote = cls._post_to_quote(
+                post, poll_offset=len(polls), image_offset=image_offset + len(images), base_url=floor_url,
             )
             if block:
                 blocks.append(block)
+            if quote:
+                native.append(quote)
             images.extend(post_images)
             polls.extend(post_polls)
-        return blocks, images, polls
+        return blocks, images, polls, native
+
+    @staticmethod
+    def _signature(name: str, username: str, floor: int | None = None) -> tuple[TextRun, ...]:
+        url = profile_url(Platform.LINUXDO, username)
+        runs = []
+        if name and username and name.casefold() != username.casefold():
+            runs.extend((TextRun(name, url, ("italic",)), TextRun(f" @{username}", styles=("italic", "code"))))
+        elif name or username:
+            runs.append(TextRun(f"@{username}" if username else name, url, ("italic",)))
+        if floor:
+            runs.append(TextRun(f"{' · ' if runs else ''}#{floor}", styles=("italic",)))
+        return tuple(runs)
+
+    @classmethod
+    def _native_body(
+        cls, source: BeautifulSoup, polls: list[dict[str, Any]], image_index: Mapping[str, int],
+        poll_offset: int, base_url: str,
+    ) -> tuple[Block, ...]:
+        # Work on the actual cooked nodes, independently of the legacy projection.
+        soup = copy(source)
+        for img in soup.select("img.emoji, img.avatar"):
+            img.decompose()
+        for img in soup.find_all("img"):
+            src = cls._image_url(img)
+            img.attrs = {"src": src} if src in image_index else {}
+        for wrapper in soup.select("div.lightbox-wrapper"):
+            if img := wrapper.find("img"):
+                wrapper.replace_with(img.extract())
+            else:
+                wrapper.decompose()
+        cls._clean_dom(soup)
+
+        poll_blocks: dict[int, Block] = {}
+        cls._convert_polls(soup, polls, poll_offset, native=poll_blocks)
+        quoted = {id(tag): tag for tag in soup.select("aside.quote")}
+        special = poll_blocks.keys() | quoted.keys()
+        ancestors = {
+            id(parent)
+            for node in soup.find_all(lambda tag: id(tag) in special)
+            for parent in node.parents
+        }
+
+        def scan(root: Tag) -> tuple[Block, ...]:
+            # Ordinary DOM nodes go through the shared adapter once. Polls and
+            # signed quotes are emitted here, not encoded as text markers.
+            fragment = soup.new_tag("div")
+            result: list[Block] = []
+
+            def flush() -> None:
+                if fragment.contents:
+                    result.extend(html_blocks(fragment, base_url=base_url, media=image_index))
+                    fragment.clear()
+
+            for node in list(root.children):
+                key = id(node)
+                if key not in special and key not in ancestors:
+                    fragment.append(node)
+                    continue
+                flush()
+                if key in poll_blocks:
+                    result.append(poll_blocks[key])
+                elif key in quoted:
+                    body = node.find("blockquote")
+                    if body is not None and (children := scan(body)):
+                        signature = cls._signature("", str(node.get("data-username") or ""))
+                        result.append(Block("quote", runs=signature, children=children, role="quote"))
+                elif node.name == "blockquote":
+                    result.append(Block("quote", children=scan(node)))
+                elif node.name in {"ol", "ul"}:
+                    items = tuple(scan(li) for li in node.find_all("li", recursive=False))
+                    start = max(1, to_int(node.get("start")) or 1)
+                    result.append(Block("list", items=items, ordered=node.name == "ol", start=start))
+                else:
+                    result.extend(scan(node))
+            flush()
+            return tuple(result)
+
+        return scan(soup)
 
     @classmethod
     def _extract_quotes(cls, soup: BeautifulSoup) -> list[tuple[str, str]]:
@@ -540,10 +633,7 @@ class LinuxDoTopic:
             if image_index is not None:
                 img = wrapper.find("img")
                 if img is not None:
-                    link = img.find_parent("a")
-                    src = str(img.get("src") or "")
-                    url = str((link.get("href") if link else "") or src) or src
-                    index = image_index.get(url)
+                    index = image_index.get(LinuxDoTopic._image_url(img))
             if index is None:
                 wrapper.decompose()
             else:
@@ -557,10 +647,7 @@ class LinuxDoTopic:
                     continue
                 if img.find_parent("div", class_="lightbox-wrapper"):
                     continue
-                link = img.find_parent("a")
-                src = str(img.get("src") or "")
-                url = str((link.get("href") if link else "") or src) or src
-                index = image_index.get(url)
+                index = image_index.get(LinuxDoTopic._image_url(img))
                 if index is not None:
                     img.replace_with(media_placeholder(index))
 
@@ -585,6 +672,11 @@ class LinuxDoTopic:
         for tag in soup.find_all("img", class_=["emoji", "avatar"]):
             tag.decompose()
         LinuxDoTopic._strip_lightbox(soup)
+        LinuxDoTopic._clean_dom(soup)
+        return LinuxDoTopic._convert_polls(soup, polls or [], offset=offset)
+
+    @staticmethod
+    def _clean_dom(soup: BeautifulSoup) -> None:
         LinuxDoTopic._onebox_to_quote(soup)
         for details in soup.find_all("details"):
             details.unwrap()
@@ -592,7 +684,6 @@ class LinuxDoTopic:
             summary.decompose()
         for spoiler in soup.find_all("div", class_="spoiler"):
             spoiler.unwrap()
-        return LinuxDoTopic._convert_polls(soup, polls or [], offset=offset)
 
     @staticmethod
     def _onebox_to_quote(soup: BeautifulSoup) -> None:
@@ -657,7 +748,8 @@ class LinuxDoTopic:
 
     @staticmethod
     def _convert_polls(
-        soup: BeautifulSoup, polls: list[dict[str, Any]], offset: int = 0
+        soup: BeautifulSoup, polls: list[dict[str, Any]], offset: int = 0, *,
+        native: dict[int, Block] | None = None,
     ) -> list[LinuxDoPoll]:
         """把 Discourse 的 ``div.poll`` 原地改写成**占位符行** ``{{poll:N}}``, 返回结构化数据。
 
@@ -680,7 +772,8 @@ class LinuxDoTopic:
         """
         by_name = {str(p.get("name")): p for p in polls}
         structured: list[LinuxDoPoll] = []
-        for index, poll in enumerate(soup.find_all("div", class_="poll")):
+        nodes = [poll for poll in soup.find_all("div", class_="poll") if not poll.find_parent("aside", class_="quote")]
+        for index, poll in enumerate(nodes):
             name = str(poll.get("data-poll-name") or "")
             data = by_name.get(name) or (polls[index] if index < len(polls) else {})
             raw_options = data.get("options") or []
@@ -714,8 +807,12 @@ class LinuxDoTopic:
                 )
             )
             # 占位符**独立成行** (包一个 ``p``): markdown 转换后就是正文里的一行
+            slot = offset + len(structured) - 1
+            if native is not None:
+                native[id(poll)] = Block("poll", index=slot)
+                continue
             placeholder = soup.new_tag("p")
-            placeholder.string = f"{{{{poll:{offset + len(structured) - 1}}}}}"
+            placeholder.string = f"{{{{poll:{slot}}}}}"
             poll.replace_with(placeholder)
         return structured
 
@@ -739,7 +836,13 @@ class LinuxDoTopic:
         return markdown_content.strip()
 
     @staticmethod
-    def _extract_images(soup: BeautifulSoup) -> list[LinuxDoImage]:
+    def _image_url(img: Tag) -> str:
+        link = img.find_parent("a")
+        source = str((link.get("href") if link else "") or img.get("src") or "").strip()
+        return urljoin("https://linux.do/", source) if source else ""
+
+    @classmethod
+    def _extract_images(cls, soup: BeautifulSoup) -> list[LinuxDoImage]:
         """取帖子里的图片: lightbox 的 href 是原图, img 的宽高用来声明显示比例。"""
         images: list[LinuxDoImage] = []
         seen: set[str] = set()
@@ -755,10 +858,7 @@ class LinuxDoTopic:
             # 用户报「前面那一堆是引用的东西」时, 这两张就是罪魁。
             if img.find_parent("aside", class_="onebox") is not None:
                 continue
-            src = str(img.get("src") or "")
-            link = img.find_parent("a")
-            original = str((link.get("href") if link else "") or src)
-            url = original or src
+            url = cls._image_url(img)
             if not url or url in seen:
                 continue
             seen.add(url)

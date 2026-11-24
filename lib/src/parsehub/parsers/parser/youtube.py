@@ -58,6 +58,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import Block, Document, TextRun, paragraph, plain
 from ...utils.downloader import download
 from ...utils.helpers import image_ext_from_url, profile_url
 from ..base.base import BaseParser
@@ -150,6 +151,7 @@ class YtbParse(BaseParser):
             )
             for image in post.images
         ]
+        cover_index = len(media)
         # 帖子里分享的视频只渲染封面 + 链接, **不下载**（那不是帖子本体）
         if post.video and post.video.cover_url:
             media.append(
@@ -166,8 +168,20 @@ class YtbParse(BaseParser):
         if post.video:
             blocks.append(YtbParse._build_video_link(post.video))
 
+        body = [paragraph(post.text_runs)] if post.text_runs else []
+        if post.poll:
+            body.append(Block("poll", index=0))
+        body.extend(Block("media", index=i, url=ref.url) for i, ref in enumerate(media[:cover_index]))
+        if post.video:
+            url = f"https://www.youtube.com/watch?v={post.video.video_id}"
+            title = "".join(run.text for run in post.video.title_runs).strip() or url
+            body.append(paragraph((TextRun(title, url),)))
+            if post.video.cover_url:
+                body.append(Block("media", index=cover_index, url=post.video.cover_url, role="attached_video"))
+
         return MultimediaParseResult(
             content="\n\n".join(block for block in blocks if block),
+            document=Document(tuple(body)),
             media=media,
             author_name=post.author_name,
             author_handle=post.author_handle,
@@ -233,6 +247,7 @@ class YtbVideoParseResult(VideoParseResult):
         super().__init__(
             title=info.title,
             content=info.description,
+            document=plain(info.source_description if info.source_description is not None else info.description),
             author_name=info.author_name,
             # 作者主页与 handle 来自 WEB client 的 microformat（取流的 VISIONOS 不返回）；
             # 拿不到就退回 player 的 /channel/<id> 与空 handle（渲染层不显示空项）。

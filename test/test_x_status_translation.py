@@ -7,6 +7,8 @@ from dataclasses import replace
 import pytest
 from parsehub.errors import TranslationUnavailable
 from parsehub.types import ImageRef, MultimediaParseResult, Poll, PollOption
+from parsehub.types.document import Block, paragraph
+from parsehub.types.x_document import bind_x_attachments, document_from_x
 from parsehub.types.x_status import TextRun, XPost, XStatus, XTrending
 
 from plugins import translate
@@ -83,6 +85,27 @@ def source():
         quote_ids={"quoted": "300"},
         polls=[Poll(options=[PollOption("A", 2), PollOption("B", 1)], total_votes=3)],
     )
+
+
+@pytest.mark.parametrize("warm", [False, True])
+def test_article_keeps_full_body_and_translates_quoted_status(backend, warm):
+    from parsehub.parsers.parser.twitter import TwitterParser
+    from parsehub.provider_api.twitter import TwitterArticle, TwitterTweet
+    from parsehub.types.serialize import result_from_cache_dict, result_to_cache_dict
+
+    _, client = backend
+    body = paragraph("Full Article **literal**")
+    quote = TwitterTweet("300", "引用原文", author_name="Author")
+    tweet = TwitterTweet("100", "Teaser", article=TwitterArticle("Title", "Legacy article", blocks=(body,)),
+                         quoted_status=quote)
+    source = asyncio.run(TwitterParser.media_parse(tweet))
+    if warm:
+        source = result_from_cache_dict(json.loads(json.dumps(result_to_cache_dict(source))))
+    display = asyncio.run(translate.translate_for_display(source, URL, LANG))
+    assert display.document.blocks[0] == body
+    assert display.document.blocks[-1].children[0].runs == (TextRun("引用译文"),)
+    assert source.document.blocks[-1].children[0].runs == (TextRun("引用原文"),)
+    assert client.calls == [("300", "zh-cn")]
 
 
 def test_display_translates_only_native_text_runs(source, backend):
@@ -218,11 +241,26 @@ class NativeCacheParseResult(CacheParseResult):
 
 def test_warm_file_id_entry_translates_a_copy_from_cached_runs(source, backend):
     _, client = backend
+    article = paragraph("Article must stay literal **unsplit**")
+    attachment = Block("media", index=1, url="https://example.com/quoted.jpg")
+    source.document = bind_x_attachments(
+        document_from_x(source.x_status), quoted=(attachment,), quoted_article=(article,),
+    )
+    original_document = source.document
     cold = asyncio.run(translate.translate_for_display(source, URL, LANG))
+    assert source.document is original_document
+    assert cold.document.blocks[0].runs == TRANSLATED_RUNS
+    assert cold.document.blocks[1] == original_document.blocks[1]  # Trending card.
+    assert cold.document.blocks[-1].children[0] == article
+    assert cold.document.blocks[-1].children[1].runs == (TextRun("引用译文"),)
+    assert cold.document.blocks[-1].children[-1] == attachment
     entry = CacheEntry(
         parse_result=NativeCacheParseResult(
             x_status=source.x_status,
+            document=original_document,
             content=source.content,
+            author_name="Original author",
+            tags=["original tag"],
             quote_ids=source.quote_ids,
             quoted_media_count=1,
             polls=[{"options": [{"text": "A", "count": 2}]}],
@@ -240,6 +278,9 @@ def test_warm_file_id_entry_translates_a_copy_from_cached_runs(source, backend):
     assert warm is not entry and warm.parse_result is not entry.parse_result
     assert isinstance(warm.parse_result, NativeCacheParseResult)
     assert warm.parse_result.x_status == cold.x_status
+    assert warm.parse_result.document == cold.document
+    assert warm.parse_result.author_name == "Original author"
+    assert warm.parse_result.tags == ["original tag"]
     assert warm.parse_result.content == entry.parse_result.content
     assert warm.parse_result.polls == entry.parse_result.polls
     assert warm.parse_result.quoted_media_count == 1

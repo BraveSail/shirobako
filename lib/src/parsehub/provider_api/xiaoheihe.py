@@ -10,8 +10,9 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, cast
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
+from bs4 import BeautifulSoup
 from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -20,6 +21,8 @@ from cryptography.hazmat.primitives.ciphers.algorithms import AES
 from cryptography.hazmat.primitives.ciphers.base import Cipher
 from cryptography.hazmat.primitives.ciphers.modes import CBC, ECB
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Document, html_blocks, plain
 
 from ..utils import http
 from ..utils.helpers import get_author_name, to_datetime, to_int
@@ -61,6 +64,7 @@ class XiaoHeiHePost:
     like_count: int | None = None
     #: 评论数（``link.comment_num``）
     reply_count: int | None = None
+    document: Document | None = None
 
 
 class XiaoHeiHeAPI:
@@ -97,28 +101,34 @@ class XiaoHeiHeAPI:
                 title=title,
                 content=text,
                 media=[XiaoHeiHeMedia(type=XiaoHeiHeMediaType.VIDEO, url=video_url, thumb_url=video_thumb)],
+                document=plain(text),
                 **meta,
             )
         else:
             use_concept_type = link.get("use_concept_type", False)
             text_list = json.loads(text)
+            soup = None
             body_image_urls: list[str] = []
             if text_list[0]["type"] == "html":
                 html = text_list[0]["text"]
+                soup = BeautifulSoup(html, "lxml")
                 content = XHHConverter(heading_style="ATX").convert(html)
-                # ★ 正文里的图用 ``data-original``（懒加载属性），转出来是原图 URL:
-                #   ``https://imgheybox.max-c.com/...``
-                #   而 ``text_list[1:]`` 里的 img 节点给的是**另一个 CDN 域名**
-                #   ``https://imgheybox1.max-c.com/...`` + 图片处理参数
-                #   （``?imageMogr2/...thumbnail/850x1450``）。
-                #
-                #   两者 **path 完全相同、host 与 query 不同** ⇒ 渲染层
-                #   ``rewrite_external_images`` 按「URL 是否在 media_urls 里」匹配时
-                #   对不上，正文图会被**剥掉**（日志：`正文外链图不在媒体列表里, 已剥掉`）,
-                #   用户看到的就是「怎么没图？」。
-                #
-                #   ⇒ 统一用**正文那批 URL** 建 media，两边逐字一致才不会被剥。
-                body_image_urls = re.findall(r"!\[\]\(([^)\s]+)\)", content)
+                # The item list can point at a different CDN rendition.
+                for img in soup.find_all("img"):
+                    src = str(img.get("data-original") or "").strip()
+                    if not src:
+                        img.decompose()
+                        continue
+                    actual = urljoin(url, src)
+                    # Preserve the legacy replacement gate: the original list
+                    # only counted standalone image links without alt/title.
+                    if (
+                        not img.get("alt") and not img.get("title")
+                        and not img.find_parent(["h1", "h2", "h3", "h4", "h5", "h6", "td", "th"])
+                        and urlparse(actual).scheme in {"https", "http"}
+                    ):
+                        body_image_urls.append(actual)
+                    img.attrs = {"src": actual}
             else:
                 content = text_list[0]["text"]
             post_type = XiaoHeiHePostType.IMAGE if use_concept_type else XiaoHeiHePostType.ARTICLE
@@ -142,8 +152,15 @@ class XiaoHeiHeAPI:
                 for media, url in zip(images, body_image_urls, strict=True):
                     media.url = url
                     media.thumb_url = url
+            media_index: dict[str, int] = {}
+            for i, item in enumerate(images):
+                media_index.setdefault(urljoin(url, item.url), i)
+            document = (
+                Document(html_blocks(soup, base_url=url, media=media_index)) if soup is not None else plain(content)
+            )
             return XiaoHeiHePost(
-                type=post_type, title=title, content=content, media=images, author_name=author_name, **meta
+                type=post_type, title=title, content=content, media=images, author_name=author_name,
+                document=document, **meta,
             )
 
     @staticmethod

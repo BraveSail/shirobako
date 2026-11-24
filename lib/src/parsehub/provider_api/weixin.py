@@ -3,10 +3,13 @@ from dataclasses import dataclass
 from enum import IntEnum
 from html import unescape
 from typing import Any, cast
+from urllib.parse import urljoin
 
 import json5
 from bs4 import BeautifulSoup
 from markdownify import MarkdownConverter
+
+from parsehub.types.document import Document, html_blocks, plain
 
 from ..errors import ParseError
 from ..utils import http
@@ -26,7 +29,7 @@ class WXItemShowType(IntEnum):
 
 _TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 _BREAK_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
-_IMG_SRC_RE = re.compile(r"<img[^>]*?\bdata-src\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+
 #: 页面数据用 '0' * 1 这类写法做隐式类型转换, 不是合法的 JSON5 值
 _IMPLICIT_INT_RE = re.compile(r"('[^'\n]*'|\"[^\"\n]*\")\s*\*\s*1(?![.\d])")
 #: 对象以 "};" 结束后还跟着 try/catch 与 IIFE 收尾
@@ -106,15 +109,16 @@ class WX:
     text_content: str
     photos: list[str]
     author_name: str = ""
+    document: Document | None = None
 
     @staticmethod
     async def parse(url: str, proxy: str | None = None) -> "WX":
         async with http.AsyncClient(proxy=proxy) as client:
             response = await client.get(url, headers={"User-Agent": UA})
-        return WX._parse_data(response.text)
+        return WX._parse_data(response.text, base_url=url)
 
     @classmethod
-    def _parse_data(cls, html: str) -> "WX":
+    def _parse_data(cls, html: str, *, base_url: str = "https://mp.weixin.qq.com/") -> "WX":
         data = _load_payload(html)
         try:
             item_show_type = WXItemShowType(int(data["item_show_type"]))
@@ -126,34 +130,50 @@ class WX:
         match item_show_type:
             case WXItemShowType.ARTICLE:
                 source = data.get("content_noencode") or ""
+                soup = BeautifulSoup(source, "lxml")
+                imgs: list[str] = []
+                media: dict[str, int] = {}
+                for img in soup.find_all("img"):
+                    if not (raw := str(img.get("data-src") or "").strip()):
+                        img.decompose()
+                        continue
+                    src = urljoin(base_url, raw)
+                    media.setdefault(src, len(imgs))
+                    imgs.append(src)
+                    img.attrs = {"src": src}
                 return cls(
                     item_show_type=item_show_type,
                     title=data.get("title") or "",
                     markdown_content=WXConverter(heading_style="ATX").convert(source),
-                    imgs=_IMG_SRC_RE.findall(source),
+                    imgs=imgs,
                     text_content=_to_text(source),
                     photos=[],
                     author_name=author_name,
+                    document=Document(html_blocks(soup, base_url=base_url, media=media)),
                 )
             case WXItemShowType.TEXT:
+                text = _to_text((data.get("text_page_info") or {}).get("content_noencode"))
                 return cls(
                     item_show_type=item_show_type,
                     title="",
                     markdown_content="",
                     imgs=[],
-                    text_content=_to_text((data.get("text_page_info") or {}).get("content_noencode")),
+                    text_content=text,
                     photos=[],
                     author_name=author_name,
+                    document=plain(text),
                 )
             case WXItemShowType.IMAGE:
+                text = _to_text(data.get("content_noencode"))
                 return cls(
                     item_show_type=item_show_type,
                     title=data.get("title") or "",
                     markdown_content="",
                     imgs=[],
-                    text_content=_to_text(data.get("content_noencode")),
+                    text_content=text,
                     photos=_collect_photos(data),
                     author_name=author_name,
+                    document=plain(text),
                 )
 
 

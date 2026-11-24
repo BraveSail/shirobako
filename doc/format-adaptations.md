@@ -1,198 +1,80 @@
-# 解析器里的格式适配（盘点，未改代码）
+# Format adaptation inventory — phase 0
 
-## 为什么盘这个
+Baseline: `2f6a237`. Inventory only. The migration target is **one shared render interface for all 24 platforms**: providers/parsers supply typed render data; the renderer projects it to Telegram rich blocks, text/entities, or plain summaries. Never generate Markdown, HTML, or markers only to parse them back, including for captions, progress, cache hits, and app-authored notes. Interpret platform-supplied HTML, entity spans, or Markdown at the input boundary; keep plain text literal. Existing CLI string fields can remain compatibility projections, not render inputs.
 
-这些代码的**共同点是把结构编码进字符串**：`<a href>`、`**粗体**`、`> ` 引用前缀、
-`{{media:N}}` 占位符，然后由渲染层用正则解析回来。
+## Coverage and scan counts
 
-字符串既是数据又是语法。平台原文里只要出现与语法同形的字符，就会被误读 ——
-于是只能再加 escape 补丁（`\#`、全角空格换缩进、`<i>` 包引用行），补丁之间
-互相破坏。已知症状全在这一条链上：
+Python AST parsed 24 platform parser modules and 26 provider modules: 24 matching providers plus `youtube_sabr.py` and `youtube_video.py`, excluded from format matching. The 24 parser file stems exactly match the live `parsehub platforms` output. Package initializers are not platforms. The scan counted distinct source lines per category, matching string literals and static f-string fragments plus explicit `html.escape` calls. It filtered docstrings, URL-routing assignments/URL-regex noise, and token-like literals. Categories overlap and regex hits can recognize rather than emit syntax. **The platform inventory is complete; the syntax scan is not.** Dynamic f-strings, library converters, and helper calls can evade literal matching; the adapter points below supplement it.
 
-- `\#C_Chat` 泄漏（序列化转义了，反序列化没还原）
-- `</details>` 泄漏（序列化支持嵌套，解析器不支持）
-- `</tg-collage>` 泄漏（inline 路径序列化后没有对应解析）
-- 行首 4 空格变代码块 → 换全角空格 → 缩进宽度翻倍、对齐推歪
+| Scope | HTML-like | Markdown-like | Media/poll/translation markers | Escape-like literals | `html.escape` calls | Files / distinct hit lines |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Platform parsers | 11 | 8 | 8 | 2 | 9 | 9 / 29 |
+| Providers | 8 | 30 | 2 | 7 | 5 | 10 / 46 |
+| Total (shared helpers excluded) | 19 | 38 | 10 | 9 | 14 | 19 / 75 |
 
-## 盘点结果：45 处，13 个文件
+Primary adapter groups: **10 literal**, **5 mixed text plus generated markup**, **8 rich-source converters**, **1 native/legacy split**. Groups describe the main migration work, not every result branch.
 
----
+## Platform records
 
-## A 生成 HTML 标签（17 处）
+Physical paths: `P` = `lib/src/parsehub/parsers/parser/<id>.py`; `V` = `lib/src/parsehub/provider_api/<id>.py`. Each row identifies the files for its stage. Test/fixture prefixes: `L/` = `lib/test/`; `B/` = `test/`. Evidence paths are checked-in starting points, not claims of full test coverage or execution.
 
-### `parsers/parser/bangumi.py`
-
-- **L171** `escape/html:a` — `bits.append(f'<a href="{html.escape(entry.url, quote=True)}">{html.escape(entry.name)}</a>')`
-### `parsers/parser/bilibili.py`
-
-- **L114** `html:a` — `title = f'<a href="{url}">{raw_title}</a>'`
-- **L172** `html:collage` — `return "<tg-collage>\n\n" + "\n".join(items) + "\n\n</tg-collage>"`
-- **L205** `html:a` — `title_line = f'<a href="{page_url}">{title}</a>' if title and page_url else title`
-- **L506** `escape/html:a` — `desc = desc.replace(f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>')`
-- **L514** `html:a` — `return f'<a href="{url}">#{topic}#</a>'`
-### `parsers/parser/ptt.py`
-
-- **L97** `html:details/html:summary` — `parts.append(f"<details><summary>{summary}</summary>\n\n" + "\n".join(lines).rstrip() + "\n\n</details>")`
-### `parsers/parser/threads.py`
-
-- **L41** `escape/html:a` — `return f'<a href="{html.escape(url, quote=True)}">{html.escape(topic)}</a>'`
-### `parsers/parser/twitter.py`
-
-- **L236** `html:a/html:italic/md:quote` — `return f'> <i><a href="{href}">{label}</a></i>', []`
-### `parsers/parser/weibo.py`
-
-- **L220** `escape/html:a` — `f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>'`
-### `parsers/parser/youtube.py`
-
-- **L202** `escape/html:a` — `return f'<a href="{url}">{html.escape(title)}</a>'`
-### `provider_api/bangumi.py`
-
-- **L368** `escape/html:a` — `return f'<a href="{html.escape(href, quote=True)}">{text}</a>'`
-- **L380** `html:bold` — `return f"<b>{text}</b>" if text else ""`
-- **L384** `html:italic` — `return f"<i>{text}</i>" if text else ""`
-- **L839** `escape/html:a` — `origin_line = f'**<a href="{url}">{html.escape(episode_name)}</a>**'`
-- **L842** `escape/html:a` — `f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'`
-### `provider_api/youtube.py`
-
-- **L375** `escape/html:a` — `text = f'<a href="{html.escape(real, quote=True)}">{html.escape(text)}</a>'`
-
-## B 生成 markdown 语法（12 处）
-
-### `parsers/parser/ptt.py`
-
-- **L86** `md:quote` — `line = f"> {tag} {push.user}: {push.content}".rstrip()`
-- **L95** `md:quote` — `lines.append(f"> …還有 {remaining} 條推文未顯示")`
-### `parsers/parser/twitter.py`
-
-- **L236** `html:a/html:italic/md:quote` — `return f'> <i><a href="{href}">{label}</a></i>', []`
-### `provider_api/bangumi.py`
-
-- **L565** `md:bold` — `"""楼中楼**回复的那一层**（DOM 上最近的 ˋˋpost_<id>ˋˋ 祖先）；一级楼层为空。`
-- **L592** `md:bold` — `"""**本层**的作者（不是楼主 —— 楼主是主题的创建者，楼层可能不是他）"""`
-- **L617** `md:bold` — `"""解析出来的楼层（仅供核对/测试，**不再渲染**）"""`
-### `provider_api/twitter.py`
-
-- **L637** `md:bold` — `"""正文里的标签 (不含 ˋˋ#ˋˋ), 来自平台实体 ˋˋentities.hashtags[].textˋˋ。`
-- **L698** `md:heading` — `"header-one": lambda t: f"# {t}",`
-- **L699** `md:heading` — `"header-two": lambda t: f"## {t}",`
-- **L700** `md:heading` — `"header-three": lambda t: f"### {t}",`
-- **L701** `md:quote` — `"blockquote": lambda t: "\n".join(f"> {line}" for line in t.split("\n")),`
-### `types/result.py`
-
-- **L159** `md:bold` — `"""ˋˋmediaˋˋ **开头**有几个是置顶图 (板头/banner); 渲染层提到标题上方并用分割线隔开"""`
-
-## C 生成占位符（10 处）
-
-### `parsers/parser/bilibili.py`
-
-- **L193** `ph:media` — `base: Any, page_url: str, placeholder: str = "{{media:0}}"`
-- **L262** `ph:media` — `marks = [f"{{{{media:{offset + i}}}}}" for i in range(len(reply.images or []))]`
-- **L273** `ph:media` — `f"{{{{media:{target_offset + i}}}}}" for i in range(len(target.images or []))`
-- **L285** `ph:media` — `base, page_url, placeholder=f"{{{{media:{video_start}}}}}"`
-### `parsers/parser/threads.py`
-
-- **L119** `ph:poll` — `return f"{{{{poll:{index}}}}}"`
-### `parsers/parser/twitter.py`
-
-- **L117** `ph:poll` — `return f"{{{{poll:{index}}}}}"`
-### `parsers/parser/youtube.py`
-
-- **L179** `ph:poll` — `return f"{{{{poll:{index}}}}}"`
-### `provider_api/bangumi.py`
-
-- **L848** `ph:trans` — `origin_line = f"**{label}** » {{{{t:讨论}}}}"`
-### `provider_api/linuxdo.py`
-
-- **L655** `ph:poll` — `placeholder.string = f"{{{{poll:{offset + len(structured) - 1}}}}}"`
-### `types/result.py`
-
-- **L170** `ph:poll` — `"""投票的结构化数据; 顺序 = 正文里 ˋˋ{{poll:N}}ˋˋ 占位符的出现顺序"""`
-
-## D escape（16 处）
-
-### `parsers/parser/bangumi.py`
-
-- **L170** `escape` — `bits.append(f"**{html.escape(entry.rank)}.**")`
-- **L171** `escape/html:a` — `bits.append(f'<a href="{html.escape(entry.url, quote=True)}">{html.escape(entry.name)}</a>')`
-- **L173** `escape` — `bits.append(" / ".join(html.escape(job) for job in entry.jobs))`
-- **L175** `escape` — `bits.append(html.escape(entry.info))`
-### `parsers/parser/bilibili.py`
-
-- **L506** `escape/html:a` — `desc = desc.replace(f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>')`
-### `parsers/parser/threads.py`
-
-- **L41** `escape/html:a` — `return f'<a href="{html.escape(url, quote=True)}">{html.escape(topic)}</a>'`
-### `parsers/parser/twitter.py`
-
-- **L234** `escape` — `href = html.escape(card.url, quote=True)`
-- **L235** `escape` — `label = html.escape(card.title)`
-### `parsers/parser/weibo.py`
-
-- **L220** `escape/html:a` — `f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>'`
-### `parsers/parser/youtube.py`
-
-- **L202** `escape/html:a` — `return f'<a href="{url}">{html.escape(title)}</a>'`
-### `provider_api/bangumi.py`
-
-- **L368** `escape/html:a` — `return f'<a href="{html.escape(href, quote=True)}">{text}</a>'`
-- **L839** `escape/html:a` — `origin_line = f'**<a href="{url}">{html.escape(episode_name)}</a>**'`
-- **L842** `escape/html:a` — `f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'`
-- **L844** `escape` — `else html.escape(context_name)`
-### `provider_api/facebook.py`
-
-- **L107** `escape` — `match = re.search(_META_RE_TMPL.format(name=re.escape(name)), html)`
-### `provider_api/youtube.py`
-
-- **L375** `escape/html:a` — `text = f'<a href="{html.escape(real, quote=True)}">{html.escape(text)}</a>'`
-
----
-
-## `lib/utils/helpers.py` —— 共享的标记产出点（**核心**）
-
-这 5 个函数是所有平台共用的「把结构变成字符串」的出口。改渲染通道必须从这里下手，
-否则每个平台各自拼标记，永远收不齐。
-
-| 函数 | L | 产出 | 渲染层怎么解回去 |
+| Platform | Source → current output and behavior to keep | Adapter point / stage files | Best existing evidence |
 | --- | --- | --- | --- |
-| `media_placeholder(index)` | 26 | `{{media:N}}` | `replace_media_placeholders` → `![](tg://photo?id=mN)` |
-| `format_author_label(name, handle)` | 99 | `名字 @handle`（带 `**`） | `parse_inline` 解析 |
-| `format_author_link(name, handle, url)` | 170 | `<a href>**…**</a>` + `@handle` | `parse_inline` 解 `<a>`/`<b>` |
-| `format_quote_block(text, author)` | 217 | `> <i>作者</i>` + 每行 `> ` | `split_quote_blocks` 按 `> ` 切 |
-| `_quote_line(line)` | 261 | 给每行加 `> ` 前缀；表格行不包 `<i>` | 同上 |
+| bangumi | Blog, index, episode and discussion HTML → mixed Markdown/HTML. Keep inline link/style/spoiler semantics, real images vs emoji, ranked index links, selected floor and context/reply order, and position/footer labels. | **3 V+P**: `_to_markdown`, topic `_build`/`_quote_of`, parser `_render_index_markdown`. | `L/test_bangumi_blog.py`, `L/test_bangumi_episode.py`, `L/test_bangumi_group_topic.py`, `L/test_bangumi_index.py` |
+| bilibili | Video metadata, dynamic/opus paragraphs, forwarded posts and replies → text plus anchors, quote/collage tags and absolute media markers. Keep banner before title, in-place opus images, topic links, empty-forward fallback, and comment as subject with parent/video context and its own media. | **3 V+P**: `_render_opus_paragraphs`; `hashtag_handler`, `_render_forward`, `_parse_with_comment`, `_render_video_card`. | `L/test_bilibili_opus_page.py`, `L/test_bilibili_comment.py`, `L/test_bilibili_forward_render.py`; `B/test_bilibili_banner.py` |
+| coolapk | Feed DOM → ATX Markdown for article or plain feed text via a Markdown round trip. Plain branch normalizes `#topic#`; image/GIF mix and article branch stay distinct. | **3 V+P**: `Coolapk.parse`, `_do_parse`/`hashtag_handler`; derive plain text directly from source nodes. | `L/test_author_metadata.py::test_coolapk_author` and `::test_coolapk_all_result_types` (synthetic) |
+| douban | Topic JSON HTML `content` plus photo/video arrays → Markdown or plain image post. Keep `image_layout`/rich branch selection, inline images, and animated photos represented as video. | **3 V+P**: `DoubanTopic.parse`, `DoubanParser._do_parse`; remove Markdown-to-HTML plain extraction. | `L/test_core_offline.py::TestDoubanTopicParsing` and `::TestDoubanParserResultTypes` |
+| douyin | `aweme_detail.desc` plus entities for regular media; encoded `article_info.article_content` contains platform Markdown. Keep abstract fallback, article precedence, image-origin resolution by resource ID, index reuse, and download-required article result. | **3 P**: `DouyinApiResult._parse_article`, `_build_article_result`/`_extract_markdown_images`, and video/image builders; `V` supplies the raw detail. | `L/test_douyin_article.py`, `L/fixtures/douyin_text_extra.json` |
+| facebook | Page-embedded video/story JSON and OG fallback → literal caption and cleaned title. Keep target-video caption scope and description fallback. | **2 P**: `_do_parse` after `V.parse_video_html`. | `L/test_facebook.py`, `L/fixtures/facebook_post.html` |
+| instagram | Media JSON (public page/GraphQL/authenticated path) → literal caption, shared author metadata, and image/video/sidecar branches. Keep caption newlines, sidecar order, and same-source author identity. | **2 P**: `_do_parse` shared result fields across all branches. | `L/test_instagram_post_page.py`, `L/fixtures/instagram_caption.json`; `L/test_author_metadata.py::test_instagram_all_media_branches` |
+| kuaishou | Mobile/Apollo page data or API photo JSON → caption in title, separate tag/media data. Keep image/video and API fallback behavior; do not duplicate body/title. | **2 P**: `_do_parse`, sources `V.get_title_content` and `KuaiShouVideo.parse`. | `L/test_author_metadata.py::test_kuaishou_html_result_author` and `::test_kuaishou_api_fallback_author`; `L/fixtures/kuaishou_tags.json` |
+| linuxdo | Discourse `post_stream.posts` with `cooked` HTML and structured polls → Markdown plus slots. Keep selected floor, OP then replied-to quotes without duplication, oneboxes, original/lightbox images in place, and poll order/localization; keep the plain media branch. | **3 V+P**: `LinuxDoTopic._from_payload`, `_to_markdown`, `_extract_quotes`/`_post_to_quote`, `_convert_polls`; `_do_parse` result choice. | `L/test_linuxdo.py`, `L/test_linuxdo_onebox.py`, `L/fixtures/linuxdo_floor_24.json` |
+| pipix | URL-decoded `RENDER_DATA.ppxItemDetail.item` JSON → literal content carried as result title. Keep image/video choice and video cover. | **2 P**: `_do_parse` after `V.Pipix._parse_data`. | `L/test_author_metadata.py::test_pipix_render_data_author` (synthetic) |
+| pixiv | Illust JSON plus HTML description → literal text via `_html_to_text`; artwork title and ordered image pages stay separate. | **2 P**: `_do_parse` after plain-text extraction in `V`. | `L/test_pixiv.py` |
+| ptt | HTML `#main-content` → literal body with media markers and generated details/quoted push rows. Keep only site-rendered images, dedupe their naked links, strip signatures, preserve whitespace, and keep push details a sibling of the body fold. | **3 V+P**: `PttArticle._extract_body` and parser `_render`. | `L/test_ptt_img.py`, `L/fixtures/ptt_article_img.html`; `B/test_ptt_pushes_fold.py` |
+| snapchat | Spotlight `__NEXT_DATA__` → literal title/description, separate hashtags/metadata and video. | **2 P**: `_do_parse` after provider video metadata extraction. | `L/test_snapchat.py`, `L/fixtures/snapchat_spotlight.html` |
+| threads | Post `caption.text`, text fragments, attached/linked posts, and `caption_add_on.poll` → text with generated spoiler/topic/quote/poll markup. Keep exact spoiler fragments, topic search link, snippet/reply roles and media, and poll indexes. | **3 V+P**: `ThreadsPost` text/poll extraction and spoiler fragments; `_topic_label`, `_build_quote`, `_do_parse`. | `L/test_threads_topic.py`, `L/test_threads_poll.py`, `L/test_threads_reply_media.py`, `L/test_threads_snippet.py` |
+| tieba | Thread JSON and original-thread text fragments → newline-joined literal body with separate title and media. Keep source order and image/video branches. | **2 P**: `_do_parse` after `V.TieBaPost.parse`. | `B/golden/tieba.json` (legacy output), `L/test_author_metadata.py::test_parser_forwards_author` (synthetic) |
+| tiktok | Video/photo item JSON → `desc` carried as literal title; media and tags stay separate. Keep image and video branches without duplicating body/title. | **2 P**: `TikTokApiResult.parse`, `_build_video_result`, `_build_image_result`. | `L/test_author_metadata.py::test_tiktok_image_and_video_authors` (synthetic) |
+| twitter | Tweet/note text, entity spans and style tags → typed `XStatus` **already live**, with legacy strings still composed. Article blocks/styles/entities/media → generated Markdown. Keep per-role text/spans and translations, reply/quote/trending media, polls, and Article styling, covers and inline media. | **3 V+P** plus existing `lib/src/parsehub/types/x_status.py`: note/legacy source mapping, `ArticleRenderer`, parser `_native_status`/`_compose`/`media_parse`. Adapt Article at source, not from Markdown output. | `L/test_x_status_parser.py`, `L/fixtures/twitter_richtext_note.json`, `L/test_twitter_article.py`; `B/golden/x_article.json` |
+| weibo | Status JSON `text_raw` plus `topic_struct`, and TV text → cleaned text with generated topic anchors. Keep known topic boundaries, media short-link removal, TV branch, and footer counts. | **3 V+P**: `Data.content` and `WeiboParser.f_text`/`hashtag_handler`. | `L/test_weibo_topics.py`, `L/fixtures/weibo_annotations_vs_topic_struct.json`, `L/test_weibo_footer.py` |
+| weixin | Embedded payload `content_noencode`/`text_page_info` → article Markdown or plain photo/text post. Keep lazy `data-src` images, photo-page order, literal text, and publisher metadata. | **3 V+P**: `WX._parse_data`, `WXConverter.convert_img`, `_to_text`; `WXParser._do_parse`. | `L/test_author_metadata.py::test_weixin_publisher_name` (synthetic; not article-format coverage) |
+| xhs | `window.__INITIAL_STATE__` note JSON → literal description after `#name[话题]#` cleanup, `tag_list`, separate media. Keep image/video/live-photo branches and distinguish literal hashes from tags. | **2 P**: `_do_parse`/`hashtag_handler` after `V.XHSAPI` extraction. | `L/fixtures/xhs_tag_list.json`, `L/fixtures/xhs_tag_list_reference.json`; `L/test_author_metadata.py::test_xhs_note_author` |
+| xiaoheihe | Link JSON → HTML article converted to Markdown or literal nonarticle text. Keep exact ordered body-image URLs (substitute only when counts match), required article downloads, and same-response footer metadata. | **3 V+P**: `XiaoHeiHeAPI.parse`/`XHHConverter.convert_img`, parser `_do_parse`. | `L/test_xiaoheihe_article_media.py`, `L/fixtures/xiaoheihe_link_tree.json`; `B/test_xiaoheihe_download_gate.py` |
+| youtube | Video metadata → literal description; community `ytInitialData` runs → text plus restored links, attached video/card, and poll marker. Keep truncated display label vs full destination, separate hashtags, cover, and image order. | **3 V+P**: `_text_of`/post runs; `_parse_post`/`_build_video_link` and `_parse_video`. No SABR/transport change. | `L/test_youtube_post.py`, `L/fixtures/youtube_post_truncated_links.html`, `L/fixtures/youtube_post_poll.html`, `L/test_youtube_video.py` |
+| zhihu | Answer/column HTML or pin item list (Daily resolves original) → Markdown or plain media result. Keep question-only title, answer/column/pin branch choice, image placement and separate pin videos. | **3 V+P**: `_zhihu_contenc_fmt`, `ZhihuPin.parse`, parser `_do_parse`; derive plain output directly. | `L/test_author_metadata.py::test_json_providers_preserve_authors` and `::test_parser_forwards_author` (synthetic; not layout coverage) |
+| zuiyou | `data.post` JSON → literal `content` with media refs. Keep image order and video substitution. | **2 P**: `_do_parse` after `V.ZuiYouPost.parse`. | `L/test_author_metadata.py::test_json_providers_preserve_authors` and `::test_parser_forwards_author` (synthetic) |
 
-`format_quote_block` 的 docstring 写着「⚠️ **新平台一律用这个函数**，不要自己拼
-`> ` 前缀 —— 手写的版本会漏掉斜体等形态」。说明平台层已经在往共享出口收敛，
-只是出口本身产出的是字符串。
+## Shared producer outputs (outside the scans)
 
----
+`lib/src/parsehub/utils/helpers.py`:
 
-## 改造顺序（按依赖）
-
-1. `lib/utils/helpers.py` 的 5 个产出点 → 改成返回 Segment
-2. `lib/parsers/parser/*.py` 里直接拼标记的地方 → 改成构造 Segment
-3. `lib/provider_api/*.py` 的 markdown 转换（markdownify / API markdown）→ 直接产出 Segment
-4. `plugins/parse/rich_blocks.py` 整个删除（不再需要解析）
-5. `plugins/helpers.py` 里 8 个后处理函数删除
-6. 发送路径统一到 blocks
-
-第 1、2 步可以逐个平台做，每步真机验证；第 4、5 步必须等所有平台改完才能删。
-
----
-
-## 渲染层对应的解析端（同样要删）
-
-
-| 文件 | 作用 |
+| Function | Current output → typed adaptation |
 | --- | --- |
-| `plugins/parse/rich_blocks.py::markdown_to_blocks` | markdown → blocks 的主解析器 |
-| `plugins/parse/rich_blocks.py::parse_inline` | 行内语法解析（`**`、`<a>`、`<i>`） |
-| `plugins/helpers.py::escape_telegram_markdown` | 给平台原文加反斜杠 |
-| `plugins/helpers.py::escape_setext_underlines` | 防止 `---` 变标题 |
-| `plugins/helpers.py::link_hashtags` | 把 `#tag` 变成链接 |
-| `plugins/helpers.py::preserve_linebreaks` | 行尾补两个空格 |
-| `plugins/helpers.py::format_text` | 正文的折叠与引用转换 |
-| `plugins/helpers.py::split_quote_blocks` | 按 `> ` 前缀切引用块 |
-| `plugins/helpers.py::replace_media_placeholders` | `{{media:N}}` → `![](tg://…)` |
-| `plugins/helpers.py::wrap_collage` | `<tg-collage>` 包裹 |
-| `plugins/helpers.py::fold_for_show_more` | `<details>` 折叠 |
-| `plugins/helpers.py::_reindent` | 已删（换全角空格的补丁） |
+| `media_placeholder` (26) | `{{media:N}}` → absolute media reference; do not renumber after a download failure. |
+| `format_author_label` (138) | **Plain** name and/or `@handle`, deduplicated case-insensitively → keep as plain summary projection. |
+| `format_author_link` (209) | Linked display name when URL exists and monospaced handle when both exist → native link/code runs; no invented profile URLs. |
+| `format_quote_block` (256) | Italic signer/body with Markdown quote prefixes; `sign_only` supports media-only quotes → quote with independent author, role, body and media. |
+| `_quote_line` (300) | Blank/italic quote lines and hard breaks; table/poll/media marker lines bypass italics → typed breaks and typed table/poll/media children. |
+
+## Live consumers at the baseline
+
+Prefix is `plugins/parse/` unless given in full. A populated `x_status`, not the platform name alone, selects the native branch; standalone X Articles are legacy.
+
+| Surface | Native X status | Old path still in use |
+| --- | --- | --- |
+| Direct result/new or edit progress message | `sender.py::send_rich_media` → `inline_rich.py::build_delivery_blocks` → `x_status.py::build_x_status_blocks` | Same dispatcher → `plugins/helpers.py::build_rich_markdown` → `rich_blocks.py::markdown_to_blocks`. |
+| Chat and inline progress | `reporters.py::_render_progress` dispatches to native blocks. | `build_progress_markdown` → chat `_send_rich` or inline `_edit_rich` → `markdown_to_blocks`. |
+| Inline preview and chosen-result edit | `inline.py::build_inline_rich_content` and `inline_result_download` dispatch to native blocks; `inline_rich.py::result_summary_text` reads native text. | Preview strips media markup before parsing; chosen edit builds/parses legacy Markdown. `inline_rich.py::edit_inline_rich_message` has a `blocks is None` SDK Markdown fallback. |
+| Guest first frame, final/edit and media failure | `guest.py::_send_first_frame`, `_answer`, `_deliver` use native blocks and native media-less fallback; metadata uses `result_summary_text`. | First frame `build_progress_markdown` → `_result` parses strings; final `_answer` builds/parses Markdown; `_deliver` can answer with a string fallback. |
+| Warm cache (direct/inline/guest) | `inline_rich.py::build_cached_rich_content` renders stored `x_status` with resolved file IDs. | `build_rich_markdown_by_str` → `cached_rich_message` / delivery adapters parse it; `rich_cache_entry` still stores legacy fields. Both `lib/src/parsehub/types/serialize.py` and `services/cache.py` matter. |
+| Captions / plain fallback | `sender.py::build_delivery_caption` → `x_caption.py::build_x_status_caption` for raw/zip and `handlers.py` GIF-only preview fallback; explicit UTF-16 entities and disabled SDK parse mode. | `plugins/helpers.py::build_caption` → `build_caption_by_str` produces markup with legacy SDK parsing. `lib/src/parsehub/types/result.py` also parses Markdown for rich-result plain text. |
+| App annotations / translation | `x_status.py::_application_custom_blocks` **still calls** `markdown_to_blocks` for the app’s annotation, not X body. `plugins/translate.py` replaces native runs on a display copy. | `plugins/translate.py` also changes legacy body fields. Adapt notes and translations through the same typed contract. |
+
+## File stages and removal gates (future work)
+
+1. **Contract and shared producers.** Start from `lib/src/parsehub/types/x_status.py`; wire `lib/src/parsehub/types/{result,serialize}.py`, `lib/src/parsehub/utils/helpers.py`, and `services/cache.py`. Keep compatibility fields while consumers need them. Preserve absolute media identity and role ordering, including leading banners and trailing reply/quote media.
+2. **Literal adapters.** Stage-2 `P` files in the table. Emit literal values in every branch; represent title, author, tags, metadata and media separately.
+3. **Rich/structured adapters.** Stage-3 `P`/`V` files in the table. Map source structures directly; only source-provided Markdown (e.g. Douyin article payload) may use a Markdown input adapter.
+4. **Consumer cutover.** `plugins/parse/{sender,handlers,reporters,inline,inline_rich,guest,x_status,x_caption}.py`, `plugins/translate.py`, `plugins/helpers.py`, and both cache layers. Verify each surface cold and warm where applicable, including captions and text-only/media-failure paths. Assert literal whitespace/punctuation, stable media slots and broken-media links, quote roles and gaps, banner layout, four-image threshold, body folding and spoilers, and localized poll/footer labels and times. Compare structured output against fixtures/goldens across literal, mixed, rich-source and native branches; do not require byte-identical legacy Markdown. Verify actual delivery separately before rollout.
+5. **Remove the old mechanism only after call-site verification.** Retire `rich_blocks.py::{markdown_to_blocks,parse_inline}` and the string round trip in `plugins/helpers.py`: `escape_telegram_markdown`, `escape_setext_underlines`, `preserve_linebreaks`, `link_hashtags`, `format_text`, `split_quote_blocks`, marker rewrites, and collage/fold markup. Move required layout and native media/spoiler block classes before removing any module. No live fallback may parse app-generated markup.

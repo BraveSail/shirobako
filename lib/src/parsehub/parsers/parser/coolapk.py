@@ -2,6 +2,8 @@ import re
 from pathlib import Path
 from typing import Union
 
+from parsehub.types.document import plain
+
 from ...provider_api.coolapk import Coolapk
 from ...types import (
     AniRef,
@@ -44,6 +46,7 @@ class CoolapkParser(BaseParser):
                 author_name=coolapk.author_name,
                 media=media,
                 markdown_content=coolapk.markdown_content,
+                document=coolapk.document,
             )
         content = self.hashtag_handler(coolapk.text_content or "")
         if any(isinstance(m, AniRef) for m in media):
@@ -52,12 +55,14 @@ class CoolapkParser(BaseParser):
                 author_name=coolapk.author_name,
                 media=media,
                 content=content,
+                document=plain(content),
             )
         return CoolapkImageParseResult(
             title=coolapk.title,
             author_name=coolapk.author_name,
             photo=media,
             content=content,
+            document=plain(content),
         )
 
     @staticmethod

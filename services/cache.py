@@ -27,6 +27,7 @@ from enum import StrEnum
 from typing import Any
 from urllib.parse import urlsplit
 
+from parsehub.types.document import Document
 from parsehub.types.result import AnyParseResult
 from parsehub.types.serialize import (
     _CACHE_CONTENT_VERSION,
@@ -205,6 +206,7 @@ class CacheMediaType(StrEnum):
 class CacheParseResult(BaseModel):
     title: str = ""
     content: str = ""
+    document: Document | None = None
     #: **富文本正文的源**（``RichTextParseResult.markdown_content``）。
     #:
     #: ⚠️ **必须存它**：``content`` 对 RichText 平台是**派生属性**（``plaintext_content``）
@@ -218,6 +220,8 @@ class CacheParseResult(BaseModel):
     x_trending_cover_url: str = ""
     #: 下载失败的链接不在 file_id 列表中；保留平铺位置以重建角色桶。
     x_failed_media: dict[int, str] = {}
+    #: Document download failures keyed by the original media ref index, not render position.
+    failed_media: dict[int, str] = {}
     author_name: str = ""
     author_handle: str = ""
     author_url: str = ""
@@ -229,8 +233,8 @@ class CacheParseResult(BaseModel):
     #: 平台短名 (``Platform.id``)。**渲染要用**: 标签页链接等依赖它。
     #: 老缓存没有这个字段 ⇒ 空串 ⇒ 由 ``raw_url`` 兜底推断（见 build_cached_rich_content）。
     platform: str = ""
-    #: 末尾有多少个媒体项属于被引用内容, 紧接其前的多少个属于被回复内容
-    #: (两者都在各自的引用块内部渲染)
+    #: 末尾有多少个媒体槽属于被引用内容, 紧接其前的多少个属于被回复内容。
+    #: Document 计数包含拆分的输出及坏链槽位，不等于 file_id 数量。
     quoted_media_count: int = 0
     reply_media_count: int = 0
     #: ``media`` **开头**有几个是置顶图（板头/banner）—— 渲染层提到标题上方并用分割线隔开
@@ -314,6 +318,7 @@ FOOTER_META_FIELDS_VERSION = 1
 #:   命中就是「图片应该在话题里面」。
 #: - 13 = Instagram 补上作者账号和主页地址。
 #: - 14 = 原生 X status；结果层和持久层共用同一个写版本。
+#: - 15 = 共享 Document 及媒体来源下标；旧条目沿用原有读门槛。
 CONTENT_VERSION = _CACHE_CONTENT_VERSION
 
 
@@ -326,6 +331,8 @@ class CacheMedia(BaseModel):
     #: 没有这张表，缓存命中时正文外链图只能一律剥掉（图会跑到末尾）。
     #: 老缓存没有这个字段 ⇒ 默认空串，行为退化为剥掉。
     url: str = ""
+    #: Absolute index in the source media refs; split outputs share an index.
+    ref_index: int | None = None
 
 
 class CacheEntry(BaseModel):
@@ -436,8 +443,8 @@ class PersistentCache:
         self.logger.debug(f"缓存命中: key={url}")
         return entry
 
-    async def set(self, url: str, entry: CacheEntry) -> None:
-        if self._disable:
+    async def set(self, url: str, entry: CacheEntry | None) -> None:
+        if self._disable or entry is None:
             return
 
         try:

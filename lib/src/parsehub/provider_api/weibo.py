@@ -4,9 +4,12 @@ import re
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from functools import cached_property
 from inspect import signature
 from typing import Any, Self, Union
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
+
+from bs4 import BeautifulSoup, Tag
 
 from ..utils import http
 from ..utils.helpers import get_author_name, to_datetime, to_int
@@ -17,8 +20,6 @@ from ..utils.helpers import get_author_name, to_datetime, to_int
 #:
 #: 所以话题名（与边界）直接从 ``q=`` 参数解出来即可 —— 不必用正则去正文里猜:
 #: 正文里出现**单个** ``#`` 时正则会误配（``C# 与 Python# 都`` 会被当成一个话题）。
-_TOPIC_ANCHOR_RE = re.compile(r'(//s\.weibo\.com/weibo\?q=%23([^&"]+?)%23)')
-
 #: 播放量/统计数的**中文缩写**形态（TV 接口的 ``play_count``: ``"8.1万"`` / ``"8,340"`` /
 #: ``"1.2亿"``）。youtube 的 ``_compact_count`` 只认 K/M/B，中文站点用这个。
 _WEIBO_COUNT_RE = re.compile(r"\s*([\d,]+(?:\.\d+)?)\s*([万亿]?)")
@@ -383,6 +384,7 @@ class Data:
     attitudes_count: int | str | None = None
     #: 评论数（``reply_count`` 属性转 int）
     comments_count: int | str | None = None
+    topic_struct: list[dict[str, Any]] | None = None
 
     @property
     def published_at(self):
@@ -397,6 +399,10 @@ class Data:
     def reply_count(self) -> int | None:
         return to_int(self.comments_count)
 
+    @cached_property
+    def _anchors(self) -> list[Tag]:
+        return BeautifulSoup(self.text or "", "lxml").find_all("a", href=True)
+
     @property
     def topics(self) -> list[dict[str, str]]:
         """正文里的话题: ``[{"name": 名字(不含#), "url": 话题页地址}, …]``。
@@ -406,15 +412,39 @@ class Data:
         """
         out: list[dict[str, str]] = []
         seen: set[str] = set()
-        for match in _TOPIC_ANCHOR_RE.finditer(self.text or ""):
-            name = unquote(match.group(2)).strip().strip("#").strip()
+        for anchor in self._anchors:
+            url = str(anchor["href"])
+            if not url.startswith(("//s.weibo.com/weibo?", "https://s.weibo.com/weibo?", "http://s.weibo.com/weibo?")):
+                continue
+            query = parse_qs(urlparse(url).query).get("q", [""])[0]
+            if not (query.startswith("#") and query.endswith("#")):
+                continue
+            name = query.strip("#").strip()
             if not name or name in seen:
                 continue
             seen.add(name)
-            url = match.group(1)
             if url.startswith("//"):
                 # 协议相对地址直接塞进 ``<a href>`` 会被当成站内相对路径 —— 补 https:
                 url = f"https:{url}"
+            out.append({"name": name, "url": url})
+        # Mobile deep links carry the search query, not a browser destination.
+        for item in self.topic_struct or ():
+            if not isinstance(item, dict) or not isinstance(name := item.get("topic_title"), str):
+                continue
+            name = name.strip().strip("#").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            url = str(item.get("topic_url") or "")
+            if url.startswith("//"):
+                url = f"https:{url}"
+            try:
+                parsed = urlparse(url)
+            except ValueError:
+                parsed = urlparse("")
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                query = parse_qs(parsed.query).get("q", [f"#{name}#"])[0]
+                url = f"https://s.weibo.com/weibo?q={quote(query, safe='')}"
             out.append({"name": name, "url": url})
         return out
 
@@ -455,6 +485,14 @@ class Data:
         text = self.text_raw or ""
         if short_url := (self.page_info and self.page_info.short_url):
             text = text.replace(short_url, "")
+        if self.page_info and self.page_info.object_type == MediaType.VIDEO:
+            for anchor in self._anchors:
+                if not str(anchor["href"]).startswith(("https://video.weibo.com/show?", "//video.weibo.com/show?")):
+                    continue
+                # Status responses without page_info.short_url put the injected token on the video-card icon.
+                icon = anchor.find("img", class_="icon-link")
+                if icon and re.fullmatch(r"https?://t\.cn/[A-Za-z0-9]+", token := str(icon.get("title") or "")):
+                    text = re.sub(re.escape(token) + r"(?![A-Za-z0-9])", "", text)
         return text.strip()
 
 

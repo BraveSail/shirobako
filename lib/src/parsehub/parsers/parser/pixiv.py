@@ -8,6 +8,7 @@ from ...types import (
     Platform,
     ProgressCallback,
 )
+from ...types.document import plain
 from ...utils.helpers import profile_url
 from ..base.base import BaseParser
 
@@ -52,6 +53,7 @@ class PixivParser(BaseParser):
         return PixivParseResult(
             title=illust.title,
             content=illust.description,
+            document=plain(illust.description),
             author_name=illust.author_name,
             author_handle=illust.user_account,
             author_url=profile_url(Platform.PIXIV, user_id=illust.author_id),

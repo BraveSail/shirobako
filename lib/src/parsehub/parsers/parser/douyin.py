@@ -1,10 +1,14 @@
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import Enum
+from html import unescape
 from pathlib import Path
 from typing import Self
+from urllib.parse import urljoin
+
+from markdown import markdown as markdown_to_html
 
 from ... import ProgressCallback
 from ...provider_api.douyin import DouyinMobileCrawler, DouyinMobileDevice, DouyinWebCrawler
@@ -21,6 +25,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import Block, Document, TextRun, html_blocks, paragraph, plain
 from ...utils.helpers import (
     get_author_name,
     image_ext_from_url,
@@ -82,6 +87,7 @@ class DouyinParser(BaseParser):
             raise ParseError("抖音解析失败: 未获取到视频")
         return DouyinVideoParseResult(
             title=result.desc,
+            document=Document((paragraph(result.desc_runs),)) if result.desc_runs else plain(result.desc),
             author_name=result.author_name,
             # @标识 用数字 uid (sec_uid 太长); 主页地址仍用 sec_uid
             author_handle=result.author_uid,
@@ -97,6 +103,7 @@ class DouyinParser(BaseParser):
         """构建图片解析结果"""
         return DouyinImageParseResult(
             title=result.desc,
+            document=Document((paragraph(result.desc_runs),)) if result.desc_runs else plain(result.desc),
             author_name=result.author_name,
             author_handle=result.author_uid,
             author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
@@ -126,11 +133,17 @@ class DouyinParser(BaseParser):
         正文里的 ``~tplv-dy-long-article`` URL 是低清 HEIC 缩略。两个列表按**顺序**
         对应（实测 5/5 一致）—— 数量对不上时退回正文 URL，不猜。
         """
-        markdown, images = _extract_markdown_images(result.article_markdown)
-        images = _resolve_origin_images(images, result.article_images)
+        markdown, source_images = _extract_markdown_images(result.article_markdown)
+        images = _resolve_origin_images(source_images, result.article_images)
+        document = (
+            plain(result.article_markdown)
+            if result.article_abstract_only
+            else _article_document(result.article_markdown, source_images, images, result.article_images)
+        )
         return DouyinArticleParseResult(
             title=result.article_title or result.desc,
             markdown_content=markdown,
+            document=document,
             media=[ImageRef(url=url, ext=image_ext_from_url(url) or "jpg") for url in images],
             author_name=result.author_name,
             author_handle=result.author_uid,
@@ -216,6 +229,81 @@ def _resolve_origin_images(images: list[str], origin_candidates: list[str]) -> l
         match = _DOUYINPIC_RES_RE.search(url)
         result.append(by_res.get(match.group(0), url) if match else url)
     return result
+
+
+_DOUYIN_BASE = "https://www.douyin.com/"
+
+
+def _article_document(
+    markdown: str, source_images: list[str], images: list[str], origin_candidates: list[str],
+) -> Document:
+    """Interpret upstream Markdown, never the compatibility string with app slots."""
+    html = markdown_to_html(markdown, extensions=("extra", "sane_lists"))
+    slots = {
+        urljoin(_DOUYIN_BASE, unescape(source)): (i, resolved)
+        for i, (source, resolved) in enumerate(zip(source_images, images, strict=True))
+    }
+
+    def bind(block: Block) -> Block:
+        if block.kind == "media":
+            if (slot := slots.get(block.url)) is not None:
+                index, url = slot
+            else:
+                # Reference-style Markdown or source HTML can name a real
+                # picture not present in the compatibility media array.
+                index = -1
+                (url,) = _resolve_origin_images([block.url], origin_candidates)
+            return replace(block, index=index, url=urljoin(_DOUYIN_BASE, url))
+        if block.children or block.items:
+            return replace(
+                block, children=tuple(map(bind, block.children)),
+                items=tuple(tuple(map(bind, item)) for item in block.items),
+            )
+        return block
+
+    return Document(tuple(map(bind, html_blocks(html, base_url=_DOUYIN_BASE))))
+
+
+def _caption_runs(text: str, entities: list[dict]) -> tuple[TextRun, ...]:
+    # Some clients count supplementary characters as two UTF-16 units. Only
+    # link an entity if its bounds actually cover the label in the source.
+    utf16 = {0: 0}
+    unit = 0
+    for pos, char in enumerate(text, 1):
+        unit += 2 if ord(char) > 0xFFFF else 1
+        utf16[unit] = pos
+
+    spans: list[tuple[int, int, str]] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        start, end = to_int(entity.get("start")), to_int(entity.get("end"))
+        if start is None or end is None or not 0 <= start < end:
+            continue
+        tag = entity.get("hashtag_name")
+        tag_id = str(entity.get("hashtag_id") or "")
+        if entity.get("type") == 1 and tag and tag_id.isdigit():
+            url = f"{_DOUYIN_BASE}hashtag/{tag_id}"
+            label = f"#{tag}"
+        else:
+            continue
+        for left, right in ((start, end), (utf16.get(start, -1), utf16.get(end, -1))):
+            if 0 <= left < right <= len(text) and text[left:right] == label:
+                spans.append((left, right, url))
+                break
+
+    runs: list[TextRun] = []
+    cursor = 0
+    for left, right, url in sorted(spans):
+        if left < cursor:
+            continue
+        if left > cursor:
+            runs.append(TextRun(text[cursor:left]))
+        runs.append(TextRun(text[left:right], url))
+        cursor = right
+    if cursor < len(text):
+        runs.append(TextRun(text[cursor:]))
+    return tuple(runs)
 
 
 def _extract_markdown_images(markdown: str) -> tuple[str, list[str]]:
@@ -346,6 +434,8 @@ class DouyinApiResult:
     #: 转 JPEG —— ``bot.py`` 已注册 ``pillow_heif``）。长度可能与正文图片数不一致
     #: （正文引用不全），parser 层按 URL 对得上才用，对不上就退回正文 URL。
     article_images: list[str] = field(default_factory=list)
+    article_abstract_only: bool = False
+    desc_runs: tuple[TextRun, ...] = ()
 
     @classmethod
     def parse(cls, json_dict: dict) -> Self:
@@ -366,6 +456,7 @@ class DouyinApiResult:
                 result = cls._parse_image_post_info(image_post_info, desc)
             else:
                 result = cls._parse_video(data, desc)
+            result.desc_runs = _caption_runs(desc or "", data.get("text_extra") or [])
         author = data.get("author") or {}
         result.author_name = get_author_name(author)
         result.author_sec_uid = str(author.get("sec_uid") or "")
@@ -432,6 +523,7 @@ class DouyinApiResult:
             article_markdown=body,
             article_title=title,
             article_images=images,
+            article_abstract_only=not markdown,
         )
 
     @classmethod

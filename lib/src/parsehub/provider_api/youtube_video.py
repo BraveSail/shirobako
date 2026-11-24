@@ -240,6 +240,7 @@ class YoutubeVideo:
     直播的流没有 ``contentLength`` / ``approxDurationMs``，SABR 拿不到时长就按
     ``Infinity`` 跑长连接，而直播的服务端**永不结束** —— 会一直挂着直到流水线
     超时（用户报「卡在下载中」）。所以解析阶段就要识别并明确拒绝下载。"""
+    source_description: str | None = None
 
     @property
     def author_url(self) -> str:
@@ -442,10 +443,12 @@ def parse_player_response(data: dict[str, Any], *, video_id: str = "") -> Youtub
         biggest = max(thumbnails, key=lambda t: int(t.get("width") or 0))
         thumbnail = str(biggest.get("url") or "")
 
+    description = str(details.get("shortDescription") or "")
     return YoutubeVideo(
         video_id=str(details.get("videoId") or video_id),
         title=str(details.get("title") or "").strip(),
-        description=str(details.get("shortDescription") or "").strip(),
+        description=description.strip(),
+        source_description=description,
         author_name=str(details.get("author") or "").strip(),
         channel_id=str(details.get("channelId") or "").strip(),
         thumbnail=thumbnail,

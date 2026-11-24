@@ -27,6 +27,7 @@ class WXParser(BaseParser):
                     author_name=wx.author_name,
                     media=self._refs(wx.imgs),
                     markdown_content=wx.markdown_content,
+                    document=wx.document,
                 )
             case WXItemShowType.IMAGE | WXItemShowType.TEXT:
                 return ImageParseResult(
@@ -34,6 +35,7 @@ class WXParser(BaseParser):
                     author_name=wx.author_name,
                     photo=self._refs(wx.photos),
                     content=wx.text_content,
+                    document=wx.document,
                 )
             case _:
                 raise ParseError(f"不支持的内容类型: {wx.item_show_type!r}")

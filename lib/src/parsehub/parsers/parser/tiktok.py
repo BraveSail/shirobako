@@ -14,6 +14,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import Document
 from ...utils.helpers import get_author_name, image_ext_from_url
 from ..base.base import BaseParser
 
@@ -49,6 +50,7 @@ class TikTokParser(BaseParser):
             raise ParseError("TikTok 解析失败: 未获取到视频")
         return TikTokVideoParseResult(
             title=result.desc,
+            document=Document(),
             author_name=result.author_name,
             video=result.video,
         )
@@ -57,6 +59,7 @@ class TikTokParser(BaseParser):
     def _build_image_result(result: "TikTokApiResult") -> ImageParseResult:
         return ImageParseResult(
             title=result.desc,
+            document=Document(),
             author_name=result.author_name,
             photo=result.image_list,
         )

@@ -2,6 +2,7 @@ from typing import Union
 
 from ...provider_api.tieba import TieBa, TieBaError, TieBaPostType, TieBaVideo
 from ...types import AniRef, ImageParseResult, ImageRef, ParseError, Platform, VideoParseResult, VideoRef
+from ...types.document import plain
 from ...utils import http
 from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
@@ -35,6 +36,7 @@ class TieBaParser(BaseParser):
                         duration=tb.media.duration,
                     ),
                     content=tb.content,
+                    document=plain(tb.content),
                 )
 
             case TieBaPostType.PHOTO:
@@ -78,7 +80,13 @@ class TieBaParser(BaseParser):
                                         )
                                     )
 
-                return ImageParseResult(title=tb.title, content=tb.content, photo=images, author_name=tb.author_name)
+                return ImageParseResult(
+                    title=tb.title,
+                    content=tb.content,
+                    document=plain(tb.content),
+                    photo=images,
+                    author_name=tb.author_name,
+                )
 
 
 __all__ = ["TieBaParser"]

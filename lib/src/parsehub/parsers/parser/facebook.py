@@ -11,6 +11,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...types.document import plain
 from ..base.base import BaseParser
 
 #: Facebook CDN 对**浏览器 UA** 的大文件请求会限流 (yt-dlp 的 workaround)，
@@ -36,6 +37,7 @@ class FacebookParse(BaseParser):
         return FacebookVideoParseResult(
             title=video.title,
             content=video.content,
+            document=plain(video.content),
             author_name=video.author_name,
             author_url=video.author_url,
             published_at=video.published_at,

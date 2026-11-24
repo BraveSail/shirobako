@@ -79,6 +79,7 @@ class LinuxDoParser(BaseParser):
             "tags": topic.tags,
             # 投票的结构化数据 (两个结果类都要) —— 渲染层按占位符索引取用
             "polls": polls,
+            "document": topic.document,
             # 楼层号: 引用块里的其它层早已标了 (` · #N`), 本层不标就不对称
             # (用户报「主楼标楼层号了但是回复没标」)。主楼解析出来就是 ``#1``。
             "position_label": f"#{topic.post_number}" if topic.post_number else "",
