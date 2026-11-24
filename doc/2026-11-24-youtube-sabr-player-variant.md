@@ -15,3 +15,7 @@ The same watch response contained a SABR URL with an unresolved `n` and selected
 `parsehub d` reproduced the 403 on the old version. On the candidate, the same link reached the existing SABR tool exactly once with no direct streams available. FFprobe measured a 1920×1080 AV1 video and AAC audio, a 45.093152-second MP4, 5,180,203 bytes. Both streams decoded to EOF without errors.
 
 Library: 1,251 passed, 1 skipped, 128 subtests passed. SABR retry tests: 5 passed. Syntax, Ruff F, and Pylint errors-only checks passed.
+
+## Phase 3 — Production verification
+
+Deployed `3589a2e79e4610c1cb8bebb28955026c0c017dc1` from a clean Git build context. Verified the running image revision and all three changed runtime file hashes. The bot reconnected to Telegram, confirmed by its own live socket. The same video completed the production `ParsePipeline` with one processed file, SABR itags `399+140`: 1920×1080 AV1 and AAC, 45.093152 seconds, 6,805,833 bytes. Full decoding reached EOF on both tracks without errors. No Telegram test message was sent.
