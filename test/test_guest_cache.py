@@ -219,8 +219,10 @@ def test_deliver_edits_the_guest_message():
             guest_mod._deliver(cli, "q1", MID, title="t", description="d", markdown="正文", media=None)
         )
     edit.assert_awaited_once()
+    assert edit.await_args is not None
     assert edit.await_args.args[1] == MID
-    assert edit.await_args.kwargs["markdown"] == "正文"
+    (block,) = edit.await_args.kwargs["blocks"]
+    assert block.text == "正文"
 
 
 def test_deliver_falls_back_when_editing_fails():

@@ -6,7 +6,15 @@ from parsehub.types import AniRef, RichTextParseResult
 from parsehub.utils.helpers import strip_flags
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType
-from pyrogram.types import Message, MessageEntity
+from pyrogram.types import (
+    InputRichBlock,
+    InputRichBlockBlockQuotation,
+    InputRichBlockParagraph,
+    InputRichMessage,
+    Message,
+    RichTextBold,
+    RichTextUrl,
+)
 
 from core import bs
 from db import get_session
@@ -20,20 +28,17 @@ from plugins.filters import (
     url_only_filter,
     via_me_filter,
 )
-from plugins.helpers import format_label
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
-from plugins.parse.inline_rich import has_structured_body
+from plugins.parse.notices import notice_label, rich_notice
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
 from plugins.parse.sender import (
     MessageSender,
-    build_delivery_caption,
     build_gif_button,
     send_cached,
     send_raw,
     send_rich_media,
     send_zip,
 )
-from plugins.parse.x_caption import CaptionNote, extract_caption_note
 from plugins.translate import translate_cache_entry, translate_for_display
 from repo.settings import ParseMode
 from services import AdminUserService, ParsePipeline, ParseService, SettingsService, UserService
@@ -74,7 +79,7 @@ async def parse(cli: Client, msg: Message) -> None:
             if not allowed:
                 user_id = msg.from_user.id if msg.from_user else None
                 logger.info(f"私聊解析被拦截(不在白名单): user_id={user_id}, msg_id={msg.id}")
-                await MessageSender(cli, msg, config).text(t_[lang]("仅限白名单用户使用"))
+                await MessageSender(cli, msg, config).rich_message(rich_notice(t_[lang]("仅限白名单用户使用")))
                 return
 
     _t = t_[lang]
@@ -95,7 +100,9 @@ async def parse(cli: Client, msg: Message) -> None:
         if not text and msg.reply_to_message:
             text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
         if not text:
-            await MessageSender(cli, msg, config).text(format_label(_t("请加上链接或回复一条消息")))
+            await MessageSender(cli, msg, config).rich_message(
+                InputRichMessage(blocks=[notice_label(_t("请加上链接或回复一条消息"))])
+            )
             return
     else:
         text = msg.text or msg.caption or ""
@@ -110,7 +117,9 @@ async def parse(cli: Client, msg: Message) -> None:
     urls = list({i for i in lines if ParseService().parser.get_platform(i)})[:10]
 
     if not urls:
-        await MessageSender(cli, msg, config).text(format_label(_t("不支持的平台")))
+        await MessageSender(cli, msg, config).rich_message(
+            InputRichMessage(blocks=[notice_label(_t("不支持的平台"))])
+        )
         return
 
     # 翻译只对**单条**内容有意义（一条消息里多个链接时无法确定译哪条），
@@ -138,35 +147,6 @@ async def parse(cli: Client, msg: Message) -> None:
     ]
     await asyncio.gather(*tasks)
 
-
-async def _post_text(
-    sender: MessageSender,
-    reporter: MessageStatusReporter,
-    caption: str,
-    markup: Any = None,
-    *,
-    entities: list[MessageEntity] | None = None,
-) -> bool:
-    """把纯文本结果编辑进状态消息; 成功返回 True, 需要调用方新建时返回 False。"""
-    try:
-        if entities is not None:
-            if (status_message := reporter._msg) is None:
-                return False
-            await sender.reply_to(status_message).edit_text_with_entities(caption, entities, reply_markup=markup)
-            return True
-        if await reporter.finalize_text(format_label(caption), reply_markup=markup) is not None:
-            return True
-    except Exception as e:  # noqa: BLE001 - 收尾失败就回退新建, 不能让结果丢失
-        logger.warning(f"编辑状态消息为文本结果失败, 改为新建: {type(e).__name__}: {e}")
-    return False
-
-
-def _caption_note(req: ParseRequest, parse_result: Any) -> str | CaptionNote:
-    if has_structured_body(parse_result):
-        if req.include_custom_content and req.msg.text:
-            return extract_caption_note(req.msg.text, req.msg.entities or ())
-        return ""
-    return req.custom_content
 
 
 async def parse_url(cli: Client, msg: Message, url: str) -> None:
@@ -200,15 +180,28 @@ async def _handle_parse_request(req: ParseRequest) -> None:
     except ParseRateLimitExceeded as e:
         if e.should_notify:
             logger.warning(f"速率限制 {e.retry_after:.1f}s, chat_id={req.chat_id}, msg_id={req.msg.id}")
-            text = format_label(req.t_(f"解析过于频繁, 请在 {e.retry_after:.1f}s 后重试"))
+            blocks: list[InputRichBlock] = [notice_label(req.t_(f"解析过于频繁, 请在 {e.retry_after:.1f}s 后重试"))]
             if bs.demo_mode:
-                text += req.t_(
+                demo = req.t_(
                     "\n\n>**为保障所有用户的使用体验, 当前已启用速率限制**\n\n"
                     ">本项目为开源项目, 如有高频或批量解析需求, 建议自行部署实例, "
                     "以免触发 Telegram API 全局速率限制\n\n"
                     "**开源地址: [GitHub](https://github.com/BraveSail/shirobako)**"
                 )
-            await MessageSender(req.cli, req.msg, req.config).delete_after(e.retry_after).text_no_preview(text)
+                # Some YAML translations encode line breaks as literal backslash-n.
+                heading, body, repo = demo.replace(r"\n", "\n").strip().split("\n\n", maxsplit=2)
+                label, _, link = repo.strip("*").partition("[")
+                link_text, _, url = link.partition("](")
+                blocks.extend([
+                    InputRichBlockBlockQuotation([
+                        InputRichBlockParagraph(RichTextBold(heading.removeprefix(">**").removesuffix("**"))),
+                        InputRichBlockParagraph(body.removeprefix(">")),
+                    ]),
+                    InputRichBlockParagraph(RichTextBold([label, RichTextUrl(link_text, url.removesuffix(")"))])),
+                ])
+            await MessageSender(req.cli, req.msg, req.config).delete_after(e.retry_after).rich_message(
+                rich_message=InputRichMessage(blocks=blocks)
+            )
     else:
         if not r:
             return
@@ -327,8 +320,46 @@ async def handle_parse(req: ParseRequest) -> bool:
         # ``#t`` 已在 ParsePipeline 的 prepare_display 阶段完成翻译（原对象 orig_parse_result
         # 留给 persistent_cache 写原文，下载/处理/上传全程展示译文不闪回原文）。
         parse_result = result.display_result or orig_parse_result
+        media_refs = to_list(parse_result.media)
+        if (
+            req.mode == ParseMode.PREVIEW
+            and len(media_refs) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD
+            and all(isinstance(i, AniRef) for i in media_refs)
+        ):
+            await sender.typing()
+            links: list[str | RichTextUrl] = []
+            if req.spoiler_tag:
+                for index, ref in enumerate(media_refs, 1):
+                    if links:
+                        links.append(" · ")
+                    links.append(RichTextUrl(f"GIF {index}", ref.url))
+            await send_rich_media(
+                sender,
+                parse_result,
+                [],
+                _t=req.t_,
+                custom_content=req.custom_content,
+                raw_url=raw_url,
+                reporter=reporter,
+                spoiler_tag=req.spoiler_tag,
+                reply_markup=None if req.spoiler_tag else build_gif_button(media_refs),
+                file_blocks=(InputRichBlockParagraph(links),) if links else (),
+            )
+            return True
+
+        if req.mode == ParseMode.RAW and result.processed_list:
+            await send_raw(
+                sender, result, reporter, _t=req.t_, custom_content=req.custom_content, spoiler_tag=req.spoiler_tag,
+            )
+            return True
+        if req.mode == ParseMode.ZIP and result.processed_list:
+            await send_zip(
+                sender, result, reporter, _t=req.t_, custom_content=req.custom_content, spoiler_tag=req.spoiler_tag,
+            )
+            return True
+
         if isinstance(parse_result, RichTextParseResult):
-            # 长文与普通结果同一条路径: 正文取 markdown_content, 排版交给富文本
+            # 长文与普通结果共用富文本排版。
             await sender.typing()
             # 结果直接编辑进状态消息: 聊天里只留一条消息, 不新建也不删除
             await send_rich_media(
@@ -344,29 +375,11 @@ async def handle_parse(req: ParseRequest) -> bool:
             )
             return True
 
-        media_refs = to_list(parse_result.media)
-        # 显式要求非空: all() 对空列表返回 True, 不能让它把"没有媒体"当成"全是 GIF"
-        gif_only = bool(media_refs) and all(isinstance(i, AniRef) for i in media_refs)
-        if (
-            req.mode == ParseMode.PREVIEW
-            and gif_only
-            and len(media_refs) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD
-        ):
-            caption, entities = build_delivery_caption(
-                parse_result, config=req.config, _t=req.t_, custom_content=_caption_note(req, parse_result),
-                raw_url=raw_url,
-            )
-            await sender.typing()
-            markup = build_gif_button(media_refs)
-            if not await _post_text(sender, reporter, caption, markup, entities=entities):
-                await sender.text_no_preview(caption, reply_markup=markup, entities=entities)
-            return True
 
         if not result.processed_list:
             logger.debug("无媒体文件, 仅发送文本")
             await sender.typing()
-            # 富文本的正文是 Telegram 服务端解析的 markdown, 与缓存里的 caption 格式不同,
-            # 所以这条路径不写缓存 (下次重新解析)
+
             await send_rich_media(
                 sender,
                 parse_result,
@@ -378,13 +391,6 @@ async def handle_parse(req: ParseRequest) -> bool:
                 spoiler_tag=req.spoiler_tag,
                 cache_parse_result=orig_parse_result,
             )
-            return True
-
-        if req.mode == ParseMode.RAW:
-            await send_raw(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, parse_result))
-            return True
-        if req.mode == ParseMode.ZIP:
-            await send_zip(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, parse_result))
             return True
 
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")

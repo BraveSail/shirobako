@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from easy_ai18n import PreLocaleSelector
 
-from plugins.parse.x_caption import NOTE_PATTERN
+from plugins.parse.notes import ParseNote, extract_note
 from repo.settings import ParseMode, SettingsConfig
 
 if TYPE_CHECKING:
@@ -35,14 +35,10 @@ class ParseRequest:
     translate: bool = False
 
     @property
-    def custom_content(self) -> str:
-        """Compatibility adapter for rich and legacy deliveries, not native X captions."""
+    def custom_content(self) -> str | ParseNote:
         if not self.include_custom_content or not (text := self.msg.text):
             return ""
-        if self.msg.entities:
-            text = self.cli.parser.unparse(text, self.msg.entities, is_html=True)  # type: ignore[assignment]
-        match = NOTE_PATTERN.search(text)
-        return match[1].strip() if match else ""
+        return extract_note(text, self.msg.entities or ())
 
     @property
     def chat_id(self) -> int | None:

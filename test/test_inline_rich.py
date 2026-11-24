@@ -4,15 +4,9 @@ import asyncio
 from datetime import UTC, datetime
 
 from parsehub.types import ImageRef, MultimediaParseResult, Platform, RichTextParseResult, VideoRef
-from pyrogram.types import (
-    InlineQueryResultArticle,
-    InputRichMessage,
-    InputRichMessageContent,
-    InputTextMessageContent,
-)
+from pyrogram.types import InputRichMessageContent
 
 from plugins.parse.inline import (
-    _is_rich_result,
     build_inline_results,
     inline_cover_url,
     inline_reply_markup,
@@ -70,15 +64,6 @@ def test_strip_media_markdown_handles_alt_text():
 def test_strip_media_markdown_handles_empty():
     assert strip_media_markdown("") == ""
     assert strip_media_markdown(None) == ""
-
-
-def test_is_rich_result_detects_rich_article():
-    rich = InlineQueryResultArticle(
-        title="t", input_message_content=InputRichMessageContent(InputRichMessage(markdown="x"))
-    )
-    plain = InlineQueryResultArticle(title="t", input_message_content=InputTextMessageContent("x"))
-    assert _is_rich_result(rich) is True
-    assert _is_rich_result(plain) is False
 
 
 # ── 结果项构成 ────────────────────────────────────────────────
@@ -399,7 +384,7 @@ def test_build_error_result_puts_the_reason_in_the_sent_message():
 
     assert result.title == "解析失败"
     assert "Premieres in 23 hours" in result.description
-    assert "Premieres in 23 hours" in result.input_message_content.message_text
+    assert "Premieres in 23 hours" in _rich_text(result.input_message_content.rich_message)
 
 
 def test_build_error_result_without_a_reason_still_explains_itself():
@@ -407,8 +392,9 @@ def test_build_error_result_without_a_reason_still_explains_itself():
     from plugins.parse.inline import build_error_result
 
     result = build_error_result(t_["zh-hans"], "")
-    assert "解析失败" in result.input_message_content.message_text
-    assert "稍后再试" in result.input_message_content.message_text
+    body = _rich_text(result.input_message_content.rich_message)
+    assert "解析失败" in body
+    assert "稍后再试" in body
 
 
 def test_the_error_result_never_leaks_more_than_100_chars_of_the_exception():

@@ -254,4 +254,4 @@ def test_inline_edit_prefers_explicit_blocks(monkeypatch):
     assert _text(invoke.call_args.args[0].rich_message) == "**literal**"
     # Empty blocks are invalid in the SDK, but must not silently select the old channel.
     with pytest.raises(ValueError, match="provide either blocks, markdown or html"):
-        asyncio.run(inline_rich.edit_inline_rich_message(cli, "offline", blocks=[], markdown="legacy"))
+        asyncio.run(inline_rich.edit_inline_rich_message(cli, "offline", blocks=[]))

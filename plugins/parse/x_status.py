@@ -47,6 +47,7 @@ from plugins.helpers import (
     _should_fold,
     tag_page_url,
 )
+from plugins.parse.notes import ParseNote, note_block
 from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
 
 if TYPE_CHECKING:
@@ -250,7 +251,9 @@ def _tags(tags: Sequence[str]) -> InputRichBlockParagraph | None:
     return InputRichBlockParagraph(inline) if inline else None
 
 
-def _application_custom_blocks(value: str) -> list[InputRichBlock]:
+def _application_custom_blocks(value: str | ParseNote) -> list[InputRichBlock]:
+    if isinstance(value, ParseNote):
+        return [note_block(value)] if value else []
     """Only the caller's legacy custom annotation enters the markup adapter, never X data."""
     from plugins.parse.rich_blocks import markdown_to_blocks
 
@@ -303,7 +306,7 @@ def build_x_status_blocks(
     view_label: str = "",
     hide_content: str = "",
     progress: str = "",
-    custom_content: str = "",
+    custom_content: str | ParseNote = "",
     main_media: Sequence[InputRichBlock] = (),
     reply_media: Sequence[InputRichBlock] = (),
     quoted_media: Sequence[InputRichBlock] = (),

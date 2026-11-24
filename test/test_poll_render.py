@@ -401,21 +401,6 @@ def test_old_cache_entry_without_polls_renders_the_legacy_way():
 # ── 老 caption 路径 (raw/zip) 同样不泄漏 ───────────────────────────────
 
 
-def test_caption_path_replaces_placeholders():
-    from plugins.helpers import build_caption_by_str
-
-    caption = build_caption_by_str(
-        "标题",
-        "正文\n{{poll:0}}",
-        "https://x.com/a/status/1",
-        lang="zh-hans",
-        hide_source=True,
-        polls=[OFFICIAL_POLL],
-    )
-    assert "{{poll" not in caption
-    assert "| 选项 | 票数 | 占比 |" in caption
-
-
 if __name__ == "__main__":
     import pytest
 

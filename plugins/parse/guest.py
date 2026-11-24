@@ -26,8 +26,6 @@ from pyrogram.types import (
     InlineQueryResultArticle,
     InputRichMessage,
     InputRichMessageContent,
-    InputTextMessageContent,
-    LinkPreviewOptions,
     Message,
 )
 
@@ -47,6 +45,7 @@ from plugins.parse.inline_rich import (
     result_summary_text,
     with_cover_fallback,
 )
+from plugins.parse.notices import rich_notice
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
 from plugins.translate import translate_cache_entry, translate_for_display
@@ -157,12 +156,7 @@ class _NullReporter:
 
 def _denied_result(text: str) -> InlineQueryResultArticle:
     """门禁不通过时回一条说明, 而不是静默 —— 用户得知道为什么没反应。"""
-    return InlineQueryResultArticle(
-        id=GUEST_RESULT_ID,
-        title=text,
-        description=text,
-        input_message_content=InputTextMessageContent(text, link_preview_options=LinkPreviewOptions(is_disabled=True)),
-    )
+    return _result(text, text, rich_notice(text))
 
 
 async def _deliver(
@@ -194,9 +188,8 @@ async def _deliver(
     """
     if inline_message_id:
         try:
-            await edit_inline_rich_message(
-                cli, inline_message_id, markdown=markdown, media=media or None, blocks=blocks
-            )
+            ready = blocks if blocks is not None else markdown_to_blocks(markdown)
+            await edit_inline_rich_message(cli, inline_message_id, blocks=ready)
             logger.info("guest 结果已编辑进 guest 消息: 一条消息走完整个流程")
             return
         except Exception as e:
@@ -303,8 +296,9 @@ async def _answer(
     except Exception as e:  # noqa: BLE001 - 解析失败走单独一条错误消息, 没有可编辑的句柄
         logger.error(f"guest 解析失败: url={url} error={type(e).__name__}: {e}")
         if not config.hide_error:
-            text = _t(f"{format_label('解析错误:')} \n```\n{e}```")
-            await cli.answer_guest_query(guest_query_id, _denied_result(text))
+            title = _t("解析错误:")
+            notice = _result(title, _clip(str(e), 200), rich_notice(f"{title}\n\n{e}"))
+            await cli.answer_guest_query(guest_query_id, notice)
         return None
     if parse_result is None:
         logger.warning(f"guest 解析无结果: url={url}")

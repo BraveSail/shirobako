@@ -53,6 +53,7 @@ from plugins.helpers import (
     metadata_reply_label,
     tag_page_url,
 )
+from plugins.parse.notes import ParseNote
 from plugins.parse.x_status import (
     _GALLERY_ITEMS,
     _application_custom_blocks,
@@ -412,7 +413,7 @@ def build_document_blocks(
     view_label: str = "",
     hide_content: str = "",
     progress: str = "",
-    custom_content: str = "",
+    custom_content: str | ParseNote = "",
     main_media: Sequence[_MediaSlot] = (),
     reply_media: Sequence[_MediaSlot] = (),
     quoted_media: Sequence[_MediaSlot] = (),

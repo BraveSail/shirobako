@@ -8,18 +8,17 @@ from parsehub.types import (
     ImageRef,
     VideoRef,
 )
-from parsehub.utils.helpers import strip_flags
+from parsehub.utils.helpers import match_url, strip_flags
 from pyrogram import Client, raw, utils
 from pyrogram.errors import BadRequest
 from pyrogram.types import (
     ChosenInlineResult,
     InlineQuery,
-    InlineQueryResult,
     InlineQueryResultArticle,
+    InputRichBlockParagraph,
     InputRichMessage,
     InputRichMessageContent,
-    InputTextMessageContent,
-    LinkPreviewOptions,
+    RichTextUrl,
 )
 from pyrogram.types import (
     InlineKeyboardButton as Ikb,
@@ -50,6 +49,7 @@ from plugins.parse.inline_rich import (
     rich_cache_entry,
     upload_media_for_cache,
 )
+from plugins.parse.notices import rich_notice
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
 from plugins.translate import translate_cache_entry, translate_for_display
@@ -96,62 +96,39 @@ async def inline_parse_tip(_: Client, inline_query: InlineQuery) -> None:
             inline_query.from_user.id, inline_query.from_user.language_code
         )
     _t = t_[lang]
-    results: list[InlineQueryResult] = [
-        InlineQueryResultArticle(
-            title=_t("聚合解析"),
-            description=_t("请在聊天框输入链接"),
-            input_message_content=InputTextMessageContent(
-                build_start_text()[lang], link_preview_options=LinkPreviewOptions(is_disabled=True)
-            ),
-            thumb_url=SEARCH_ICON,
-        )
-    ]
-    await inline_query.answer(results=results, cache_time=1)
+    if match_url(inline_query.query):
+        title = _t("不支持的平台")
+        rich = rich_notice(title)
+    else:
+        title = _t("聚合解析")
+        # 欢迎文案由应用生成，粗体、折叠与链接需要转换成块。
+        rich = InputRichMessage(blocks=markdown_to_blocks(build_start_text()[lang]))
+    result = InlineQueryResultArticle(
+        title=title,
+        description=_t("请在聊天框输入链接"),
+        input_message_content=InputRichMessageContent(rich),
+        thumb_url=SEARCH_ICON,
+    )
+    await answer_inline(inline_query, [result], lang=lang, cache_time=1)
 
 
 async def answer_inline(
     inline_query: InlineQuery,
-    results: list[InlineQueryResult],
+    results: list[InlineQueryResultArticle],
     *,
     lang: str,
     cache_time: int = 0,
-    fallback_results: list[InlineQueryResult] | None = None,
 ) -> None:
-    """回答内联查询, 失败时退化成一条可读的错误结果。
-
-    Telegram 对内联回答很挑 (例如富文本里带外部媒体会直接
-    ``400 EXTERNAL_MEDIA_NOT_SUPPORTED``); 一旦答案送不出去, 客户端只会一直转圈,
-    用户完全看不到原因。所以这里兜一层: 先按完整结果发, 失败就把富文本项剔掉再试,
-    仍失败则回一条纯文字提示。
-    """
-    _t = t_[lang]
+    """富文本回答被拒时，仍给一条可点选的富文本错误结果。"""
     try:
         await inline_query.answer(results[:50], cache_time=cache_time)
         return
     except BadRequest as e:
         logger.warning(f"内联回答被拒: {e}")
 
-    # 富文本项最可能是元凶 (它依赖的设置最多), 去掉后再试一次
-    plain = [r for r in results if not _is_rich_result(r)]
-    if not plain and fallback_results:
-        plain = fallback_results  # 结果全是富文本时换用调用方给的备选 (通常是媒体项)
-    if plain and plain != results:
-        try:
-            await inline_query.answer(plain[:50], cache_time=cache_time)
-            return
-        except BadRequest as e:
-            logger.warning(f"去掉富文本项后仍被拒: {e}")
-
+    _t = t_[lang]
     await inline_query.answer(
-        results=[
-            InlineQueryResultArticle(
-                title=_t("解析失败"),
-                description=_t("请稍后重试, 或直接把链接发到聊天里"),
-                input_message_content=InputTextMessageContent(
-                    _t("解析失败"), link_preview_options=LinkPreviewOptions(is_disabled=True)
-                ),
-            )
-        ],
+        results=[build_error_result(_t, _t("请稍后重试, 或直接把链接发到聊天里"))],
         cache_time=1,
     )
 
@@ -183,13 +160,6 @@ def inline_reply_markup(parse_result: AnyParseResult) -> Ikm | None:
     return Ikm([[Ikb("原链接", url=parse_result.raw_url)]])
 
 
-def _is_rich_result(result: InlineQueryResult) -> bool:
-    """结果项是不是那条需要 Telegram 特殊支持的富文本结果 (被拒时优先剔掉它)。"""
-    if getattr(result, "id", None) == RICH_RESULT_ID:
-        return True
-    return isinstance(getattr(result, "input_message_content", None), InputRichMessageContent)
-
-
 @Client.on_inline_query(platform_filter(False))
 @with_request_id
 async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
@@ -215,18 +185,16 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         )
 
 
-def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResult:
+def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResultArticle:
     """鉴权不通过时返回的结果项 (不解析, 只说明原因)。"""
     return InlineQueryResultArticle(
         title=_t("无权限"),
         description=_t("仅限白名单用户使用"),
-        input_message_content=InputTextMessageContent(
-            _t("无权限"), link_preview_options=LinkPreviewOptions(is_disabled=True)
-        ),
+        input_message_content=InputRichMessageContent(rich_notice(_t("无权限"))),
     )
 
 
-def build_error_result(_t: PreLocaleSelector, error: str = "") -> InlineQueryResult:
+def build_error_result(_t: PreLocaleSelector, error: str = "") -> InlineQueryResultArticle:
     """解析失败时返回的结果项 —— **不要** answer 空列表。
 
     以前失败走 ``answer_inline(inline_query, [])``: 客户端只显示"没有结果",
@@ -243,14 +211,12 @@ def build_error_result(_t: PreLocaleSelector, error: str = "") -> InlineQueryRes
     fallback = _t("稍后再试")
     # 发出去的那条消息**也要带原因** —— 只写"解析失败"等于没给信息
     # （用户报：「发出去只有个解析失败，没有详细信息」）。
-    body = f"{title}\n\n{detail}" if detail else f"{title}\n\n{fallback}"
+    body = f"{title}\n\n{detail or fallback}"
     return InlineQueryResultArticle(
         id="parse-error",
         title=title,
-        description=detail or _t("稍后再试"),
-        input_message_content=InputTextMessageContent(
-            body, link_preview_options=LinkPreviewOptions(is_disabled=True)
-        ),
+        description=detail or fallback,
+        input_message_content=InputRichMessageContent(rich_notice(body)),
     )
 
 
@@ -294,6 +260,10 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     parse_result = await parse_cache.get(raw_url)
     if parse_result is None:
         parse_result = await ParseService().parse(query)
+        if parse_result is None:
+            _t = t_[lang]
+            await answer_inline(inline_query, [build_error_result(_t, _t("没有解析结果"))], lang=lang)
+            return
         await parse_cache.set(raw_url, parse_result)
 
     # ``#t``: 预览里也直接显示译文（用户看到的选择项就该是最终形态）。
@@ -510,7 +480,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 )
             else:
                 blocks = markdown_to_blocks(legacy_edit["markdown"], media_blocks=delivery_media)
-            await edit_inline_rich_message(cli, inline_message_id, blocks=blocks, **legacy_edit)
+            await edit_inline_rich_message(cli, inline_message_id, blocks=blocks)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             # ``MESSAGE_ID_INVALID`` on an inline edit means Telegram no longer accepts
@@ -547,7 +517,7 @@ def build_cached_rich_result(
     config: SettingsConfig,
     *,
     spoiler_tag: str = "",
-) -> InlineQueryResult:
+) -> InlineQueryResultArticle:
     """缓存路径的富文本结果项 (带 file_id 媒体, 一项同时给图和页脚)。"""
     _t = t_[lang]
     content, media, media_blocks = build_cached_rich_content(
@@ -578,7 +548,7 @@ def strip_media_markdown(markdown: str) -> str:
 
     inline 结果**不支持外部媒体** —— 带 URL 的图片会让 Telegram 直接回
     ``400 EXTERNAL_MEDIA_NOT_SUPPORTED``, 整条 inline 回答失败 (表现是客户端一直转圈)。
-    所以 inline 的富文本只保留文字排版, 图由单独的 InlineQueryResultPhoto/Video 提供。
+    所以 inline 首帧的富文本只保留文字排版，选中后再编辑加入媒体。
     """
     return _MEDIA_MARKDOWN_RE.sub("", markdown or "")
 
@@ -620,21 +590,22 @@ async def build_inline_results(
     config: SettingsConfig,
     *,
     spoiler_tag: str = "",
-) -> list[InlineQueryResult]:
+) -> list[InlineQueryResultArticle]:
     """根据解析结果构建内联查询结果列表"""
     logger.debug(f"构建 inline 结果: type={parse_result.type}, title={parse_result.title}")
     _t = t_[lang]
 
     title = clip_inline_text(parse_result.title, INLINE_TITLE_LIMIT) or "-"
 
-    results: list[InlineQueryResult] = []
+    results: list[InlineQueryResultArticle] = []
     if config.enable_inline_raw_url:
+        source = RichTextUrl(parse_result.raw_url, parse_result.raw_url)
         results.append(
             InlineQueryResultArticle(
                 title=_t("原始链接"),
                 description=parse_result.raw_url,
-                input_message_content=InputTextMessageContent(
-                    parse_result.raw_url, link_preview_options=LinkPreviewOptions(is_disabled=True)
+                input_message_content=InputRichMessageContent(
+                    InputRichMessage(blocks=[InputRichBlockParagraph(source)])
                 ),
                 thumb_url=LINK_ICON_URL,
                 thumb_width=LINK_ICON_WIDTH,

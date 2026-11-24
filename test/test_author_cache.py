@@ -4,9 +4,8 @@ import types
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pyrogram.parser import Parser
 
-from plugins.helpers import build_caption_by_str, build_metadata_line, build_rich_markdown
+from plugins.helpers import build_metadata_line, build_rich_markdown
 from services.cache import CacheEntry, CacheParseResult, PersistentCache
 
 
@@ -109,20 +108,6 @@ def test_new_authorless_cache_is_versioned():
     assert "author_metadata_version" in CacheEntry.model_validate(payload).model_fields_set
 
 
-@pytest.mark.parametrize(
-    "author",
-    ["Author", "A & B <test>", "\u30d6\u30eb\u30fc\u30a2\u30fc\u30ab\u30a4\u30d6\u516c\u5f0f", "Author \U0001f600"],
-)
-def test_author_is_bold_and_html_escaped(author):
-    caption = build_caption_by_str("", "Body", "https://www.threads.com/@user/post/Abc", author_name=author)
-    parsed = asyncio.run(Parser(None).parse(caption))
-    assert parsed["message"].startswith(author + ":\n\n")
-    length = len((author + ":").encode("utf-16-le")) // 2
-    assert any(
-        type(e).__name__ == "MessageEntityBold" and e.offset == 0 and e.length == length for e in parsed["entities"]
-    )
-
-
 # ── 统计行 ────────────────────────────────────────────────────
 
 
@@ -182,15 +167,6 @@ def test_metadata_line_without_views():
 
 def test_metadata_line_empty_when_nothing_available():
     assert build_metadata_line() == ""
-
-
-def test_caption_places_metadata_before_source():
-    caption = build_caption_by_str(
-        "Title", "Body", "https://x.com/u/status/1", author_name="Author", metadata_line="19:00 · 2026年10月3日"
-    )
-    assert "Body" in caption
-    assert caption.index("2026年10月3日") < caption.index("来源")
-    assert caption.index("Author") < caption.index("2026年10月3日")
 
 
 # ── 富文本正文 ────────────────────────────────────────────────
@@ -461,8 +437,3 @@ def test_rich_markdown_respects_hide_source():
         result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
     )
     assert "来源" not in markdown
-
-
-def test_caption_without_metadata_is_unchanged():
-    caption = build_caption_by_str("Title", "Body", "https://x.com/u/status/1", author_name="Author")
-    assert "·" not in caption

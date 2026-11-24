@@ -9,7 +9,20 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from plugins.parse.reporters import STATUS_DONE_TEXT, MessageStatusReporter
+import pytest
+from pyrogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputRichBlockFooter,
+    InputRichBlockParagraph,
+    InputRichBlockPreformatted,
+    InputRichMessage,
+    RichTextBold,
+    RichTextUrl,
+)
+
+from plugins.parse import reporters
+from plugins.parse.reporters import STATUS_DONE_TEXT, InlineStatusReporter, MessageStatusReporter
 
 
 def _rich_text(rich_message) -> str:
@@ -30,12 +43,7 @@ def _rich_text(rich_message) -> str:
             for item in obj:
                 _walk(item)
             return
-        text = getattr(obj, "text", None)
-        if isinstance(text, str):
-            parts.append(text)
-        elif isinstance(text, list):
-            _walk(text)
-        for attr in ("items", "children", "blocks", "content", "title"):
+        for attr in ("text", "items", "children", "blocks", "content", "title"):
             child = getattr(obj, attr, None)
             if child is not None and child is not obj:
                 _walk(child)
@@ -114,7 +122,10 @@ def test_dismiss_edits_instead_of_deleting():
     msg = _Msg()
     asyncio.run(_reporter(msg).dismiss())
     msg.edit_text.assert_awaited_once()
-    assert msg.edit_text.await_args.args[0] == STATUS_DONE_TEXT
+    assert not msg.edit_text.await_args.args
+    (block,) = msg.edit_text.await_args.kwargs["rich_message"].blocks
+    assert isinstance(block, InputRichBlockParagraph)
+    assert block.text == STATUS_DONE_TEXT
     msg.delete.assert_not_awaited()
 
 
@@ -151,39 +162,23 @@ def test_report_edits_the_same_message():
 def test_progress_is_sent_as_a_rich_message():
     """处理过程必须是富文本, 不再是纯文本的 "▎解 析 中..." """
     msg = _Msg()
-    asyncio.run(_reporter(None, user_msg=msg)._send_rich("**▎解 析 中...**"))
+    asyncio.run(_reporter(None, user_msg=msg).report("解 析 中..."))
     assert "▎解 析 中..." in _rich_text(msg.answer_rich.await_args.kwargs["rich_message"])
 
 
-def test_the_stage_label_stays_html_because_the_footer_needs_it():
-    """阶段标签在**页脚**里, 而 footer 块只解析 HTML 标签 —— **必须**是 ``<b>``。
-
-    实测 (真机, 四种组合):
-
-    | 位置 | 写法 | 结果 |
-    | --- | --- | --- |
-    | **footer** | ``**▎…**`` (markdown) | ✗ 字面显示, 用户看到多余的 ``**`` |
-    | **footer** | ``<b>▎…</b>`` | ✓ RichTextBold |
-    | 正文 | ``**▎…**`` | ✓ RichTextBold |
-    | 正文 | ``<b>▎…</b>`` | ✓ RichTextBold |
-
-    (与"footer 里 markdown 链接不解析"同一个坑。) 曾经为了迁就 blocks 路径
-    把它改成 ``**`` —— 那是**改错了方向**: 正确做法是让 blocks 的 ``parse_inline``
-    认 ``<b>``/``<i>``, 而不是改坏 markdown 路径。
-    """
-    from plugins.helpers import format_label
-
-    assert format_label("解 析 中...") == "<b>▎解 析 中...</b>"
-
+def test_the_stage_label_is_bold_and_literal():
     msg = _Msg()
     reporter = _reporter(None, user_msg=msg)
     reporter._raw_url = "https://x.com/a/status/1"
-    asyncio.run(reporter.report("解 析 中..."))
+    asyncio.run(reporter.report("解 析 中... <b>*99%*</b>"))
     rich = msg.answer_rich.await_args.kwargs["rich_message"]
-    markdown = _rich_text(rich)
-    assert "▎解 析 中..." in markdown
-    # blocks 通道里加粗是 RichTextBold 类型，不再是 ``**`` / ``<b>`` 字面量
-    assert "**" not in markdown and "<b>" not in markdown
+    label = rich.blocks[0].text
+    assert isinstance(label, RichTextBold)
+    assert label.text == "▎解 析 中... <b>*99%*</b>"
+    assert isinstance(rich.blocks[-1], InputRichBlockFooter)
+    link = rich.blocks[-1].text
+    assert isinstance(link, RichTextUrl)
+    assert link.url == reporter._raw_url
 
 
 def test_a_stage_without_a_result_renders_a_skeleton():
@@ -275,14 +270,13 @@ def test_report_is_skipped_when_noprogress():
 
 def test_finalize_edits_the_status_message():
     """收尾的另一种形态: 直接编辑成最终富文本 (整个流程一条消息)"""
-    from pyrogram.types import InputRichMessage
-
     msg = _Msg()
-    rich = InputRichMessage(markdown="结果")
+    rich = InputRichMessage(blocks=[InputRichBlockParagraph("结果")])
     edited = asyncio.run(_reporter(msg).finalize(rich))
     msg.edit_text.assert_awaited_once()
     assert msg.edit_text.await_args.kwargs["rich_message"] is rich
     assert _no_preview(msg.edit_text.await_args.kwargs)
+    assert "reply_markup" not in msg.edit_text.await_args.kwargs
     msg.delete.assert_not_awaited()
     assert edited is not None
 
@@ -304,11 +298,17 @@ def test_finalize_does_not_swallow_errors():
         raise AssertionError("finalize 应上抛异常")
 
 
-def test_finalize_text_edits_plain_caption():
-    """不走富文本的结果 (GIF 过多只发文字) 也编辑进同一条消息"""
+def test_finalize_edits_the_rich_result_with_its_buttons():
     msg = _Msg()
-    asyncio.run(_reporter(msg).finalize_text("<b>文字结果</b>", reply_markup=None))
+    url = "https://example.org/1.gif"
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("GIF 1", url=url)]])
+    rich = InputRichMessage(blocks=[InputRichBlockParagraph(RichTextUrl("来源", url))])
+    asyncio.run(_reporter(msg).finalize(rich, reply_markup=markup))
     msg.edit_text.assert_awaited_once()
+    kwargs = msg.edit_text.await_args.kwargs
+    assert kwargs["rich_message"] is rich
+    assert kwargs["reply_markup"] is markup
+    assert _no_preview(kwargs)
 
 
 # ── 链接预览一律关掉 ───────────────────────────────────────────────────
@@ -329,39 +329,6 @@ def test_dismiss_disables_the_link_preview():
     asyncio.run(_reporter(msg).dismiss())
     assert _no_preview(msg.edit_text.await_args.kwargs)
 
-
-def test_finalize_text_disables_the_link_preview():
-    """这条最容易漏: 文本结果里的来源链接就是预览卡片的来源"""
-    msg = _Msg()
-    asyncio.run(
-        _reporter(msg).finalize_text('<b>正文</b> · <a href="https://x.com/a/status/1">来源</a>')
-    )
-    assert _no_preview(msg.edit_text.await_args.kwargs)
-
-
-def test_sending_a_text_message_disables_the_preview_by_default():
-    """首次状态消息是**发送**而不是编辑 —— ``MessageSender.text`` 的默认值也要安全
-
-    这个默认值就是接口: 忘了传参数的调用点 (提示语、GIF 提示) 不该泄露预览。
-    """
-    from plugins.parse.sender import MessageSender
-
-    msg = _Msg()
-    sender = MessageSender(
-        cli=SimpleNamespace(), msg=msg, config=SimpleNamespace(reply_msg=False)
-    )
-    asyncio.run(sender.text("解 析 中..."))
-    assert _no_preview(msg.answer.await_args.kwargs)
-
-
-def test_an_explicit_preview_option_is_not_overridden():
-    """调用方显式传了的就用调用方的 —— 默认值只补缺, 不覆盖"""
-    from pyrogram.types import LinkPreviewOptions
-
-    msg = _Msg()
-    allow = LinkPreviewOptions(is_disabled=False)
-    asyncio.run(_reporter(msg).finalize_text("正文", link_preview_options=allow))
-    assert msg.edit_text.await_args.kwargs["link_preview_options"] is allow
 
 
 def test_report_survives_a_manually_deleted_status_message():
@@ -384,5 +351,53 @@ def test_report_error_keeps_the_error_text():
 
     # 只编辑一次（错误文本本身）；没有任何"收尾成点"的第二次编辑
     assert msg.edit_text.await_count == 1, "错误后不该再有 dismiss"
-    assert "boom" in msg.edit_text.await_args.args[0]
-    assert STATUS_DONE_TEXT not in msg.edit_text.await_args.args[0]
+    kwargs = msg.edit_text.await_args.kwargs
+    heading, detail = kwargs["rich_message"].blocks[:2]
+    assert isinstance(heading.text, RichTextBold)
+    assert heading.text.text == "▎解析错误:"
+    assert isinstance(detail, InputRichBlockPreformatted)
+    assert detail.text == "boom"
+    assert _no_preview(kwargs)
+
+
+def test_error_without_progress_still_creates_a_literal_rich_message(monkeypatch):
+    monkeypatch.setattr(reporters, "bs", SimpleNamespace(demo_mode=True))
+    msg = _Msg()
+    reporter = _reporter(user_msg=msg, config=_config(noprogress=True))
+    error = "  [boom](https://example.org) <b>test</b>\n```"
+    asyncio.run(reporter.report_error("解析", RuntimeError(error)))
+    msg.answer_rich.assert_awaited_once()
+    msg.answer.assert_not_awaited()
+    _, detail, feedback = msg.answer_rich.await_args.kwargs["rich_message"].blocks
+    assert isinstance(detail, InputRichBlockPreformatted)
+    assert detail.text == error
+    assert isinstance(feedback.text, RichTextBold)
+    assert any(
+        isinstance(part, RichTextUrl) and part.url == "https://t.me/MisakaSisters" for part in feedback.text.text
+    )
+
+
+@pytest.mark.parametrize("hide_error", [False, True])
+def test_inline_error_edits_rich_message_in_place(hide_error):
+    cli = SimpleNamespace(edit_inline_text=AsyncMock())
+    reporter = InlineStatusReporter(cli, "mid", t=_T(), user_config=_config(hide_error=hide_error))
+    asyncio.run(reporter.report_error("上传", RuntimeError("[err]```")))
+    asyncio.run(reporter.dismiss())
+    if hide_error:
+        cli.edit_inline_text.assert_not_awaited()
+        return
+    cli.edit_inline_text.assert_awaited_once()
+    kwargs = cli.edit_inline_text.await_args.kwargs
+    assert kwargs["inline_message_id"] == "mid"
+    assert "text" not in kwargs and _no_preview(kwargs)
+    detail = kwargs["rich_message"].blocks[1]
+    assert isinstance(detail, InputRichBlockPreformatted)
+    assert detail.text == "[err]```"
+
+
+def test_identical_stage_frames_are_not_reedited():
+    msg = _Msg()
+    reporter = _reporter(msg)
+    asyncio.run(reporter.report("下 载 中..."))
+    asyncio.run(reporter.report("下 载 中..."))
+    msg.edit_text.assert_awaited_once()

@@ -1,8 +1,7 @@
 """format_author_label 的离线单元测试 (纯函数, 不碰网络/库)。"""
 
 import pytest
-
-from plugins.helpers import format_author_label
+from parsehub.utils.helpers import format_author_label
 
 # ── 两边都有 · 不等 ────────────────────────────────────────────
 

@@ -107,7 +107,7 @@ def _run_private_parse(allowed: bool, chat_type=ChatType.PRIVATE, *, return_serv
         id=42,
     )
     sender = MagicMock()
-    sender.return_value.text = AsyncMock()
+    sender.return_value.rich_message = AsyncMock()
     service = MagicMock()
     service.is_whitelisted = AsyncMock(return_value=allowed)
     user_service = MagicMock()
@@ -140,7 +140,9 @@ def _run_private_parse(allowed: bool, chat_type=ChatType.PRIVATE, *, return_serv
 def test_a_private_message_from_a_stranger_is_refused():
     """**核心**: 私聊发链接要鉴权（以前无门禁）"""
     sender, handle = _run_private_parse(allowed=False)
-    assert sender.return_value.text.await_args.args[0] == "仅限白名单用户使用"
+    (rich,) = sender.return_value.rich_message.await_args.args
+    (notice,) = rich.blocks
+    assert notice.text == "仅限白名单用户使用"
     handle.assert_not_awaited()  # 没进解析流程
 
 
@@ -148,8 +150,7 @@ def test_a_private_message_from_a_whitelisted_user_goes_on():
     """白名单用户私聊正常解析: 进了解析流程, 且不该收到拒绝文案"""
     sender, handle = _run_private_parse(allowed=True)
     handle.assert_awaited()
-    for call in sender.return_value.text.await_args_list:
-        assert "仅限白名单用户使用" not in str(call)
+    sender.return_value.rich_message.assert_not_awaited()
 
 
 def test_a_group_message_is_never_gated():
@@ -159,8 +160,7 @@ def test_a_group_message_is_never_gated():
     """
     sender, handle = _run_private_parse(allowed=False, chat_type=ChatType.SUPERGROUP)
     handle.assert_awaited()  # 照样进解析流程
-    for call in sender.return_value.text.await_args_list:
-        assert "仅限白名单用户使用" not in str(call)
+    sender.return_value.rich_message.assert_not_awaited()
 
 
 def test_a_group_message_does_not_even_consult_the_whitelist():

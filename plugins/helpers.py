@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo
 
 from easy_ai18n import LocaleContent
 from parsehub import ParseHub, Platform
-from parsehub.types import AnyParseResult, RichTextParseResult
-from parsehub.utils.helpers import SPOILER_FOLD_SUMMARY, format_author_label, format_author_link
+from parsehub.types import AnyParseResult
+from parsehub.utils.helpers import SPOILER_FOLD_SUMMARY, format_author_link
 from pyrogram.types import Message
 
 from i18n import LANG_MAP, t_
@@ -143,58 +143,6 @@ def build_start_text() -> LocaleContent:
         compose,
         source=head,
         locales=tuple(LANG_MAP),
-    )
-
-
-def build_caption(
-    parse_result: AnyParseResult,
-    *,
-    custom_content: str = "",
-    config: SettingsConfig,
-    rich: bool = False,
-    allow_blockquote: bool = True,
-    allow_expandable: bool = True,
-    lang: str = "",
-    view_label: str = "",
-    max_length: int | None = None,
-) -> str:
-    return build_caption_by_str(
-        parse_result.title,
-        replace_url(parse_result.platform, parse_result.markdown_content)
-        if rich and isinstance(parse_result, RichTextParseResult)
-        else parse_result.content,
-        parse_result.raw_url,
-        platform=parse_result.platform,
-        hide_source=config.hide_source,
-        custom_content=custom_content,
-        author_name=format_author_label(
-            get_parse_author_name(parse_result), getattr(parse_result, "author_handle", "")
-        ),
-        hide_title=config.hide_title,
-        hide_desc=config.hide_desc,
-        rich=rich,
-        allow_blockquote=allow_blockquote,
-        allow_expandable=allow_expandable,
-        # 投票占位符 (`{{poll:N}}`) 同样要在这里替换 —— 老 caption 路径 (raw/zip)
-        # 也是用户能看到的产物, 占位符字面量绝不能泄漏出去。
-        polls=getattr(parse_result, "polls", None) or (),
-        metadata_line=build_metadata_line(
-            published_at=getattr(parse_result, "published_at", None),
-            view_count=getattr(parse_result, "view_count", None),
-            like_count=getattr(parse_result, "like_count", None),
-            lang=lang,
-            view_label=view_label,
-            # 平台自己的叫法优先（bgm 是「状态」）—— caption 与富文本两条路一致
-            like_label=metadata_like_label(parse_result, t_[lang] if lang else t_)
-            if (view_label and lang)
-            else "",
-            reply_label=metadata_reply_label(parse_result, t_[lang] if lang else t_)
-            if (view_label and lang)
-            else "",
-        ),
-        max_length=max_length,
-        fold_summary=t_[lang]("展开全文") if lang else "",
-        lang=lang,
     )
 
 
@@ -346,70 +294,6 @@ def _format_published(value: datetime, lang: str) -> list[str]:
         fallback = f"{local.strftime('%Y-%m-%d')} {clock}"
     # unix 取自归一到 _METADATA_TIMEZONE 后的 local (aware), 与原来的日期算法同源
     return [f'<tg-time unix="{int(local.timestamp())}" format="Dt">{fallback}</tg-time>']
-
-
-def build_caption_by_str(
-    title: str | None,
-    content: str | None,
-    raw_url: str,
-    *,
-    platform: Platform | None = None,
-    hide_source: bool = False,
-    custom_content: str = "",
-    author_name: str = "",
-    hide_title: bool = False,
-    hide_desc: bool = False,
-    rich: bool = False,
-    allow_blockquote: bool = True,
-    allow_expandable: bool = True,
-    metadata_line: str = "",
-    max_length: int | None = None,
-    fold_summary: str = "",
-    lang: str = "",
-    polls: Sequence | None = None,
-) -> str:
-    """构建消息正文：标题 + 内容 + 统计行 + 来源链接"""
-    title, content = title or "", content or ""
-    # 投票占位符 (`{{poll:N}}`) 先替换 —— 这条 (老 caption) 路径同样是用户可见产物,
-    # 字面量绝不能泄漏。polls 为空时原样返回 (零变化)。两个分支都要, 所以放这里。
-    content = replace_poll_placeholders(content, polls, lang)
-    if rich:
-        body = f"### {title}\n\n <details><summary>📃</summary>\n\n{content}\n\n</details>"
-    else:
-        parts = []
-        if not hide_title and title:
-            parts.append(f"**{neutralize_markdown(title)}**")
-        if not hide_desc and content:
-            # 正文里的 URL 也要中和: URL 中的 '__' 会被 markdown 解析插进 <i> 破坏链接
-            parts.append(neutralize_markdown_urls(content))
-        body = format_text(
-            ("\n\n".join(parts)).strip(),
-            allow_blockquote=allow_blockquote,
-            allow_expandable=allow_expandable,
-            max_length=max_length,
-            fold_summary=fold_summary,
-        )
-
-    if author_name:
-        label = neutralize_markdown(html.escape(author_name))
-        body = f"<b>{label}:</b>\n\n{body}" if body else f"<b>{label}:</b>"
-
-    if custom_content:
-        body += f"\n\n{custom_content}"
-
-    if metadata_line:
-        body = f"{body}\n\n{metadata_line}" if body else metadata_line
-
-    if hide_source:
-        return body
-    platform = platform or ParseHub().get_platform(raw_url)
-    display = neutralize_markdown(html.escape(platform.display_name)) if platform else ""
-    # 来源标签要跟随用户语言 (以前硬编码英文 "Source（…）", 任何语言都显示英文)
-    _t = t_[lang] if lang else t_
-    source = _t(f"来源（{display}）") if display else _t("来源")
-    # href 里的 URL 必须中和: 否则 pyrogram 会把 URL 中的 '__' 解析成 <i> 塞进 href
-    safe_url = neutralize_markdown(raw_url)
-    return f"{body}\n\n{format_label(f"<a href='{safe_url}'>{source}</a>")}"
 
 
 def _meta_divider(meta_parts: Sequence[str], parts: Sequence[str]) -> list[str]:

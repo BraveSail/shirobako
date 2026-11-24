@@ -22,7 +22,7 @@ from parsehub.types import (
 from parsehub.types.document import Block, Document, paragraph
 from parsehub.types.x_status import TextRun, XPost, XStatus
 from PIL import Image
-from pyrogram.errors import WebpageCurlFailed
+from pyrogram.errors import BadRequest, WebpageCurlFailed
 from pyrogram.parser import Parser
 from pyrogram.raw import functions as rpc
 from pyrogram.raw import types as tl
@@ -457,6 +457,34 @@ def test_inline_cache_without_file_ids_keeps_a_handle_for_the_final_edit(setup):
     _assert_gallery(cli.edits[-1].rich_message)
 
 
+def test_inline_rejected_cached_media_returns_rich_error_without_cache_mutation(setup):
+    original = _status()
+    _, write = setup(original)
+    _choose(FakeTelegram())
+    cached = CacheEntry.model_validate_json(write.await_args.args[1].model_dump_json())
+    service, write = setup(original, cached=cached)
+    cli = FakeTelegram()
+    attempts = []
+
+    async def answer(results, *, cache_time):
+        (item,) = [await article.write(cli) for article in results]
+        attempts.append((_wire(item), cache_time))
+        if _photos(item):
+            raise BadRequest("FILE_REFERENCE_EXPIRED")
+
+    asyncio.run(inline.call_inline_parse(cli, SimpleNamespace(query=URL, from_user=USER, answer=answer)))
+    (first, first_ttl), (fallback, fallback_ttl) = attempts
+    assert (first_ttl, fallback_ttl) == (60, 1)
+    _assert_gallery(first.send_message.rich_message)
+    assert isinstance(fallback.send_message, tl.InputBotInlineMessageRichMessage)
+    assert fallback.id == "parse-error" and not _photos(fallback)
+    assert "请稍后重试" in _text(fallback)
+    write.assert_not_awaited()
+    service.parse.assert_not_awaited()
+    original.download.assert_not_awaited()
+    assert not cli.uploads and not cli.edits
+
+
 @pytest.mark.parametrize("reject_edits,reject_media", [(False, False), (True, False), (True, True)])
 def test_guest_edits_or_falls_back_without_losing_native_text(setup, reject_edits, reject_media):
     setup(_status())
@@ -553,13 +581,13 @@ def test_guest_legacy_edit_contains_text_and_media_not_mapping_keys(setup):
     assert 101 in _photos(final)
 
 
-def test_guest_denial_emits_plain_text_without_parse(setup):
+def test_guest_denial_emits_rich_notice_without_parse(setup):
     service, _ = setup(_status(), allowed=False)
     cli = FakeTelegram()
     _guest(cli)
     (denied,) = cli.guest
-    assert isinstance(denied, tl.InputBotInlineMessageText)
-    assert "无权限" in denied.message
+    assert isinstance(denied, tl.InputBotInlineMessageRichMessage)
+    assert _text(denied.rich_message) == "无权限"
     service.parse.assert_not_awaited()
 
 

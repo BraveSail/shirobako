@@ -29,6 +29,7 @@ from pyrogram.types import (
 )
 
 from log import logger
+from plugins.parse.notes import ParseNote, append_content_blocks, note_block
 
 if TYPE_CHECKING:
     from pyrogram import Client
@@ -169,7 +170,7 @@ def build_delivery_blocks(
     raw_url: str = "",
     lang: str = "",
     view_label: str = "",
-    custom_content: str = "",
+    custom_content: str | ParseNote = "",
     hide_content: str = "",
     progress: str = "",
     media_placeholders: Sequence[str] = (),
@@ -221,7 +222,8 @@ def build_delivery_blocks(
     from plugins.parse.rich_blocks import markdown_to_blocks
 
     markdown = build_rich_markdown(
-        parse_result, config=config, lang=lang, view_label=view_label, custom_content=custom_content,
+        parse_result, config=config, lang=lang, view_label=view_label,
+        custom_content=custom_content if isinstance(custom_content, str) else "",
         hide_content=hide_content, progress=progress, media_placeholders=media_placeholders,
         quote_media_placeholders=quote_media_placeholders, reply_media_placeholders=reply_media_placeholders,
         media_urls=media_urls,
@@ -231,7 +233,10 @@ def build_delivery_blocks(
         from plugins.parse.inline import strip_media_markdown
 
         markdown = strip_media_markdown(markdown)
-    return markdown_to_blocks(markdown, media_blocks=media_blocks)
+    rendered = markdown_to_blocks(markdown, media_blocks=media_blocks)
+    if isinstance(custom_content, ParseNote) and custom_content:
+        append_content_blocks(rendered, [note_block(custom_content)], hide_content)
+    return rendered
 
 
 def build_rich_media(
@@ -365,28 +370,12 @@ async def edit_inline_rich_message(
     cli: Client,
     inline_message_id: str,
     *,
-    markdown: str = "",
-    media: list[InputRichMessageMedia] | None = None,
-    blocks: list | None = None,
+    blocks: list,
 ) -> bool:
-    """把一条 inline 消息编辑成富文本 (可带媒体)。
-
-    媒体会在这一步真正上传 (peer=self), 所以调用方要保证文件还在本地。
-    返回是否成功 —— **返回值不能当成功判据**, 用户看到的消息才是。
-
-    ``blocks`` 显式传入时走 blocks 路径: 官方 API 的富文本媒体块没有 spoiler 字段,
-    敏感内容只有 raw 的 ``PageBlockPhoto/Video(spoiler=True)`` 才能打码。
-    """
+    """Edit the selected inline message with native blocks in its home DC."""
     unpacked = utils.unpack_inline_message_id(inline_message_id)
     session = await cli.get_session(unpacked.dc_id, is_media=True)
-    if blocks is not None:
-        rich = InputRichMessage(blocks=blocks)
-    else:
-        # 兜底：调用方没给 blocks 时退回字符串通道。**正常路径不该走到这里** ——
-        # 直发/进度/inline/guest 都显式传 blocks（平台原文要当字面量，见
-        # plugins/parse/sender.py 的说明）。
-        logger.debug("edit_inline_rich_message 未收到 blocks, 退回 markdown 通道")
-        rich = InputRichMessage(markdown=markdown, media=media or None)
+    rich = InputRichMessage(blocks=blocks)
     # 媒体上传发生在 write 里 (blocks 路径由各 block 自己上传); 封面 URL 抓不到时
     # 服务端会拒收整条 —— 去掉封面重发一次 (普通路径一直有这个兜底)。
     raw_rich = await with_cover_fallback(rich, lambda r: r.write(client=cli, chat_id=None))
@@ -759,7 +748,7 @@ def build_cached_rich_content(
     lang: str,
     config,
     view_label: str = "",
-    custom_content: str = "",
+    custom_content: str | ParseNote = "",
     spoiler_tag: str = "",
 ) -> tuple[str | list, list[InputRichMessageMedia], dict]:
     """从缓存条目重建富文本正文与媒体块 (file_id 复用, 零上传)。
@@ -817,7 +806,7 @@ def build_cached_rich_content(
         view_count=entry.parse_result.view_count,
         like_count=entry.parse_result.like_count,
         tags=entry.parse_result.tags,
-        custom_content=custom_content,
+        custom_content=custom_content if isinstance(custom_content, str) else "",
         # 原位标记 (``{{media:N}}``) 的 N 是**原始占位符列表**的下标, 末尾追加
         # 才用 collage 合并 —— 所以两条通道分开传: 这里给原始列表, `build_rich_markdown`
         # 内部互换 (原位取原始, 追加走 collage)。
@@ -829,6 +818,12 @@ def build_cached_rich_content(
         hide_content=spoiler_tag,
         platform=platform,
     )
+    if isinstance(custom_content, ParseNote) and custom_content:
+        from plugins.parse.rich_blocks import markdown_to_blocks
+
+        blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
+        append_content_blocks(blocks, [note_block(custom_content)], spoiler_tag)
+        return blocks, media, media_blocks
     return markdown, media, media_blocks
 
 
@@ -1048,7 +1043,7 @@ def extract_cache_media(rich_message) -> list:
     ``RichBlockVideo`` 只有 ``video`` / ``has_spoiler`` / ``caption`` —— 写
     ``getattr(node, "cover", …)`` 永远拿到 ``None``, 于是缓存命中时视频**没有封面**
     (用户报「缓存…没图了」)。正确来源是 ``node.video`` 的 ``video_cover``(兜底 ``thumb``),
-    与直发路径 ``cache_media_from_message`` 的取法一致。
+    Rich and inline delivery share this extraction.
     """
     from services.cache import CacheMedia, CacheMediaType
 

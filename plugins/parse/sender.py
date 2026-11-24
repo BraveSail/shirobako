@@ -1,15 +1,23 @@
 import asyncio
-import os
-from collections.abc import Awaitable, Callable, Sequence
+import shutil
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from itertools import batched
-from typing import TYPE_CHECKING, Any, BinaryIO, cast
+from pathlib import Path
+from tempfile import mkdtemp
+from typing import TYPE_CHECKING, cast
 
 from easy_ai18n import PreLocaleSelector
-from parsehub.types import AniFile, AniRef, AnyMediaRef, AnyParseResult, ImageFile, LivePhotoFile, VideoFile
-from pyrogram import Client, enums, raw, utils
-from pyrogram.errors import FloodWait, Forbidden, SlowmodeWait, WebpageCurlFailed, WebpageMediaEmpty
+from parsehub.types import (
+    AniRef,
+    AnyMediaRef,
+    AnyParseResult,
+    BrokenMedia,
+    LivePhotoFile,
+)
+from pyrogram import Client, enums
+from pyrogram.errors import FloodWait, Forbidden, SlowmodeWait, WebpageCurlFailed
 from pyrogram.types import (
     InlineKeyboardButton as Ikb,
 )
@@ -17,20 +25,18 @@ from pyrogram.types import (
     InlineKeyboardMarkup as Ikm,
 )
 from pyrogram.types import (
-    InputMediaAnimation,
     InputMediaDocument,
-    InputMediaPhoto,
-    InputMediaVideo,
+    InputRichBlock,
+    InputRichBlockDocument,
+    InputRichBlockParagraph,
     InputRichMessage,
     LinkPreviewOptions,
     Message,
-    MessageEntity,
+    RichTextUrl,
 )
 
 from core import bs
 from log import logger
-from plugins.helpers import build_caption, format_label
-from plugins.parse.cache import cache_media_from_message
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
@@ -40,7 +46,7 @@ from plugins.parse.inline_rich import (
     extract_cache_media,
     rich_cache_entry,
 )
-from plugins.parse.x_caption import CaptionNote, build_x_status_caption
+from plugins.parse.notes import ParseNote, append_content_blocks
 from repo.settings import SettingsConfig
 
 if TYPE_CHECKING:
@@ -48,41 +54,20 @@ if TYPE_CHECKING:
     from plugins.parse.reporters import MessageStatusReporter
 from services import (
     CacheEntry,
-    CacheMedia,
-    CacheMediaType,
     PipelineResult,
-    StatusReporter,
     persistent_cache,
 )
-from services.media import ProcessedMedia, resolve_media_info
+from services.media import ProcessedMedia
 from utils.helpers import pack_dir_to_tar_gz, to_list
 
 logger = logger.bind(name="ParseSender")
 
-#: Telegram 媒体 caption 上限 1024, 留余量给元数据行。
-#: 只有**以媒体 caption 发送**的路径需要: send_raw / send_zip。
-#: 富文本正文没有这个限制, 靠折叠收起 (见 helpers.format_text)。
-_CAPTION_MAX_LENGTH = 1000
+_RICH_DOCUMENT_LIMIT = 50
 
 MAX_RETRIES = 5
-GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD = 5
 
 
-type ReplyMediaGroupItem = InputMediaPhoto | InputMediaVideo | InputMediaDocument
-type PathType = str | os.PathLike[str]
-
-
-class _ExplicitEntities(list[MessageEntity]):
-    def __bool__(self) -> bool:
-        # An explicitly empty list still opts out of the SDK parser, which strips
-        # leading/trailing whitespace even with ParseMode.DISABLED.
-        return True
-
-
-def _entity_options(entities: list[MessageEntity] | None, *, field: str = "entities") -> dict[str, Any]:
-    if entities is None:
-        return {}  # Preserve the SDK's default parsing for legacy callers.
-    return {"parse_mode": enums.ParseMode.DISABLED, field: _ExplicitEntities(entities)}
+type PathType = str | Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,19 +140,12 @@ class MessageSender:
     async def upload_document(self) -> None:
         await self.chat_action(enums.ChatAction.UPLOAD_DOCUMENT)
 
-    async def upload_photo(self) -> None:
-        await self.chat_action(enums.ChatAction.UPLOAD_PHOTO)
-
-    async def upload_video(self) -> None:
-        await self.chat_action(enums.ChatAction.UPLOAD_VIDEO)
-
     async def text(
         self,
         text: str,
         *,
         link_preview_options: LinkPreviewOptions | None = None,
         reply_markup: Ikm | None = None,
-        entities: list[MessageEntity] | None = None,
     ) -> Message:
         """发一条文本消息。**默认关闭链接预览**。
 
@@ -187,203 +165,8 @@ class MessageSender:
                     text,
                     link_preview_options=link_preview_options,
                     reply_markup=reply_markup,
-                    **_entity_options(entities),
                 )
             ),
-        )
-
-    async def text_no_preview(
-        self, text: str, *, reply_markup: Ikm | None = None, entities: list[MessageEntity] | None = None
-    ) -> Message:
-        return await self.text(
-            text,
-            link_preview_options=LinkPreviewOptions(is_disabled=True),
-            reply_markup=reply_markup,
-            entities=entities,
-        )
-
-    async def edit_text_with_entities(
-        self, text: str, entities: list[MessageEntity], *, reply_markup: Ikm | None = None
-    ) -> None:
-        # The rich-message SDK's edit_message_text resets its entities argument
-        # before serializing. Use its encoder and send the explicit TL request.
-        fields = await utils.parse_text_entities(
-            self.cli, text, enums.ParseMode.DISABLED, _ExplicitEntities(entities)
-        )
-        await self.cli.invoke(
-            raw.functions.messages.EditMessage(
-                peer=await self.cli.resolve_peer(self.msg.chat.id),
-                id=self.msg.id,
-                no_webpage=True,
-                reply_markup=await reply_markup.write(self.cli) if reply_markup else None,
-                **fields,
-            ),
-            business_connection_id=self.msg.business_connection_id,
-        )
-
-
-    async def document(
-        self,
-        document: PathType | BinaryIO,
-        *,
-        caption: str | None = None,
-        caption_entities: list[MessageEntity] | None = None,
-        force_document: bool | None = None,
-        use_reply_policy: bool = True,
-    ) -> Message:
-        return cast(
-            Message,
-            await self._send_and_schedule_delete(
-                partial(
-                    (self.msg.reply_document if self.config.reply_msg else self.msg.answer_document)
-                    if use_reply_policy
-                    else self.msg.reply_document,
-                    document,
-                    caption=caption or "",
-                    force_document=force_document,
-                    **_entity_options(caption_entities, field="caption_entities"),
-                )
-            ),
-        )
-
-    def reply_to(self, msg: Message) -> "MessageSender":
-        return replace(self, msg=msg)
-
-    async def force_document(
-        self,
-        document: PathType | BinaryIO,
-        *,
-        caption: str | None = None,
-        caption_entities: list[MessageEntity] | None = None,
-        use_reply_policy: bool = True,
-    ) -> Message:
-        return await self.document(
-            document,
-            caption=caption,
-            caption_entities=caption_entities,
-            force_document=True,
-            use_reply_policy=use_reply_policy,
-        )
-
-    async def photo(
-        self, photo: PathType | BinaryIO, *, caption: str | None = None, has_spoiler: bool = False
-    ) -> Message:
-        return cast(
-            Message,
-            await self._send_and_schedule_delete(
-                partial(
-                    self.msg.reply_photo if self.config.reply_msg else self.msg.answer_photo,
-                    photo,
-                    caption=caption or "",
-                    has_spoiler=has_spoiler,
-                )
-            ),
-        )
-
-    async def video(
-        self,
-        video: PathType | BinaryIO,
-        *,
-        caption: str | None = None,
-        video_cover: PathType | BinaryIO | None = None,
-        duration: int | None = None,
-        width: int | None = None,
-        height: int | None = None,
-        supports_streaming: bool | None = None,
-        has_spoiler: bool = False,
-    ) -> Message:
-        return cast(
-            Message,
-            await self._send_and_schedule_delete(
-                partial(
-                    self.msg.reply_video if self.config.reply_msg else self.msg.answer_video,
-                    video,
-                    caption=caption or "",
-                    has_spoiler=has_spoiler,
-                    video_cover=video_cover,
-                    duration=duration or 0,
-                    width=width or 0,
-                    height=height or 0,
-                    supports_streaming=True if supports_streaming is None else supports_streaming,
-                )
-            ),
-        )
-
-    async def streaming_video(
-        self,
-        video: PathType | BinaryIO,
-        *,
-        caption: str | None = None,
-        video_cover: PathType | BinaryIO | None = None,
-        duration: int | None = None,
-        width: int | None = None,
-        height: int | None = None,
-        has_spoiler: bool = False,
-    ) -> Message:
-        return await self.video(
-            video,
-            caption=caption,
-            video_cover=video_cover,
-            duration=duration,
-            width=width,
-            height=height,
-            supports_streaming=True,
-            has_spoiler=has_spoiler,
-        )
-
-    async def streaming_video_with_cover_fallback(
-        self,
-        video: PathType | BinaryIO,
-        *,
-        caption: str | None = None,
-        video_cover: PathType | BinaryIO | None = None,
-        duration: int | None = None,
-        width: int | None = None,
-        height: int | None = None,
-        has_spoiler: bool = False,
-    ) -> Message:
-        try:
-            return await self.streaming_video(
-                video,
-                caption=caption,
-                video_cover=video_cover,
-                duration=duration,
-                width=width,
-                height=height,
-                has_spoiler=has_spoiler,
-            )
-        except (WebpageCurlFailed, WebpageMediaEmpty):
-            logger.warning("Tg 获取封面失败, 移除封面上传")
-            return await self.streaming_video(
-                video,
-                caption=caption,
-                duration=duration,
-                width=width,
-                height=height,
-                has_spoiler=has_spoiler,
-            )
-
-    async def animation(
-        self, animation: PathType | BinaryIO, *, caption: str | None = None, has_spoiler: bool = False
-    ) -> Message:
-        return cast(
-            Message,
-            await self._send_and_schedule_delete(
-                partial(
-                    self.msg.reply_animation if self.config.reply_msg else self.msg.answer_animation,
-                    animation,
-                    caption=caption or "",
-                    has_spoiler=has_spoiler,
-                )
-            ),
-        )
-
-    async def media_group(self, media: list[ReplyMediaGroupItem]) -> list[Message]:
-        return await self._send_and_schedule_delete(
-            partial(
-                self.msg.reply_media_group if self.config.reply_msg else self.msg.answer_media_group,
-                media=cast(Any, media),
-            )
         )
 
     async def rich_message(
@@ -406,117 +189,61 @@ class MessageSender:
         )
 
 
-def build_delivery_caption(
-    parse_result: AnyParseResult,
-    *,
-    config: SettingsConfig,
-    _t: PreLocaleSelector,
-    custom_content: str | CaptionNote = "",
-    raw_url: str = "",
-    media_caption: bool = False,
-) -> tuple[str, list[MessageEntity] | None]:
-    """Render native entities when structured source data is available."""
-    caption_builder = None
-    if getattr(parse_result, "document", None) is not None:
-        from plugins.parse.document_caption import build_document_caption
+def _file_block(path: PathType) -> InputRichBlockDocument:
+    return InputRichBlockDocument(InputMediaDocument(media=Path(path)))
 
-        caption_builder = build_document_caption
-    elif getattr(parse_result, "x_status", None) is not None:
-        caption_builder = build_x_status_caption
-    if caption_builder is not None:
-        return caption_builder(
-            parse_result,
-            config=config,
-            custom_content=custom_content,
-            lang=_t.locale,
-            view_label=_t("查看"),
-            raw_url=raw_url,
-            max_length=_CAPTION_MAX_LENGTH if media_caption else 4096,
-        )
-    return build_caption(
-        parse_result,
-        config=config,
-        custom_content=custom_content.text if isinstance(custom_content, CaptionNote) else custom_content,
-        lang=_t.locale,
-        view_label=_t("查看"),
-        max_length=_CAPTION_MAX_LENGTH if media_caption else None,
-    ), None
+
+def _original_file_blocks(result: PipelineResult, *, attach_files: bool) -> Iterator[InputRichBlock]:
+    # Keep failed downloads as links, not as preview media slots (especially for ZIP).
+    refs = to_list(result.parse_result.media)
+    for i, processed in enumerate(result.processed_list):
+        source = processed.source
+        if isinstance(source, BrokenMedia):
+            url = source.url or (refs[i].url if i < len(refs) else "")
+            if url:
+                yield InputRichBlockParagraph(RichTextUrl(url, url))
+        elif attach_files:
+            for path in processed.output_paths or [source.path]:
+                yield _file_block(path)
+            if isinstance(source, LivePhotoFile) and source.video_path:
+                yield _file_block(source.video_path)
+    for ref in refs[len(result.processed_list):]:
+        if isinstance(ref, AniRef) and ref.url:
+            yield InputRichBlockParagraph(RichTextUrl(ref.url, ref.url))
 
 
 async def send_raw(
     sender: MessageSender,
     result: PipelineResult,
-    reporter: StatusReporter,
+    reporter: "MessageStatusReporter",
     *,
     _t: PreLocaleSelector,
-    custom_content: str | CaptionNote = "",
+    custom_content: str | ParseNote = "",
+    spoiler_tag: str = "",
 ) -> None:
     """Raw 模式：将文件以原始文档形式上传。"""
     logger.debug("Raw 模式, 直接上传文件")
     display_result = result.display_result or result.parse_result
-    await reporter.report_result(display_result, _t("上 传 中..."))
     try:
-        caption, entities = build_delivery_caption(
-            display_result,
-            config=sender.config,
-            _t=_t,
-            custom_content=custom_content,
-            media_caption=True,
+        await reporter.report_result(display_result, _t("上 传 中..."))
+        refs = to_list(result.parse_result.media)
+        # Inline buttons are outside the rich blocks, so don't expose GIF links with a spoiler.
+        markup = (
+            build_gif_button(refs)
+            if not spoiler_tag and len(refs) > 1 and any(isinstance(ref, AniRef) for ref in refs)
+            else None
         )
-        docs: list[InputMediaDocument] = []
-        gifs = []
-        livephoto_videos: dict[int, InputMediaDocument] = {}
-
-        for processed in result.processed_list:
-            file_paths = processed.output_paths or [processed.source.path]
-            file_path = file_paths[0]
-            doc = InputMediaDocument(media=str(file_path))
-            if isinstance(processed.source, AniFile):
-                gifs.append(doc)
-            elif isinstance(processed.source, LivePhotoFile):
-                docs.append(doc)
-                livephoto_videos[len(docs) - 1] = InputMediaDocument(media=str(processed.source.video_path))
-            else:
-                docs.append(doc)
-
-        if len(docs + gifs) == 1:
-            all_docs = docs + gifs
-            await sender.upload_document()
-            sent_msg = await sender.force_document(
-                media_input(all_docs[0].media), caption=caption, caption_entities=entities
-            )
-            if livephoto_videos and sent_msg:
-                await sender.reply_to(sent_msg).force_document(
-                    media_input(livephoto_videos[0].media),
-                    use_reply_policy=False,
-                )
-        else:
-            msgs: list[Message] = []
-            for batch in batched(docs, 10):
-                await sender.upload_document()
-                mg = await sender.media_group(list(batch))
-                msgs.extend(mg)
-            if livephoto_videos:
-                for idx, media_doc in livephoto_videos.items():
-                    await sender.upload_document()
-                    await sender.reply_to(msgs[idx]).force_document(
-                        media_input(media_doc.media),
-                        use_reply_policy=False,
-                    )
-            if gifs:
-                await sender.text(
-                    format_label(_t("GIF 下载链接")),
-                    reply_markup=build_gif_button(to_list(result.parse_result.media)),
-                )
-            await sender.text_no_preview(caption, entities=entities)
-
+        await sender.upload_document()
+        await send_rich_media(
+            sender, display_result, [], _t=_t, custom_content=custom_content, reporter=reporter,
+            spoiler_tag=spoiler_tag, reply_markup=markup,
+            file_blocks=tuple(_original_file_blocks(result, attach_files=True)),
+        )
     except Exception as e:
         logger.opt(exception=e).debug("详细堆栈")
         logger.error(f"Raw 模式上传失败: {e}")
         await reporter.report_error(_t("上传"), e)
         return
-    else:
-        await reporter.dismiss()
     finally:
         result.cleanup()
 
@@ -524,48 +251,62 @@ async def send_raw(
 async def send_zip(
     sender: MessageSender,
     result: PipelineResult,
-    reporter: StatusReporter,
+    reporter: "MessageStatusReporter",
     *,
     _t: PreLocaleSelector,
-    custom_content: str | CaptionNote = "",
+    custom_content: str | ParseNote = "",
+    spoiler_tag: str = "",
 ) -> None:
     logger.debug("Zip 模式, 开始打包")
     display_result = result.display_result or result.parse_result
-    await reporter.report_result(display_result, _t("打 包 中..."))
+    archive_dir: Path | None = None
     try:
-        caption, entities = build_delivery_caption(
-            display_result,
-            config=sender.config,
-            _t=_t,
-            custom_content=custom_content,
-            media_caption=True,
-        )
-        if result.output_dir is None:
-            raise ValueError("缺少打包目录")
-        pack_path = await asyncio.to_thread(pack_dir_to_tar_gz, result.output_dir)
-    except Exception as e:
-        logger.opt(exception=e).debug("详细堆栈")
-        logger.error(f"打包失败: {e}")
-        await reporter.report_error(_t("打包"), Exception("..."))
-        return
-    finally:
-        result.cleanup()
+        try:
+            await reporter.report_result(display_result, _t("打 包 中..."))
+            if (source := result.output_dir) is None:
+                raise ValueError("缺少打包目录")
+            # The source directory can be reused as soon as cleanup finishes;
+            # the upload must own a separate archive directory until it ends.
+            archive_dir = Path(mkdtemp(prefix="parsehub-archive-", dir=source.parent))
+            destination = archive_dir / source.with_suffix(".tar.gz").name
+            packer = asyncio.create_task(asyncio.to_thread(pack_dir_to_tar_gz, source, destination))
+            try:
+                pack_path = await asyncio.shield(packer)
+            except asyncio.CancelledError:
+                # Cancelling to_thread does not stop the archive writer. Keep
+                # both directories until it exits, even on repeated cancel.
+                while not packer.done():
+                    try:
+                        await asyncio.shield(packer)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+                if not packer.cancelled():
+                    packer.exception()
+                raise
+        except Exception as e:
+            logger.opt(exception=e).debug("详细堆栈")
+            logger.error(f"打包失败: {e}")
+            await reporter.report_error(_t("打包"), Exception("..."))
+            return
+        finally:
+            result.cleanup()
 
-    await reporter.report_result(display_result, _t("上 传 中..."))
-    try:
+        await reporter.report_result(display_result, _t("上 传 中..."))
         await sender.upload_document()
-        await sender.document(str(pack_path), caption=caption, caption_entities=entities)
+        await send_rich_media(
+            sender, display_result, [], _t=_t, custom_content=custom_content, reporter=reporter,
+            spoiler_tag=spoiler_tag,
+            file_blocks=(_file_block(pack_path), *_original_file_blocks(result, attach_files=False)),
+        )
     except Exception as e:
         logger.opt(exception=e).debug("详细堆栈")
         logger.error(f"上传失败: {e}")
         await reporter.report_error(_t("上传"), e)
-        return
-    else:
-        await reporter.dismiss()
     finally:
-        if not bs.debug_skip_cleanup:
-            logger.debug("清理压缩包")
-            os.remove(pack_path)
+        if archive_dir is not None and not bs.debug_skip_cleanup:
+            shutil.rmtree(archive_dir, ignore_errors=True)
 
 
 async def send_cached(
@@ -573,7 +314,7 @@ async def send_cached(
     entry: CacheEntry,
     url: str,
     *,
-    custom_content: str = "",
+    custom_content: str | ParseNote = "",
     _t: PreLocaleSelector | None = None,
     spoiler_tag: str = "",
 ) -> None:
@@ -604,8 +345,17 @@ async def send_cached(
     )
 
 
-def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
-    return cast(PathType | BinaryIO, media)
+def _attachment_batches(blocks: Sequence[InputRichBlock]) -> Iterator[list[InputRichBlock]]:
+    chunk: list[InputRichBlock] = []
+    documents = 0
+    for block in blocks:
+        if isinstance(block, InputRichBlockDocument):
+            if documents == _RICH_DOCUMENT_LIMIT:
+                yield chunk
+                chunk, documents = [], 0
+            documents += 1
+        chunk.append(block)
+    yield chunk
 
 
 async def send_rich_media(
@@ -614,16 +364,19 @@ async def send_rich_media(
     processed_list: list[ProcessedMedia],
     *,
     _t: PreLocaleSelector,
-    custom_content: str = "",
+    custom_content: str | ParseNote = "",
     raw_url: str = "",
     reporter: "MessageStatusReporter | None" = None,
     spoiler_tag: str = "",
     cache_parse_result: AnyParseResult | None = None,
+    reply_markup: Ikm | None = None,
+    file_blocks: Sequence[InputRichBlock] = (),
 ) -> bool:
     """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。
 
     :param spoiler_tag: 用户手动要求遮住内容 (链接后跟 ``/s``) —— 正文折成
         ``<details><summary>⚠️</summary>``, 不留预览。
+    :param file_blocks: 原文件及下载失败链接，不充当正文媒体槽。附件分批，不写媒体缓存。
 
     给了 ``reporter`` 且它已经发过状态消息时, 结果会**编辑进那条状态消息**
     (整个流程只留一条消息, 没有删除记录、没有多余临时消息); 否则新建一条。
@@ -635,7 +388,7 @@ async def send_rich_media(
     # 视频封面要本地文件: 富文本的 document 只带 id, 远端 cover 会被丢掉
     video_thumbs = (
         await prepare_video_thumbs(media_refs, platform=parse_result.platform)
-        if sender.config.video_cover
+        if sender.config.video_cover and processed_list
         else {}
     )
     media, placeholders, media_blocks, quoted_placeholders, reply_placeholders, media_urls = build_rich_media(
@@ -661,12 +414,28 @@ async def send_rich_media(
         media_urls=media_urls,
         hide_content=spoiler_tag,
     )
+    batches = _attachment_batches(file_blocks)
+    attachments = next(batches)
+    append_content_blocks(blocks, attachments, spoiler_tag)
     logger.debug(f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}")
     rich = InputRichMessage(blocks=blocks)
 
-    message = await _post_rich(sender, rich, reporter=reporter)
+    message = await _post_rich(sender, rich, reporter=reporter, reply_markup=reply_markup)
+    # Only the first batch replaces the status message. Overflow attachments
+    # inherit the spoiler fold but do not repeat the body or reply keyboard.
+    for attachments in batches:
+        extra: list[InputRichBlock] = []
+        append_content_blocks(extra, attachments, spoiler_tag)
+        try:
+            await _post_rich(sender, InputRichMessage(blocks=extra))
+        except Exception as exc:
+            if reporter is None:
+                raise
+            logger.warning("后续文件批次上传失败，保留已发结果: {}", type(exc).__name__)
+            await reporter.report_error(_t("上传"), exc, keep_result=True)
+            return False
 
-    if raw_url and media:
+    if raw_url and media and not file_blocks:
         cached_media = extract_cache_media(getattr(message, "rich_message", None))
         is_document = getattr(parse_result, "document", None) is not None
         # A document may display one downloaded image several times. The mapper
@@ -699,6 +468,7 @@ async def _post_rich(
     rich: InputRichMessage,
     *,
     reporter: "MessageStatusReporter | None" = None,
+    reply_markup: Ikm | None = None,
 ) -> Message:
     """发布富文本结果: 优先编辑状态消息, 不行再新建。
 
@@ -707,16 +477,20 @@ async def _post_rich(
     """
     from plugins.parse.inline_rich import strip_video_cover
 
+    markup_options = {} if reply_markup is None else {"reply_markup": reply_markup}
+
     async def _send(r: InputRichMessage) -> Message:
         if reporter is not None and reporter.has_message:
             try:
-                if (edited := await reporter.finalize(r)) is not None:
+                if (edited := await reporter.finalize(r, **markup_options)) is not None:
+                    if getattr(sender, "delete_after_seconds", None) is not None:
+                        sender._delete_later(edited)
                     return edited
             except WebpageCurlFailed:
                 raise  # 交给外层"去掉封面重试", 别退化成新建一条
             except Exception as e:
                 logger.warning(f"编辑状态消息失败, 改为新建结果: {type(e).__name__}: {e}")
-        return await sender.rich_message(rich_message=r, raise_cover_error=True)
+        return await sender.rich_message(rich_message=r, raise_cover_error=True, **markup_options)
 
     try:
         return await _send(rich)
@@ -727,104 +501,6 @@ async def _post_rich(
         return await _send(strip_video_cover(rich))
 
 
-def build_input_media(
-    media_refs: Sequence[AnyMediaRef],
-    processed_list: list[ProcessedMedia],
-    *,
-    video_cover: bool,
-    is_sensitive: bool = False,
-) -> tuple[list[InputMediaPhoto | InputMediaVideo], list[InputMediaAnimation]]:
-    """根据处理结果和媒体引用构建 Telegram InputMedia 列表。"""
-    photos_videos: list[InputMediaPhoto | InputMediaVideo] = []
-    animations: list[InputMediaAnimation] = []
-
-    for media_ref, processed in zip(media_refs, processed_list, strict=False):
-        file_paths = processed.output_paths or [processed.source.path]
-        for file_path in file_paths:
-            file_path_str = str(file_path)
-            width, height, duration = resolve_media_info(processed, file_path_str)
-
-            match processed.source:
-                case ImageFile():
-                    photos_videos.append(InputMediaPhoto(media=file_path_str, has_spoiler=is_sensitive))
-                case AniFile():
-                    animations.append(InputMediaAnimation(media=file_path_str, has_spoiler=is_sensitive))
-                case VideoFile():
-                    photos_videos.append(
-                        InputMediaVideo(
-                            media=file_path_str,
-                            has_spoiler=is_sensitive,
-                            video_cover=media_ref.thumb_url if video_cover else None,
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            supports_streaming=True,
-                        )
-                    )
-                case LivePhotoFile():
-                    photos_videos.append(
-                        InputMediaVideo(
-                            media=processed.source.video_path,
-                            has_spoiler=is_sensitive,
-                            video_cover=file_path_str if video_cover else None,
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            supports_streaming=True,
-                        )
-                    )
-
-    return photos_videos, animations
-
-
-async def send_single(
-    sender: MessageSender,
-    photos_videos: list[InputMediaPhoto | InputMediaVideo],
-    animations: list[InputMediaAnimation],
-    caption: str,
-) -> list[CacheMedia] | None:
-    """发送单个媒体，返回 CacheMedia 列表。上传失败时降级为 document。"""
-    media_list: list[CacheMedia] = []
-    all_media = animations + photos_videos
-
-    try:
-        sent: Message | None = None
-        if animations:
-            await sender.upload_photo()
-            sent = await sender.animation(
-                media_input(animations[0].media), caption=caption, has_spoiler=animations[0].has_spoiler
-            )
-        else:
-            single = photos_videos[0]
-            match single:
-                case InputMediaPhoto():
-                    await sender.upload_photo()
-                    sent = await sender.photo(
-                        media_input(single.media), caption=caption, has_spoiler=single.has_spoiler
-                    )
-                case InputMediaVideo():
-                    await sender.upload_video()
-                    sent = await sender.streaming_video_with_cover_fallback(
-                        media_input(single.media),
-                        caption=caption,
-                        video_cover=single.video_cover,
-                        duration=single.duration,
-                        width=single.width,
-                        height=single.height,
-                        has_spoiler=single.has_spoiler,
-                    )
-
-        if sent and (cm := cache_media_from_message(sent)):
-            media_list.append(cm)
-    except Exception as e:
-        logger.warning(f"上传失败 {e}, 使用兼容模式上传")
-        await sender.upload_document()
-        await sender.force_document(media_input(all_media[0].media), caption=caption)
-        return None
-
-    return media_list
-
-
 def build_gif_button(media_refs: Sequence[AnyMediaRef]) -> Ikm:
     buttons = []
     n = 5
@@ -833,69 +509,5 @@ def build_gif_button(media_refs: Sequence[AnyMediaRef]) -> Ikm:
             buttons.append(Ikb(f"{i + 1}", url=v.url))
     ikbs = [list(i) for i in batched(buttons, n)]
     return Ikm(ikbs)
-
-
-async def send_multi(
-    sender: MessageSender,
-    photos_videos: list[InputMediaPhoto | InputMediaVideo],
-    animations: list[InputMediaAnimation],
-    caption: str,
-    media_refs: Sequence[AnyMediaRef],
-    *,
-    _t: PreLocaleSelector,
-) -> list[CacheMedia] | None:
-    """发送多个媒体（动图逐条、图片视频分批），返回 CacheMedia 列表。"""
-    media_list: list[CacheMedia] = []
-    not_cache = False
-    if len([i for i in media_refs if isinstance(i, AniRef)]) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD:
-        not_cache = True
-        await sender.text(
-            format_label(_t("GIF 过多跳过上传, 请自行下载")),
-            reply_markup=build_gif_button(media_refs),
-        )
-    else:
-        for ani in animations:
-            await sender.upload_photo()
-            caption_ = caption if ani == animations[-1] and not photos_videos else ""
-            try:
-                sent = await sender.animation(
-                    media_input(ani.media), caption=caption_, has_spoiler=ani.has_spoiler
-                )
-            except Exception as e:
-                logger.warning(f"上传失败 {e}, 使用兼容模式上传")
-                not_cache = True
-                await sender.upload_document()
-                await sender.force_document(media_input(ani.media), caption=caption_)
-            else:
-                if sent and sent.document:
-                    media_list.append(CacheMedia(type=CacheMediaType.DOCUMENT, file_id=sent.document.file_id))
-                elif sent and sent.animation:
-                    media_list.append(CacheMedia(type=CacheMediaType.ANIMATION, file_id=sent.animation.file_id))
-
-    try:
-        for batch in batched(photos_videos, 10):
-            if batch[-1] == photos_videos[-1]:
-                batch[0].caption = caption
-
-            await sender.upload_photo()
-            sent_msgs = await sender.media_group(list(batch))
-            for m in sent_msgs:
-                if cm := cache_media_from_message(m):
-                    media_list.append(cm)
-    except Exception as e:
-        logger.warning(f"上传失败 {e}, 使用兼容模式上传")
-        input_documents: list[InputMediaDocument] = [
-            InputMediaDocument(media=media_input(item.media)) for item in photos_videos
-        ]
-        for document_batch in batched(input_documents, 10):
-            if document_batch[-1] == input_documents[-1]:
-                document_batch[-1].caption = caption
-
-            await sender.upload_document()
-            await sender.media_group(list(document_batch))
-        return None
-
-    return None if not_cache else media_list
-
 
 

@@ -1,17 +1,30 @@
 """Exercise ordinary bot delivery through the SDK's request encoder, without network I/O."""
 
 import asyncio
+import tarfile
 from contextlib import nullcontext
 from io import BytesIO
+from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from parsehub import Platform
-from parsehub.types import AniRef, ImageFile, ImageRef, MultimediaParseResult, VideoFile, VideoRef
+from parsehub.types import (
+    AniFile,
+    AniRef,
+    BrokenMedia,
+    ImageFile,
+    ImageRef,
+    LivePhotoFile,
+    MultimediaParseResult,
+    VideoFile,
+    VideoRef,
+)
 from parsehub.types.document import Block, Document, paragraph
 from parsehub.types.x_status import TextRun, XPost, XStatus
-from pyrogram import Client, enums, raw, utils
+from pyrogram import Client, enums, raw
 from pyrogram.errors import MessageIdInvalid, WebpageCurlFailed
 from pyrogram.file_id import FileId
 from pyrogram.raw.core import TLObject
@@ -21,6 +34,7 @@ from i18n import t_
 from plugins import helpers
 from plugins.parse import handlers, rich_blocks
 from plugins.parse import sender as delivery
+from plugins.parse.notes import extract_note
 from plugins.parse.reporters import MessageStatusReporter
 from repo.settings import ParseMode, SettingsConfig
 from services import PipelineResult
@@ -63,26 +77,6 @@ def _walk(node):
 
 def _text(node):
     return "".join(n.text for n in _walk(node) if isinstance(n, raw.types.TextPlain))
-
-
-def _caption_spans(rpc):
-    return {
-        (
-            type(e),
-            rpc.message.encode("utf-16-le")[e.offset * 2 : (e.offset + e.length) * 2].decode("utf-16-le"),
-            getattr(e, "url", None),
-        )
-        for e in rpc.entities or ()
-    }
-
-
-def _assert_caption(rpc):
-    assert rpc.message.startswith(_LITERAL + _LINK_LABEL)
-    spans = _caption_spans(rpc)
-    assert (raw.types.MessageEntityTextUrl, _LINK_LABEL, _LINK) in spans
-    assert (raw.types.MessageEntityBold, _LINK_LABEL, None) in spans
-    assert (raw.types.MessageEntityTextUrl, "Source (Twitter)", _SOURCE) in spans
-    assert not any(kind is raw.types.MessageEntitySpoiler for kind, _, _ in spans)
 
 
 def _set_note(wire, mode, *, formatted=True, source=_SOURCE):
@@ -145,21 +139,11 @@ async def _parse_from_message(monkeypatch, wire, result, *, source=_SOURCE):
     await handlers.parse(wire.cli, wire.msg)
 
 
-def _assert_note(query, *, formatted=True):
-    assert f"\n\n{_NOTE}" in query.message
-    assert "ignored" not in query.message and "second" not in query.message
-    spans = _caption_spans(query)
-    assert not any(label == "🧪" for _, label, _ in spans)
-    expected = {(raw.types.MessageEntityBold, _NOTE, None), (raw.types.MessageEntityTextUrl, _NOTE_LABEL, _NOTE_LINK)}
-    assert (expected & spans) == (expected if formatted else set())
-
-
 class _Wire:
     """Only peer lookup, file upload and network I/O are replaced."""
 
     def __init__(self, monkeypatch, *, reject_edit=None, reject_cover=False, config=None):
         self.events = []
-        self.modes = {}
         self.reject_edit = reject_edit
         self.reject_cover = reject_cover
         self.cli = Client("offline-delivery", in_memory=True)
@@ -168,14 +152,6 @@ class _Wire:
         monkeypatch.setattr(self.cli, "save_file", self.save_file)
         monkeypatch.setattr(self.cli, "invoke", self.invoke)
 
-        encode_entities = utils.parse_text_entities
-
-        async def capture_mode(client, text, parse_mode, entities):
-            if client is self.cli:
-                self.modes[text] = parse_mode
-            return await encode_entities(client, text, parse_mode, entities)
-
-        monkeypatch.setattr(utils, "parse_text_entities", capture_mode)
         self.chat = Chat(id=_PEER.user_id, type=enums.ChatType.PRIVATE, client=self.cli)
         self.msg = Message(id=41, chat=self.chat, client=self.cli)
         self.config = config or SettingsConfig(noprogress=True, video_cover=False)
@@ -329,8 +305,9 @@ def test_final_cover_failure_retries_without_cover(monkeypatch, tmp_path, overwr
 
 
 @pytest.mark.parametrize("mode, file_count", [(ParseMode.RAW, 1), (ParseMode.RAW, 2), (ParseMode.ZIP, 1)])
-def test_file_delivery_sends_native_caption_or_text(monkeypatch, tmp_path, mode, file_count):
-    monkeypatch.setattr(delivery, "build_caption", _reject_legacy)
+def test_file_delivery_sends_originals_with_literal_rich_body(monkeypatch, tmp_path, mode, file_count):
+    cache = AsyncMock()
+    monkeypatch.setattr(delivery, "persistent_cache", SimpleNamespace(set=cache))
     out = tmp_path / "output"
     out.mkdir()
     paths = [out / f"{i}.jpg" for i in range(file_count)]
@@ -344,32 +321,236 @@ def test_file_delivery_sends_native_caption_or_text(monkeypatch, tmp_path, mode,
 
     async def run():
         wire = _Wire(monkeypatch, config=SettingsConfig(noprogress=True, custom_content=True))
+        if mode == ParseMode.ZIP:
+            async def save_archive(path, **kwargs):
+                if path is None:
+                    return None
+                assert not out.exists()
+                assert Path(path).parent != out.parent
+                with tarfile.open(path, "r:gz") as tar:
+                    (name,) = [member.name for member in tar.getmembers() if member.isfile()]
+                    assert name == "output/0.jpg"
+                    original = tar.extractfile(name)
+                    assert original is not None and original.read() == b"offline upload"
+                return await wire.save_file(path, **kwargs)
+
+            monkeypatch.setattr(wire.cli, "save_file", save_archive)
         _set_note(wire, mode)
         incoming_spans = [(entity.offset, entity.length) for entity in wire.msg.entities]
-        await _parse_from_message(monkeypatch, wire, result)
-        if file_count == 1:
-            (query,) = wire.select(_RPCS.SendMedia)
-            assert isinstance(query.media, raw.types.InputMediaUploadedDocument)
-            assert not wire.select(_RPCS.SendMessage)
-        else:
-            (group,) = wire.select(_RPCS.SendMultiMedia)
-            assert len(group.multi_media) == file_count
-            assert all(not item.message and not item.entities for item in group.multi_media)
-            (query,) = wire.select(_RPCS.SendMessage)
-            assert query.no_webpage
-        _assert_caption(query)
-        _assert_note(query)
+        note = extract_note(wire.msg.text, wire.msg.entities)
+        send = delivery.send_zip if mode == ParseMode.ZIP else delivery.send_raw
+        await send(wire.sender, result, wire.reporter, _t=_t, custom_content=note)
+        assert not wire.select(_RPCS.SendMedia) and not wire.select(_RPCS.SendMultiMedia)
+        (query,) = wire.select(_RPCS.SendMessage)
+        assert query.message == "" and not query.entities
+        assert isinstance(query.rich_message, raw.types.InputRichMessage)
+        blocks = query.rich_message.blocks
+        assert _text(blocks).startswith(_LITERAL + _LINK_LABEL)
+        assert _NOTE in _text(blocks) and "ignored" not in _text(blocks) and "second" not in _text(blocks)
+        bold = {_text(n) for n in _walk(blocks) if isinstance(n, raw.types.TextBold)}
+        assert {_LINK_LABEL, _NOTE.split(_NOTE_LABEL)[0], _NOTE_LABEL} <= bold
+        links = {(n.url, _text(n)) for n in _walk(blocks) if isinstance(n, raw.types.TextUrl)}
+        assert links == {(_LINK, _LINK_LABEL), (_NOTE_LINK, _NOTE_LABEL), (_SOURCE, "Source (Twitter)")}
+        assert all(isinstance(b, raw.types.PageBlockDocument) for b in blocks[-2 - file_count:-2])
+        assert isinstance(blocks[-1], raw.types.PageBlockFooter)
+        assert len(query.rich_message.documents) == file_count and not query.rich_message.photos
+        uploads = wire.select(_RPCS.UploadMedia)
+        assert all(isinstance(u.media, raw.types.InputMediaUploadedDocument) and u.media.force_file for u in uploads)
+        assert [Path(u.media.file.name).name for u in uploads] == (
+            ["output.tar.gz"] if mode == ParseMode.ZIP else [p.name for p in paths]
+        )
         assert [(entity.offset, entity.length) for entity in wire.msg.entities] == incoming_spans
-        assert wire.modes[query.message] is enums.ParseMode.DISABLED
+        cache.assert_not_awaited()
         assert not out.exists()
         assert not out.with_suffix(".tar.gz").exists()
+        if mode == ParseMode.ZIP:
+            assert not Path(uploads[0].media.file.name).parent.exists()
 
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("status", ["edit", "rejected", "no-status", "entityless"])
-def test_gif_only_uses_ordinary_entities_with_buttons_on_edit_and_fallback(monkeypatch, status):
-    monkeypatch.setattr(delivery, "build_caption", _reject_legacy)
+def test_zip_waits_for_packer_even_when_cancelled_twice(monkeypatch, tmp_path):
+    out = tmp_path / "download"
+    out.mkdir()
+    (out / "source.txt").write_text("original")
+    release = Event()
+    destinations = []
+    original_pack = delivery.pack_dir_to_tar_gz
+
+    async def run():
+        wire = _Wire(monkeypatch)
+        started = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def paused_pack(source, output_path=None):
+            destinations.append(output_path)
+            loop.call_soon_threadsafe(started.set)
+            if not release.wait(5):
+                raise TimeoutError("test did not release archive thread")
+            return original_pack(source, output_path)
+
+        monkeypatch.setattr(delivery, "pack_dir_to_tar_gz", paused_pack)
+        pending = asyncio.create_task(
+            delivery.send_zip(wire.sender, PipelineResult(_result(), output_dir=out), wire.reporter, _t=_t),
+        )
+        await asyncio.wait_for(started.wait(), timeout=3)
+        try:
+            for _ in range(2):
+                pending.cancel()
+                await asyncio.sleep(0.01)
+            waiting = not pending.done() and out.is_dir() and destinations[0].parent.is_dir()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(pending, timeout=3)
+        assert waiting
+        assert not out.exists() and not destinations[0].parent.exists()
+        assert not wire.select(_RPCS.UploadMedia)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("status, spoiler", [("edit", ""), ("edit", "#剧透"), ("rejected", ""), ("none", "")])
+def test_raw_finalizes_with_live_photo_gif_and_failed_link(monkeypatch, tmp_path, status, spoiler):
+    paths = [tmp_path / name for name in ("live-processed.jpg", "live.mov", "local.gif")]
+    for path in paths:
+        path.write_bytes(b"original bytes")
+    gif = AniRef(url="https://example.org/local.gif")
+    broken = "https://example.org/broken.png"
+    missing_gif = "https://example.org/not-downloaded.gif"
+    parsed = _result(media=[
+        ImageRef(url="https://example.org/live.jpg"), gif, ImageRef(url=broken), AniRef(url=missing_gif),
+    ])
+    result = PipelineResult(parsed, [
+        ProcessedMedia(LivePhotoFile(path=tmp_path / "unused.jpg", video_path=paths[1], width=1), [paths[0]]),
+        ProcessedMedia(AniFile(path=paths[2], width=1, duration=1)),
+        ProcessedMedia(BrokenMedia(path="", url=broken)),
+    ])
+
+    async def run():
+        wire = _Wire(monkeypatch, reject_edit=MessageIdInvalid() if status == "rejected" else None)
+        if status != "none":
+            wire.status_message()
+        await delivery.send_raw(wire.sender, result, wire.reporter, _t=_t, spoiler_tag=spoiler)
+        assert not wire.select(_RPCS.SendMedia) and not wire.select(_RPCS.SendMultiMedia)
+        uploads = [Path(u.media.file.name) for u in wire.select(_RPCS.UploadMedia)]
+        if status == "edit":
+            (query,) = wire.select(_RPCS.EditMessage)
+            assert query.id == 99 and not wire.select(_RPCS.SendMessage)
+        else:
+            (query,) = wire.select(_RPCS.SendMessage)
+            if status == "rejected":
+                (edit,) = wire.select(_RPCS.EditMessage)
+                assert edit.id == 99 and edit.reply_markup.write() == query.reply_markup.write()
+                assert edit.rich_message.write() == query.rich_message.write()
+            else:
+                assert not wire.select(_RPCS.EditMessage)
+        assert query.message == ""
+        assert uploads == (paths * 2 if status == "rejected" else paths)
+        assert len(query.rich_message.documents) == 3
+        outer = query.rich_message.blocks
+        if spoiler:
+            (fold,) = [b for b in outer if isinstance(b, raw.types.PageBlockDetails)]
+            assert _text(fold.title) == "⚠️ #剧透" and not fold.open
+            assert not any(isinstance(b, raw.types.PageBlockDocument) for b in outer)
+            assert query.reply_markup is None
+            blocks = fold.blocks
+        else:
+            buttons = [button.type.url for row in query.reply_markup.rows for button in row.buttons]
+            assert buttons == [gif.url, missing_gif]
+            blocks = outer
+        assert sum(isinstance(b, raw.types.PageBlockDocument) for b in blocks) == 3
+        assert {broken, missing_gif} <= {b.url for b in _walk(blocks) if isinstance(b, raw.types.TextUrl)}
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("fail_overflow", [False, True])
+def test_raw_files_over_limit_keep_edit_and_protect_every_batch(monkeypatch, tmp_path, fail_overflow):
+    out = tmp_path / "files"
+    out.mkdir()
+    paths = [out / f"{i}.jpg" for i in range(51)]
+    for path in paths:
+        path.write_bytes(path.name.encode())
+    media = [ImageRef(url=f"https://example.org/{path.name}") for path in paths]
+    processed = [ProcessedMedia(ImageFile(path=path, width=1, height=1)) for path in paths]
+
+    async def run():
+        wire = _Wire(monkeypatch)
+        wire.status_message()
+        if fail_overflow:
+            invoke = wire.invoke
+
+            async def reject_last_file(request, **kwargs):
+                if isinstance(request, _RPCS.UploadMedia) and Path(request.media.file.name) == paths[-1]:
+                    raise RuntimeError("overflow upload failed")
+                return await invoke(request, **kwargs)
+
+            monkeypatch.setattr(wire.cli, "invoke", reject_last_file)
+        await delivery.send_raw(
+            wire.sender.delete_after(0.001), PipelineResult(_result(media=media), processed, out), wire.reporter,
+            _t=_t, spoiler_tag="#剧透", custom_content="**app note**",
+        )
+        (first,) = wire.select(_RPCS.EditMessage)
+        (second,) = wire.select(_RPCS.SendMessage)
+        assert first.id == 99
+        if fail_overflow:
+            assert len(first.rich_message.documents) == 50
+            assert "Upload error:" in _text(second.rich_message.blocks)
+            assert not second.message and not second.rich_message.documents
+            assert not out.exists()
+            await asyncio.sleep(0.02)
+            return
+        assert [len(q.rich_message.documents) for q in (first, second)] == [50, 1]
+        for query in (first, second):
+            assert not query.message and not query.reply_markup
+            (fold,) = [b for b in query.rich_message.blocks if isinstance(b, raw.types.PageBlockDetails)]
+            assert _text(fold.title) == "⚠️ #剧透" and not fold.open
+            assert sum(isinstance(b, raw.types.PageBlockDocument) for b in fold.blocks) == len(
+                query.rich_message.documents
+            )
+            assert not any(isinstance(b, raw.types.PageBlockDocument) for b in query.rich_message.blocks)
+        assert "app note" in _text(first.rich_message.blocks)
+        assert [Path(u.media.file.name) for u in wire.select(_RPCS.UploadMedia)] == paths
+        assert not out.exists()
+        await asyncio.sleep(0.02)
+        assert sorted(q.id for q in wire.select(_RPCS.DeleteMessages)) == [[42], [99]]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mode", [ParseMode.RAW, ParseMode.ZIP])
+def test_file_delivery_reports_upload_failure_and_cleans_up(monkeypatch, tmp_path, mode):
+    output = tmp_path / "output"
+    output.mkdir()
+    photo = output / "photo.jpg"
+    photo.write_bytes(b"original bytes")
+    media = [ImageRef(url="https://example.org/photo.jpg")]
+    result = PipelineResult(_result(media=media), [ProcessedMedia(ImageFile(path=photo, width=1, height=1))], output)
+
+    async def run():
+        wire = _Wire(monkeypatch)
+        report_error = AsyncMock()
+        monkeypatch.setattr(wire.reporter, "report_error", report_error)
+
+        async def invoke(request, **kwargs):
+            if isinstance(request, _RPCS.UploadMedia):
+                raise RuntimeError("offline upload failed")
+            return await wire.invoke(request, **kwargs)
+
+        monkeypatch.setattr(wire.cli, "invoke", invoke)
+        send = delivery.send_zip if mode == ParseMode.ZIP else delivery.send_raw
+        await send(wire.sender, result, wire.reporter, _t=_t)
+        report_error.assert_awaited_once()
+        assert report_error.await_args is not None and report_error.await_args.args[0] == _t("上传")
+        assert not wire.select(_RPCS.SendMessage)
+        assert not output.exists() and not output.with_suffix(".tar.gz").exists()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("status", ["edit", "rejected", "no-status", "entityless", "spoiler"])
+def test_gif_only_uses_rich_blocks_with_buttons_on_edit_and_fallback(monkeypatch, status):
     media = [AniRef(url=f"https://example.org/{i}.gif") for i in range(6)]
     entityless = status == "entityless"
     parsed = _result(media=media, entities=not entityless)
@@ -383,6 +564,9 @@ def test_gif_only_uses_ordinary_entities_with_buttons_on_edit_and_fallback(monke
         if status in {"edit", "rejected"}:
             wire.status_message()
         _set_note(wire, ParseMode.PREVIEW, formatted=not entityless)
+        if status == "spoiler":
+            wire.msg.text += "\n#剧透"
+            wire.msg.command = wire.msg.text[1:].split()
         await _parse_from_message(monkeypatch, wire, PipelineResult(parsed))
         if status == "edit":
             (query,) = wire.select(_RPCS.EditMessage)
@@ -392,22 +576,32 @@ def test_gif_only_uses_ordinary_entities_with_buttons_on_edit_and_fallback(monke
             (query,) = wire.select(_RPCS.SendMessage)
             if status == "rejected":
                 (attempt,) = wire.select(_RPCS.EditMessage)
-                assert attempt.message == query.message
-                assert _caption_spans(attempt) == _caption_spans(query)
-        assert not query.rich_message
-        assert query.no_webpage
-        assert [b.type.url for row in query.reply_markup.rows for b in row.buttons] == [m.url for m in media]
-        if entityless:
-            assert query.message == f"{_LITERAL}\n\n{_NOTE}" and not query.entities
+                assert attempt.rich_message.write() == query.rich_message.write()
+        assert query.rich_message and not query.message and not query.entities
+        if isinstance(query, _RPCS.EditMessage):
+            assert query.no_webpage
+        blocks = query.rich_message.blocks
+        gif_links = {(m.url, f"GIF {i}") for i, m in enumerate(media, 1)}
+        if status == "spoiler":
+            assert query.reply_markup is None
+            (fold,) = [block for block in blocks if isinstance(block, raw.types.PageBlockDetails)]
+            assert [n.url for n in _walk(fold.blocks) if isinstance(n, raw.types.TextUrl) and n.url.endswith(".gif")]
         else:
-            _assert_caption(query)
-        _assert_note(query, formatted=not entityless)
-        assert wire.modes[query.message] is enums.ParseMode.DISABLED
+            assert [b.type.url for row in query.reply_markup.rows for b in row.buttons] == [m.url for m in media]
+        nodes = list(_walk(blocks))
+        assert _text(query.rich_message.blocks).startswith(_LITERAL)
+        assert _NOTE in _text(query.rich_message.blocks)
+        assert "ignored" not in _text(query.rich_message.blocks)
+        links = {(n.url, _text(n)) for n in nodes if isinstance(n, raw.types.TextUrl)}
+        assert links == (set() if entityless else {
+            (_LINK, _LINK_LABEL), (_NOTE_LINK, _NOTE_LABEL), (_SOURCE, "Source (Twitter)"),
+        } | (gif_links if status == "spoiler" else set()))
+        assert not any(isinstance(n, raw.types.TextSpoiler) for n in nodes)
 
     asyncio.run(run())
 
 
-def test_legacy_gif_note_still_uses_the_markup_adapter(monkeypatch):
+def test_legacy_body_uses_a_native_gif_note(monkeypatch):
     result = MultimediaParseResult(
         content="legacy body", media=[AniRef(url=f"https://example.org/{i}.gif") for i in range(6)],
     )
@@ -419,16 +613,37 @@ def test_legacy_gif_note_still_uses_the_markup_adapter(monkeypatch):
         wire.msg.text = prefix + "legacy note=="
         wire.msg.command = wire.msg.text[1:].split()
         wire.msg.entities = [MessageEntity(type=enums.MessageEntityType.BOLD, offset=len(prefix), length=11)]
+        monkeypatch.setattr(wire.cli.parser, "unparse", _reject_legacy)
         await _parse_from_message(monkeypatch, wire, PipelineResult(result))
         (query,) = wire.select(_RPCS.SendMessage)
-        assert (raw.types.MessageEntityBold, "legacy note", None) in _caption_spans(query)
+        assert any(
+            _text(node) == "legacy note" for node in _walk(query.rich_message.blocks)
+            if isinstance(node, raw.types.TextBold)
+        )
+
+    asyncio.run(run())
+
+
+def test_user_mention_in_note_is_native_and_clickable(monkeypatch):
+    name = "Mention 👀"
+    source = f"==😀 {name}=="
+    span = MessageEntity(
+        type=enums.MessageEntityType.TEXT_MENTION, user=User(id=932), offset=5,
+        length=len(name.encode("utf-16-le")) // 2,
+    )
+
+    async def run():
+        wire = _Wire(monkeypatch)
+        await delivery.send_rich_media(wire.sender, _result(), [], _t=_t, custom_content=extract_note(source, [span]))
+        (rpc,) = wire.select(_RPCS.SendMessage)
+        (mention,) = [node for node in _walk(rpc.rich_message.blocks) if isinstance(node, raw.types.TextMentionName)]
+        assert (mention.user_id, _text(mention)) == (932, name)
 
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("mode", [ParseMode.RAW, ParseMode.ZIP, ParseMode.PREVIEW])
-def test_non_x_document_caption_and_note_on_sdk_wire(monkeypatch, tmp_path, mode):
-    monkeypatch.setattr(delivery, "build_caption", _reject_legacy)
+def test_non_x_document_and_note_use_rich_blocks_on_sdk_wire(monkeypatch, tmp_path, mode):
     output = tmp_path / "output"
     output.mkdir()
     if mode == ParseMode.PREVIEW:
@@ -441,7 +656,10 @@ def test_non_x_document_caption_and_note_on_sdk_wire(monkeypatch, tmp_path, mode
         processed = [ProcessedMedia(ImageFile(path=photo, width=1, height=1))]
     parsed = MultimediaParseResult(
         content="LEGACY", media=media,
-        document=Document((paragraph((TextRun(_LITERAL), TextRun(_LINK_LABEL, _LINK, ("bold",)))),)),
+        document=Document((
+            paragraph((TextRun(_LITERAL), TextRun(_LINK_LABEL, _LINK, ("bold",)))),
+            *((Block("media", index=0), paragraph("After the original media slot")) if processed else ()),
+        )),
     )
     parsed.platform = Platform.PIXIV
     parsed.raw_url = _DOCUMENT_SOURCE
@@ -450,13 +668,43 @@ def test_non_x_document_caption_and_note_on_sdk_wire(monkeypatch, tmp_path, mode
         wire = _Wire(monkeypatch, config=SettingsConfig(noprogress=True, custom_content=True, hide_source=True))
         monkeypatch.setattr(wire.cli.parser, "unparse", _reject_legacy)
         _set_note(wire, mode, source=_DOCUMENT_SOURCE)
-        await _parse_from_message(monkeypatch, wire, PipelineResult(parsed, processed, output), source=_DOCUMENT_SOURCE)
-        rpc = _RPCS.SendMessage if mode == ParseMode.PREVIEW else _RPCS.SendMedia
-        (query,) = wire.select(rpc)
-        assert query.message.startswith(_LITERAL + _LINK_LABEL)
-        assert (raw.types.MessageEntityTextUrl, _LINK_LABEL, _LINK) in _caption_spans(query)
-        _assert_note(query)
-        assert wire.modes[query.message] is enums.ParseMode.DISABLED
+        if mode == ParseMode.PREVIEW:
+            await _parse_from_message(
+                monkeypatch, wire, PipelineResult(parsed, processed, output), source=_DOCUMENT_SOURCE,
+            )
+            (query,) = wire.select(_RPCS.SendMessage)
+            blocks = query.rich_message.blocks
+            assert not query.message and _text(blocks).startswith(_LITERAL + _LINK_LABEL)
+            assert _NOTE in _text(blocks)
+            assert {(n.url, _text(n)) for n in _walk(blocks) if isinstance(n, raw.types.TextUrl)} == {
+                (_LINK, _LINK_LABEL), (_NOTE_LINK, _NOTE_LABEL),
+            }
+        else:
+            note = extract_note(wire.msg.text, wire.msg.entities)
+            send = delivery.send_zip if mode == ParseMode.ZIP else delivery.send_raw
+            if mode == ParseMode.ZIP:
+                wire.status_message()
+            await send(
+                wire.sender, PipelineResult(parsed, processed, output), wire.reporter, _t=_t,
+                custom_content=note, spoiler_tag="#剧透" if mode == ParseMode.ZIP else "",
+            )
+            if mode == ParseMode.ZIP:
+                (query,) = wire.select(_RPCS.EditMessage)
+                assert query.id == 99 and not wire.select(_RPCS.SendMessage)
+                (fold,) = query.rich_message.blocks
+                assert _text(fold.title) == "⚠️ #剧透"
+                blocks = fold.blocks
+            else:
+                (query,) = wire.select(_RPCS.SendMessage)
+                blocks = query.rich_message.blocks
+            assert query.message == "" and not wire.select(_RPCS.SendMedia)
+            assert _text(blocks).startswith(_LITERAL + _LINK_LABEL) and _NOTE in _text(blocks)
+            assert {(n.url, _text(n)) for n in _walk(blocks) if isinstance(n, raw.types.TextUrl)} == {
+                (_LINK, _LINK_LABEL), (_NOTE_LINK, _NOTE_LABEL),
+            }
+            assert "After the original media slot" in _text(blocks[:-1])
+            assert not any(isinstance(b, raw.types.PageBlockPhoto) for b in _walk(blocks))
+            assert isinstance(blocks[-1], raw.types.PageBlockDocument)
 
     asyncio.run(run())
 

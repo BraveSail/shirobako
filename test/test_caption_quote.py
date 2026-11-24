@@ -12,7 +12,6 @@ import asyncio
 
 from plugins.helpers import (
     _FOLD_CHAR_THRESHOLD,
-    build_caption_by_str,
     convert_markdown_quote,
     format_text,
     neutralize_markdown,
@@ -73,11 +72,6 @@ def _entity_types(parsed: dict) -> list[str]:
 
 def _text_urls(parsed: dict) -> list[str]:
     return [e.url for e in (parsed.get("entities") or []) if type(e).__name__ == "MessageEntityTextUrl"]
-
-
-def inline_caption(content: str, url: str, **kwargs) -> str:
-    """模拟 inline 通道的真实调用参数。"""
-    return build_caption_by_str("", content, url, allow_expandable=False, **kwargs)
 
 
 # ── Markdown 引用 → blockquote ──────────────────────────────────────────────
@@ -459,32 +453,6 @@ def test_allow_blockquote_false_strips_markdown_prefix():
 
 # ── inline 通道: 引用块 + 链接都要在 ────────────────────────────────────────
 
-def test_inline_caption_keeps_blockquote_and_source_link():
-    caption = inline_caption(UNDERSCORE_QUOTE, UNDERSCORE_URL)
-    parsed = _pyrogram_markdown_parse(caption)
-
-    types = _entity_types(parsed)
-    assert "MessageEntityBlockquote" in types          # 引用块在
-    assert _text_urls(parsed) == [UNDERSCORE_URL]      # 来源 链接完好
-    assert "MessageEntityItalic" not in types          # handle 下划线没被当斜体
-    assert "@__yuuuumr__" in parsed["message"]
-
-
-def test_inline_caption_is_not_wrapped_in_expandable():
-    caption = inline_caption(UNDERSCORE_QUOTE, UNDERSCORE_URL)
-    assert "<blockquote expandable>" not in caption
-
-
-def test_dm_caption_keeps_blockquote_and_source_link():
-    caption = build_caption_by_str("", UNDERSCORE_QUOTE, UNDERSCORE_URL)
-    parsed = _pyrogram_markdown_parse(caption)
-
-    types = _entity_types(parsed)
-    assert "MessageEntityBlockquote" in types
-    assert _text_urls(parsed) == [UNDERSCORE_URL]
-    assert "MessageEntityItalic" not in types
-
-
 def test_inline_cached_rich_result_keeps_blockquote_and_link():
     """缓存路径同样走富文本: 引用块与 来源 链接都不能丢"""
     from plugins.parse.inline import build_cached_rich_result
@@ -532,18 +500,3 @@ def test_quote_prefix_would_otherwise_become_blockquote_entity():
     """反证: pyrogram 确实会把行首 '>' 解析成 blockquote 实体。"""
     parsed = _pyrogram_markdown_parse("> \u56de\u590d @u\uff1a\n> hi\n\nbody")
     assert "MessageEntityBlockquote" in _entity_types(parsed)
-
-
-def test_author_name_underscores_survive_markdown_parse():
-    caption = build_caption_by_str("", "body", "https://x.com/u/status/1", author_name="foo__bar")
-    parsed = _pyrogram_markdown_parse(caption)
-    assert "MessageEntityItalic" not in _entity_types(parsed)
-    assert "foo__bar" in parsed["message"]
-
-
-def test_body_url_with_underscores_survives():
-    body = "see https://example.com/a__b__c/page for details"
-    caption = inline_caption(body, "https://x.com/u/status/1")
-    parsed = _pyrogram_markdown_parse(caption)
-    assert "https://example.com/a__b__c/page" in parsed["message"]
-    assert "MessageEntityItalic" not in _entity_types(parsed)
