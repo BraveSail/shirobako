@@ -287,7 +287,7 @@ class SabrSource:
     ``url``, 只有 ``serverAbrStreamingUrl``（SABR / Onesie 长连接）。旧实现据此只能
     退回 360p 合一档；现在改由 bun + LuanRT/googlevideo 直接拉高清。
 
-    ``abr_url`` 里的 ``n`` **已经解过**（``_apply_nsig`` 之后的 URL 由调用方传入）。
+    ``needs_nsig`` 表示 ``abr_url`` 仍不能用于下载，但视频元数据仍可用。
     """
 
     abr_url: str
@@ -304,6 +304,7 @@ class SabrSource:
     """显式指定视频 itag（0 = 不用）。优先级高于 ``codec_priority``。"""
     audio_itag: int = 0
     """显式指定音频 itag（0 = 不用）。优先级高于 ``codec_priority``。"""
+    needs_nsig: bool = False
 
 
 # ── 纯函数: player JSON -> 结构化 ─────────────────────────────────────────
@@ -514,6 +515,7 @@ def extract_sabr_source(data: dict[str, Any]) -> SabrSource | None:
         abr_url=abr_url,
         ustreamer_config=ustreamer,
         adaptive_formats=tuple(item for item in adaptive if isinstance(item, dict)),
+        needs_nsig=bool(_param_value(abr_url, "n")),
     )
 
 
@@ -988,15 +990,7 @@ async def fetch_video(
         video.user_agent = _WATCH_USER_AGENT
         # 元数据与流来自**同一份响应** —— 不再另发请求，也不用 visitor
         video.metadata = parse_microformat(data)
-        # ⚠️ 必须把 HTML 也传下去: 内嵌响应里**没有 assets**, playerId 只在页面里
-        # （漏了它 n 解不出来, 直链下载 403）
-        # SABR 素材（若有）的 abr_url 里也有 n，一并解 —— 解出的映射用来改写它。
-        sabr = extract_sabr_source(data)
-        extra = (sabr.abr_url,) if sabr else ()
-        mapping = await _apply_nsig(video, data, html=html, proxy=proxy, cookie=cookie, extra_urls=extra)
-        if sabr:
-            video.sabr = replace(sabr, abr_url=mapping.get(sabr.abr_url, sabr.abr_url))
-            logger.info(f"本条视频高清流走 SABR（明文流 {len(video.streams)} 条）")
+        await _prepare_stream_urls(video, data, html=html, proxy=proxy)
         return video
 
     # ── 兜底: POST player（老路，保留给 watch 页拿不到流的视频）──────────
@@ -1016,20 +1010,32 @@ async def fetch_video(
         else:
             video.user_agent = str(spec["_user_agent"])
             video.metadata = metadata
-            # n-sig: 直链里原样的 ``n`` 会被服务端 403, 必须解一遍（解不出就保持原样）
-            await _apply_nsig(video, data, proxy=proxy, cookie=cookie)
+            await _prepare_stream_urls(video, data, proxy=proxy)
             return video
 
     raise YoutubeVideoError("player API 解析失败: " + "; ".join(errors))
 
 
-async def _apply_nsig(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直白
+async def _prepare_stream_urls(
+    video: YoutubeVideo, data: dict[str, Any], *, proxy: str | None, html: str = "",
+) -> None:
+    """Keep the SABR material and its script URL tied to the same player response."""
+    sabr = extract_sabr_source(data)
+    mapping = await _apply_nsig(video, data, html=html, proxy=proxy, extra_urls=(sabr.abr_url,) if sabr else ())
+    if sabr is None:
+        return
+    if resolved_url := mapping.get(sabr.abr_url):
+        sabr = replace(sabr, abr_url=resolved_url, needs_nsig=False)
+    video.sabr = sabr
+    logger.info(f"本条视频高清流走 SABR（明文流 {len(video.streams)} 条）")
+
+
+async def _apply_nsig(
     video: YoutubeVideo,
     data: dict[str, Any],
     *,
     html: str = "",
     proxy: str | None,
-    cookie: dict[str, str] | None,
     extra_urls: tuple[str, ...] = (),
 ) -> dict[str, str]:
     """把 ``video.streams``（及 ``extra_urls``）里 URL 的 n 参数解成有效值（原地改写）。
@@ -1038,8 +1044,7 @@ async def _apply_nsig(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直
     实测同一条视频: n 原样 → 403；解过后 → 206 / 可下载。
 
     ``html`` 是 watch 页原文 —— **主路必须传**：内嵌的 playerResponse 里没有
-    ``assets``，playerId 只能从页面里的 ``/s/player/<id>/`` 取（漏了它 n 解不出，
-    下载就是 403）。
+    ``assets``，应使用页面给出的实际脚本 URL（包含播放器变体和语言路径）。
 
     ``extra_urls`` 是不在 ``streams`` 里、但同样需要解 n 的 URL（**SABR 的
     ``serverAbrStreamingUrl`` 就是**）。返回值是 ``{原 url: 解后 url}`` —— 调用方
@@ -1057,12 +1062,12 @@ async def _apply_nsig(  # noqa: PLR0913 - 素材字段本来就多, 平铺更直
     if not targets:
         return {}
 
-    player_id = nsig_mod.player_id_from_response(data, html)
-    if not player_id:
-        logger.debug("拿不到播放器 id(assets 与页面里都没有), 跳过 n-sig")
+    player_url = nsig_mod.player_js_url_from_response(data, html)
+    if not player_url:
+        logger.debug("播放器响应未给出可用的 JS 地址，跳过 n-sig")
         return {}
 
-    player_js = await nsig_mod.get_player_js(player_id, proxy=proxy)
+    player_js = await nsig_mod.get_player_js(player_url, proxy=proxy)
     if not player_js:
         return {}
 

@@ -26,9 +26,7 @@ YouTube 的媒体直链形如
   运行时缺失时**不抛错**，返回空映射让调用方走降级（拿不到明文流时表现为解析失败，
   而不是整个 YouTube 平台不可用）。
 - 输入是**播放器 JS 源码**（~3MB，从 ``/s/player/<id>/…/base.js`` 取）。
-  它按 **playerId** 跨进程缓存（与 ``_visitor_cache`` 同一手法）——
-  n 变换函数由播放器版本决定，同一版本对所有视频通用，所以缓存是**跨内容**的，
-  稳态下不增加每次解析的请求数（符合项目"辅助请求必须替换或做跨内容缓存"的硬规则）。
+  同一 player ID 也可能有不同脚本变体，因此按响应提供的**完整脚本 URL**做进程内跨视频缓存。
 """
 
 from __future__ import annotations
@@ -38,7 +36,9 @@ import re
 import shutil
 import subprocess
 import time
+from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urlsplit
 
 from loguru import logger
 
@@ -176,51 +176,81 @@ def _parse_output(stdout: str, challenges: list[str]) -> dict[str, str]:
     return solved
 
 
-# ── 播放器 JS（按 playerId 跨进程缓存） ────────────────────────────────────
+# ── 播放器 JS（按完整资源 URL 跨视频缓存） ─────────────────────────────────
 
-_PLAYER_URL = "https://www.youtube.com/s/player/{player_id}/player_ias.vflset/en_US/base.js"
-"""播放器 JS 的地址（``player_id`` 从 player 响应的 ``assets.js`` 里取）。
-
-``player_ias`` 是上游 yt-dlp 用的变体；语言段用 ``en_US``（与它一致，
-不需要 zh_CN —— n 变换与语言无关）。**不换域名**。
-"""
-
-#: 播放器 JS 的进程内缓存：``player_id -> (取到的时间, JS 源码)``。
-#:
-#: n 变换函数**只由播放器版本决定**（对所有视频通用），所以这是**跨内容**缓存 ——
-#: 稳态下每个播放器版本只取一次。TTL 取 6 小时：播放器版本换得不勤，
-#: 但换版后旧 JS 会算出无效 n，不能长期缓存。
+_PLAYER_ORIGIN = "https://www.youtube.com"
+_PLAYER_PATH_RE = re.compile(
+    r"/s/player/[a-zA-Z0-9_-]+/(?:[a-zA-Z0-9_-][\w.-]*/)*[a-zA-Z0-9_-][\w.-]*\.js", re.ASCII,
+)
+_CONFIG_JS_RE = re.compile(r'"(PLAYER_JS_URL|jsUrl)"\s*:\s*("(?:[^"\\]|\\.)*")')
 _PLAYER_TTL = 6 * 3600
 _player_cache: dict[str, tuple[float, str]] = {}
 
-#: 从 player 响应里取播放器版本（``assets.js`` 形如 ``/s/player/<id>/...``）
-_JS_ID_RE = re.compile(r"/s/player/([0-9a-zA-Z_-]+)/")
+def _normalize_player_js_url(value: object) -> str:
+    """The solver executes this script. Do not fetch arbitrary URLs from page data."""
+    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
+        return ""
+    if value.startswith("//"):
+        value = "https:" + value
+    elif value.startswith("/"):
+        value = _PLAYER_ORIGIN + value
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return ""
+    if parts.scheme != "https" or parts.netloc.lower() != "www.youtube.com" or parts.query or parts.fragment:
+        return ""
+    return _PLAYER_ORIGIN + parts.path if _PLAYER_PATH_RE.fullmatch(parts.path) else ""
 
 
-def player_id_from_response(data: Any, html: str = "") -> str:
-    """取播放器 id（纯函数；取不到返回空串）。
+class _WatchPlayerScript(HTMLParser):
+    """Inspect real script elements without interpreting the page as JavaScript."""
 
-    **两条来源都要看**（2026-10-15 实测）:
+    def __init__(self) -> None:
+        super().__init__()
+        self.config_url = ""
+        self.embedded_url = ""
+        self.src_url = ""
+        self._inline_script = False
 
-    1. ``data["assets"]["js"]`` —— innertube ``POST player`` 响应的字段。
-    2. **watch 页 HTML 里的播放器 JS 地址** —— 内嵌的 ``ytInitialPlayerResponse``
-       **没有 ``assets``**（实测: 30 条流、无 assets），所以只查它必然拿不到 id，
-       整条 n-sig 链就断了（表现: 直链下载 403）。
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "script":
+            return
+        src = dict(attrs).get("src")
+        self._inline_script = src is None
+        url = _normalize_player_js_url(src)
+        if not self.src_url and url.endswith("/base.js"):
+            self.src_url = url
 
-    先问结构化字段，再退回 HTML 里的 ``/s/player/<id>/`` 字样。
-    """
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._inline_script = False
+
+    def handle_data(self, data: str) -> None:
+        if not self._inline_script or self.config_url:
+            return
+        for match in _CONFIG_JS_RE.finditer(data):
+            try:
+                url = _normalize_player_js_url(json.loads(match[2]))
+            except json.JSONDecodeError:
+                continue
+            if url and match[1] == "PLAYER_JS_URL":
+                self.config_url = url
+                return
+            self.embedded_url = self.embedded_url or url
+
+
+def player_js_url_from_response(data: Any, html: str = "") -> str:
+    """Use the player the response selected, never a guessed variant for its ID."""
     assets = data.get("assets") if isinstance(data, dict) else None
-    if isinstance(assets, dict):
-        js = str(assets.get("js") or "")
-        if match := _JS_ID_RE.search(js):
-            return match.group(1)
-    if html:
-        # HTML 里可能有多处 /s/player/<id>/ 字样（如 poster 图、缓存预热），
-        # 取**出现次数最多**的那个 —— 播放器 JS 会在页面里被引用多次。
-        ids = _JS_ID_RE.findall(html)
-        if ids:
-            return max(set(ids), key=ids.count)
-    return ""
+    if isinstance(assets, dict) and (url := _normalize_player_js_url(assets.get("js"))):
+        return url
+    if not html:
+        return ""
+    parser = _WatchPlayerScript()
+    parser.feed(html)
+    parser.close()
+    return parser.config_url or parser.embedded_url or parser.src_url
 
 
 def reset_player_cache() -> None:
@@ -228,35 +258,34 @@ def reset_player_cache() -> None:
     _player_cache.clear()
 
 
-async def get_player_js(player_id: str, *, proxy: str | None = None) -> str:
+async def get_player_js(player_url: str, *, proxy: str | None = None) -> str:
     """取（并缓存）播放器 JS 源码。取不到返回空串（调用方降级）。
 
-    ⚠️ 这是一次**额外请求**，但按 ``player_id`` 缓存 ⇒ 稳态下不随视频数增长
-    （同一播放器版本解析任意多条视频只取一次）。
+    缓存按完整 URL，不能混用同一 ID 下的 IAS / ES6 或其它变体。
     """
-    if not player_id:
+    url = _normalize_player_js_url(player_url)
+    if not url:
         return ""
-    cached = _player_cache.get(player_id)
+    cached = _player_cache.get(url)
     now = time.time()
     if cached and now - cached[0] < _PLAYER_TTL:
         return cached[1]
 
-    from . import http  # 延迟导入: 与 utils.http 互相独立, 避免形成环
+    from parsehub.utils.http import AsyncClient
 
-    url = _PLAYER_URL.format(player_id=player_id)
     try:
-        async with http.AsyncClient(proxy=proxy, timeout=60) as client:
-            response = await client.get(url)
+        async with AsyncClient(proxy=proxy, timeout=60) as client:
+            response = await client.get(url, follow_redirects=False)
         if response.status_code != 200:
-            logger.warning(f"取播放器 JS 失败: HTTP {response.status_code} player_id={player_id}")
+            logger.warning(f"取播放器 JS 失败: HTTP {response.status_code} ({url})")
             return ""
         js = response.text
     except Exception as exc:  # noqa: BLE001 - 网络异常都走降级
-        logger.warning(f"取播放器 JS 异常: {type(exc).__name__}: {exc}")
+        logger.warning(f"取播放器 JS 异常: {type(exc).__name__} ({url})")
         return ""
 
     if js:
-        _player_cache[player_id] = (now, js)
+        _player_cache[url] = (now, js)
     return js
 
 
@@ -264,7 +293,7 @@ __all__ = [
     "find_runtime",
     "get_player_js",
     "node_available",
-    "player_id_from_response",
+    "player_js_url_from_response",
     "reset_player_cache",
     "solve_n",
 ]

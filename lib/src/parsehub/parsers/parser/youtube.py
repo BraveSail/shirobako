@@ -314,6 +314,8 @@ class YtbVideoParseResult(VideoParseResult):
         sabr = self.info.sabr
         if sabr is None:  # _do_download 已按 sabr 分派, 这里只是给类型收窄
             raise DownloadError("内部错误: SABR 路径缺少素材")
+        if sabr.needs_nsig:
+            raise DownloadError("SABR 播放器签名 (n-sig) 解算失败，无法生成取流地址")
         temp_dir = output_dir / f".{self.name}.sabr"
         temp_dir.mkdir(parents=True, exist_ok=True)
         progress = self._byte_progress(callback, callback_args, callback_kwargs) if callback else None

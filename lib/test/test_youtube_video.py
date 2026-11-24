@@ -19,12 +19,14 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from _fakes import FakeResponse
 
+from parsehub.errors import DownloadError
 from parsehub.parsers.parser.youtube import YtbParse, YtbVideoParseResult
+from parsehub.provider_api import youtube_video
 from parsehub.provider_api.youtube import parse_post_page
 from parsehub.provider_api.youtube_video import (
     DEFAULT_MAX_HEIGHT,
@@ -39,6 +41,7 @@ from parsehub.provider_api.youtube_video import (
     visitor_data_from_response,
 )
 from parsehub.types import MultimediaParseResult, ParseError, VideoParseResult, VideoRef
+from parsehub.utils import nsig
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GOOGLEVIDEO_HOST = "googlevideo.com"
@@ -370,6 +373,89 @@ def test_fetch_video_gets_the_watch_page_and_makes_only_one_request():
     assert video.video_id == "dQw4w9WgXcQ"
     assert video.streams, "流来自内嵌响应"
     assert video.user_agent, "要留下载用的 UA"
+
+
+def test_sabr_uses_the_watch_selected_js_variant_and_caches_each_url(monkeypatch, tmp_path):
+    player_es6 = "/s/player/b485e332/player_es6.vflset/zh_CN/base.js"
+    player_ias = "/s/player/b485e332/player_ias.vflset/en_US/base.js"
+    endpoint = "https://www.youtube.com"
+    abr_url = "https://cdn.googlevideo.com/videoplayback?expire=4&n=challenge&sig=sample"
+    player = _player()
+    player["streamingData"]["serverAbrStreamingUrl"] = abr_url
+    player["playerConfig"] = {
+        "mediaCommonConfig": {"mediaUstreamerRequestConfig": {"videoPlaybackUstreamerConfig": "fixture"}},
+    }
+    js_calls = []
+    pages = iter([player_es6, player_ias, player_es6, player_es6])
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url, **kwargs):
+            if url.startswith(f"{endpoint}/watch?"):
+                config = json.dumps({"PLAYER_JS_URL": next(pages)})
+                return FakeResponse(200, text=f"{_watch_html(player)}<script>ytcfg.set({config});</script>")
+            js_calls.append((url, kwargs.get("follow_redirects")))
+            return FakeResponse(200, text=url)
+
+    monkeypatch.setattr(nsig, "_player_cache", {})
+    monkeypatch.setattr(nsig, "find_runtime", lambda: "bun")
+    monkeypatch.setattr(nsig, "solve_n", lambda js, _: {"challenge": "es6" if js.endswith(player_es6) else "ias"})
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        results = [asyncio.run(fetch_video("dQw4w9WgXcQ")) for _ in range(3)]
+        assert js_calls == [(endpoint + player_es6, False), (endpoint + player_ias, False)]
+        assert [result.sabr.abr_url for result in results] == [
+            abr_url.replace("challenge", value) for value in ("es6", "ias", "es6")
+        ]
+
+        monkeypatch.setattr(nsig, "solve_n", lambda *_: {})
+        video = asyncio.run(fetch_video("dQw4w9WgXcQ"))
+        assert video.title and video.sabr is not None
+        assert len(js_calls) == 2
+        parsed = YtbVideoParseResult(info=video, selected=select_streams(video))
+        with patch("parsehub.parsers.parser.youtube.fetch_sabr_streams", new_callable=AsyncMock) as fetch_sabr:
+            with pytest.raises(DownloadError, match="SABR.*n-sig"):
+                asyncio.run(parsed.download(tmp_path))
+            fetch_sabr.assert_not_awaited()
+
+
+@pytest.mark.parametrize("with_n", [True, False])
+def test_sabr_only_post_player_response_prepares_stream_urls(monkeypatch, with_n):
+    player_path = "/s/player/b485e332/player_es6.vflset/zh_CN/base.js"
+    abr_url = "https://cdn.googlevideo.com/videoplayback?expire=4&sig=sample"
+    abr_url += "&n=challenge" if with_n else ""
+    player = _player()
+    player["assets"] = {"js": player_path}
+    player["streamingData"]["serverAbrStreamingUrl"] = abr_url
+    for key in ("formats", "adaptiveFormats"):
+        for stream in player["streamingData"].get(key, []):
+            stream.pop("url", None)
+    player["playerConfig"] = {
+        "mediaCommonConfig": {"mediaUstreamerRequestConfig": {"videoPlaybackUstreamerConfig": "fixture"}},
+    }
+    monkeypatch.setattr(youtube_video, "_fetch_watch_page", AsyncMock(side_effect=YoutubeVideoError("fixture")))
+    monkeypatch.setattr(youtube_video, "_fetch_web_metadata", AsyncMock(return_value=(youtube_video.VideoMetadata(), "visitor")))
+    monkeypatch.setattr(youtube_video, "_request_player", AsyncMock(return_value=player))
+    get_js = AsyncMock(return_value="es6")
+    monkeypatch.setattr(nsig, "get_player_js", get_js)
+    monkeypatch.setattr(nsig, "find_runtime", lambda: "bun")
+    monkeypatch.setattr(nsig, "solve_n", lambda *_: {"challenge": "es6"})
+
+    result = asyncio.run(fetch_video("dQw4w9WgXcQ"))
+    assert not result.streams
+    assert result.sabr is not None
+    assert result.sabr.abr_url == abr_url.replace("challenge", "es6")
+    if with_n:
+        get_js.assert_awaited_once_with(f"https://www.youtube.com{player_path}", proxy=None)
+    else:
+        get_js.assert_not_awaited()
 
 
 def test_watch_page_request_looks_like_a_browser():
