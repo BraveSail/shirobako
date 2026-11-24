@@ -13,6 +13,7 @@ from pyrogram.types import (
 from pyrogram.types.messages_and_media.rich_text import (
     RichTextBold,
     RichTextCode,
+    RichTextSpoiler,
     RichTextStrikethrough,
     RichTextUrl,
 )
@@ -50,6 +51,38 @@ def test_parse_inline_html_link_unescapes_entities():
     link = next(p for p in parts if isinstance(p, RichTextUrl))
     assert link.url == "https://c.com?a=1&b=2"
     assert link.text == "x & y"
+
+
+def test_literal_escaped_pipes_do_not_split_an_anchor_with_pipes_in_its_label():
+    parts = parse_inline(r'\|\| あらすじ&amp; <a href="https://a.com/a">表記||</a>')
+    assert isinstance(parts, list)
+    prefix, link = parts
+    assert prefix == "|| あらすじ& "
+    assert isinstance(link, RichTextUrl)
+    assert link.text == "表記||"
+    assert link.url == "https://a.com/a"
+
+
+def test_unescaped_spoiler_can_still_wrap_a_native_link():
+    parts = parse_inline('||<a href="https://a.com/a">隠しリンク</a>||')
+    assert isinstance(parts, list)
+    (spoiler,) = parts
+    assert isinstance(spoiler, RichTextSpoiler)
+    assert isinstance(spoiler.text[0], RichTextUrl)
+
+
+def test_html_entities_in_link_labels_do_not_create_markup():
+    parts = parse_inline('<a href="https://a.com/a">&#124;&#124;&lt;b&gt;字&lt;/b&gt;&#124;&#124;</a>')
+    assert isinstance(parts, list)
+    (link,) = parts
+    assert isinstance(link, RichTextUrl)
+    assert link.text == "||<b>字</b>||"
+
+
+def test_escaped_markdown_delimiters_remain_literal_even_next_to_a_real_link():
+    parts = parse_inline(r'\*xx\* \`xx\` \[xx\]\(xx\) <a href="https://a.com/a">link</a>')
+    assert parts[0] == "*xx* `xx` [xx](xx) "
+    assert isinstance(parts[1], RichTextUrl)
 
 
 def test_parse_inline_code_and_strikethrough():

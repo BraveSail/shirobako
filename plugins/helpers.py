@@ -1219,16 +1219,8 @@ def rich_content(parse_result: AnyParseResult) -> str:
     return parse_result.content or ""
 
 
-# 行首的 "#标签" (# 后紧跟非空白, 标签里不含空白与常见标点)
-#: 标签的字符边界: 空白与常见句读 **终止** 标签 (``#tag.`` 的句号不属于标签)。
-#: 注意 ``-`` **不**在终止集合里 —— ``#foo-bar`` 整串才是一个标签, 而服务端的自动识别
-#: 会在连字符处截断 (只染蓝 ``#foo``), 看着像标签被切了。
-#: 标签体的字符边界。**必须排除 ``<`` ``>`` ``/``** —— 否则会把紧跟在标签后面的
-#: HTML 标签一起吞进去（实测症状: 引用块署名行的 ``#1</i>`` 把 ``</i>`` 吃成链接文字，
-#: 闭合标签丢失后，后面的 ``<i>`` 就裸露在消息里）。
-_TAG_BODY = r"[^\s#，。！？、,.!?）)】\]<>/]+"
-#: 任意位置的 ``#标签`` (前面不是字母/数字/``&``/``/`` —— 排除 ``a#b`` 与 URL 里的片段)
-_HASH_TAG_RE = re.compile(rf"(?<![\w&/])#({_TAG_BODY})")
+#: 候选从单词字符开始；精确边界由 ``_inferred_tag`` 按 Unicode 类别判定。
+_HASH_TAG_RE = re.compile(r"(?<![\w&/])#(\w[^\s#<>]*)")
 #: 已经是链接的整段 (``<a …>…</a>``): 处理标签时跳过, 免得把标签包第二层
 _ANCHOR_SEGMENT_RE = re.compile(r"<a\b[^>]*>.*?</a>|\[(?:\\.|[^\[\]])*\]\([^)]*\)", re.S)
 
@@ -1291,15 +1283,21 @@ def _link_tags_in_segment(segment: str, hashtags: Sequence[str], link: Callable[
     return segment
 
 
+def _inferred_tag(candidate: str) -> str:
+    """Keep word characters, combining marks and internal hyphens, not decoration."""
+    for i, char in enumerate(candidate):
+        if not (char.isalnum() or char in "_-" or unicodedata.category(char).startswith("M")):
+            return candidate[:i].rstrip("-")
+    return candidate.rstrip("-")
+
+
 def link_hashtags(
     text: str, platform: Platform | None = None, hashtags: Sequence[str] | None = None
 ) -> str:
     r"""把正文里的 **所有** 裸 ``#标签`` 渲染成标签页链接（不限于行首）。
 
     :param hashtags: **平台实体**给的标签名（不含 ``#``，如 twitter 的
-        ``entities.hashtags[].text``）。给了就先按名字精确链接化，**正则只兜底**剩下的
-        —— 正则在日文 ``」``、全角标点这些地方会把边界猜错（见 ``_link_known_tags``）。
-        没给（其它平台 / 拿不到实体）时行为与本参数引入前**逐字相同**。
+        ``entities.hashtags[].text``）。有实体先按名字精确链接化，剩余文本只按单词推断。
 
     为什么要自己链接而不是交给服务端:
       - 服务端的 hashtag 自动识别**有字符限制**: ``#foo-bar`` / ``#foo.bar`` 会在 ``-``/``.``
@@ -1313,19 +1311,21 @@ def link_hashtags(
     """
 
     def repl(match: re.Match[str]) -> str:
-        tag = match.group(1)
+        candidate = match.group(1)
+        tag = _inferred_tag(candidate)
         # **纯数字不是标签** —— 那是楼层号/序号（如引用块署名行的 ``作者 · #1``）。
         # 不排除的话 ``#1`` 会被链接到标签页（linux.do 上还会变成不存在的 tag 链接）。
         if tag.isdigit():
             return match.group(0)
+        suffix = candidate[len(tag):]
         url = tag_page_url(platform, tag)
         if url:
             label = html.escape(tag)
-            return f'<a href="{html.escape(url, quote=True)}">#{label}</a>'
+            return f'<a href="{html.escape(url, quote=True)}">#{label}</a>{suffix}'
         # 没有标签页可指向: 行首的 ``#`` 得转义 (否则被当一级标题), 行中的原样
         at_line_start = match.start() == 0 or text[match.start() - 1] == "\n"
         escaped = html.escape(tag)
-        return f"\\#{escaped}" if at_line_start else f"#{escaped}"
+        return f"\\#{escaped}{suffix}" if at_line_start else f"#{escaped}{suffix}"
 
     # ① 先按**平台实体**精确链接化（服务端算好的边界，胜过正则猜）
     if hashtags:

@@ -96,9 +96,24 @@ def test_the_entity_fixes_the_japanese_bracket_boundary():
 
 
 def test_without_the_entity_the_regex_still_runs():
-    """对照: 没实体时行为与本改动前逐字相同（不破坏其它平台）"""
+    """没实体时仍兜底，但周围句读不是标签的一部分。"""
     out = link_hashtags("TVアニメ「#FX戦士くるみちゃん」第一話より", Platform.TWITTER)
-    assert "#FX戦士くるみちゃん」第一話より</a>" in out, out
+    assert "#FX戦士くるみちゃん</a>」第一話より" in out, out
+
+
+def test_episode_number_and_decorative_pipes_are_not_an_inferred_hashtag():
+    src = "||◤ #08「作戦」◢|| #foo-bar||"
+    out = link_hashtags(src, Platform.TWITTER)
+    assert out.startswith("||◤ #08「作戦」◢|| ")
+    assert out.count("<a ") == 1
+    assert out.endswith('"https://x.com/hashtag/foo-bar">#foo-bar</a>||')
+
+
+def test_combining_marks_belong_to_their_tag_words():
+    src = "「#हिन्दी」 #Cafe\u0301||"
+    out = link_hashtags(src, Platform.TWITTER)
+    assert ">#हिन्दी</a>」" in out
+    assert out.endswith(">#Cafe\u0301</a>||")
 
 
 def test_the_longest_name_wins():

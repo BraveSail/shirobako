@@ -137,65 +137,51 @@ _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
 ]
 
 
-def _unescape_markdown(text: str) -> str:
-    """还原 markdown 转义（``\\#`` → ``#``）。
+#: ``format_text`` escapes Telegram reserved characters in literal source text.
+_MARKDOWN_ESCAPE_RE = re.compile(r"\\([_*\[\]()~`>#+\-=|{}.!])")
 
-    为什么需要: ``format_text`` 会给平台原文加反斜杠转义（那是给 **markdown 字符串
-    通道**用的 —— 服务端解析 markdown 时会把 ``\\#`` 还原成 ``#``）。但富文本现在
-    一律走 **blocks 通道**，那段文本被当成**字面量**塞进 ``RichText`` ——
-    没人再做还原，用户就看到字面的 ``\\#C_Chat``。
 
-    转义清单与 ``helpers._TG_RESERVED`` 一致（官方 18 个保留字符）。
-    """
-    if not text or "\\" not in text:
-        return text
-    return re.sub(r"\\([_\*\[\]\(\)~`>#\+\-=\|\{\}\.!])", r"\1", text)
+def _literal_inline(text: str) -> str:
+    return html.unescape(_MARKDOWN_ESCAPE_RE.sub(r"\1", text))
 
 
 def parse_inline(text: str) -> str | list:
-    """把一行 markdown 拆成 Richtext 片段 (无格式时直接返回原字符串)。
-
-    只处理正文里常见的几种行内标记; 链接单独处理 url 参数。
-
-    ⚠️ 入口先做 :func:`_unescape_markdown`：这段文本来自 ``format_text``，它给
-    平台原文加过 markdown 反斜杠转义。blocks 通道不解转义（那是 markdown 通道的
-    事），不还原就会把反斜杠原样发出去。
-    """
+    """Recognize markup before decoding literal text; escapes are never delimiters."""
     if not text:
         return text
-    text = _unescape_markdown(text)
+    # Preserve match indices. These placeholders never reach a text node.
+    markup = _MARKDOWN_ESCAPE_RE.sub("\0\0", text)
     parts: list = []
     pos = 0
     while pos < len(text):
         best = None
         for pattern, cls in _INLINE_PATTERNS:
-            m = pattern.search(text, pos)
+            m = pattern.search(markup, pos)
             if m and (best is None or m.start() < best[0].start()):
                 best = (m, cls)
         if best is None:
-            parts.append(text[pos:])
+            parts.append(_literal_inline(text[pos:]))
             break
         m, cls = best
         if m.start() > pos:
-            parts.append(text[pos : m.start()])
+            parts.append(_literal_inline(text[pos : m.start()]))
+        groups = [text[start:end] for start, end in m.regs[1:]]
         if cls is RichTextDateTime:
-            # 组: 1=unix, 2=format(可缺), 3=显示文字。format 缺省时传 None
-            # (服务端会按默认形态渲染)
-            label = html.unescape(m.group(3))
-            stamp = datetime.fromtimestamp(int(m.group(1)), tz=UTC)
-            parts.append(RichTextDateTime(parse_inline(label), stamp, m.group(2) or None))
+            unix, fmt, label = groups
+            stamp = datetime.fromtimestamp(int(unix), tz=UTC)
+            parts.append(RichTextDateTime(parse_inline(label), stamp, fmt or None))
         elif cls is RichTextUrl:
             if m.re.pattern.startswith("<a"):
-                url, label = m.group(1), m.group(2)  # <a href="url">label</a>
+                url, label = groups  # <a href="url">label</a>
             else:
-                label, url = m.group(1), m.group(2)  # [label](url)
-            parts.append(RichTextUrl(parse_inline(html.unescape(label)), url=html.unescape(url)))
+                label, url = groups  # [label](url)
+            parts.append(RichTextUrl(parse_inline(label), url=_literal_inline(url)))
         else:
-            parts.append(cls(parse_inline(m.group(1))))
+            parts.append(cls(parse_inline(groups[0])))
         pos = m.end()
 
     if len(parts) == 1 and isinstance(parts[0], str):
-        return html.unescape(parts[0])
+        return parts[0]
     return parts
 
 
