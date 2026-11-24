@@ -1,5 +1,4 @@
 import asyncio
-import re
 from dataclasses import replace
 from typing import Any
 
@@ -7,7 +6,7 @@ from parsehub.types import AniRef, RichTextParseResult
 from parsehub.utils.helpers import strip_flags
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType
-from pyrogram.types import Message
+from pyrogram.types import Message, MessageEntity
 
 from core import bs
 from db import get_session
@@ -21,18 +20,20 @@ from plugins.filters import (
     url_only_filter,
     via_me_filter,
 )
-from plugins.helpers import build_caption, format_label
+from plugins.helpers import format_label
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
-from plugins.translate import translate_cache_entry, translate_for_display
 from plugins.parse.sender import (
     MessageSender,
+    build_delivery_caption,
     build_gif_button,
     send_cached,
     send_raw,
     send_rich_media,
     send_zip,
 )
+from plugins.parse.x_caption import CaptionNote, extract_caption_note
+from plugins.translate import translate_cache_entry, translate_for_display
 from repo.settings import ParseMode
 from services import AdminUserService, ParsePipeline, ParseService, SettingsService, UserService
 from services.cache import parse_cache, persistent_cache
@@ -116,14 +117,6 @@ async def parse(cli: Client, msg: Message) -> None:
     # 因为打码是整条消息的属性、翻译是单条内容的属性。
     translate = translate_requested and len(urls) == 1
 
-    custom_content = ""
-    if len(urls) == 1 and config.custom_content and msg.text:
-        raw_text = msg.text
-        if msg.entities:
-            raw_text = cli.parser.unparse(msg.text, msg.entities, is_html=True)  # type: ignore[assignment]
-        items: list[str] = [m.group(2) for m in re.finditer(r"^(={2})(.*?)\1", raw_text, flags=re.S | re.M)]
-        custom_content = items[0].strip() if items else ""
-
     tasks = [
         _handle_parse_request(
             ParseRequest(
@@ -135,7 +128,7 @@ async def parse(cli: Client, msg: Message) -> None:
                 t_=_t,
                 bypass_cache=bypass_cache,
                 delete_share_url_msg=config.auto_delete_url,
-                custom_content=custom_content,
+                include_custom_content=len(urls) == 1 and config.custom_content,
                 spoiler_tag=spoiler_tag,
                 translate=translate,
             )
@@ -150,14 +143,29 @@ async def _post_text(
     reporter: MessageStatusReporter,
     caption: str,
     markup: Any = None,
+    *,
+    entities: list[MessageEntity] | None = None,
 ) -> bool:
     """把纯文本结果编辑进状态消息; 成功返回 True, 需要调用方新建时返回 False。"""
     try:
+        if entities is not None:
+            if (status_message := reporter._msg) is None:
+                return False
+            await sender.reply_to(status_message).edit_text_with_entities(caption, entities, reply_markup=markup)
+            return True
         if await reporter.finalize_text(format_label(caption), reply_markup=markup) is not None:
             return True
     except Exception as e:  # noqa: BLE001 - 收尾失败就回退新建, 不能让结果丢失
         logger.warning(f"编辑状态消息为文本结果失败, 改为新建: {type(e).__name__}: {e}")
     return False
+
+
+def _caption_note(req: ParseRequest, parse_result: Any) -> str | CaptionNote:
+    if getattr(parse_result, "x_status", None) is not None:
+        if req.include_custom_content and req.msg.text:
+            return extract_caption_note(req.msg.text, req.msg.entities or ())
+        return ""
+    return req.custom_content
 
 
 async def parse_url(cli: Client, msg: Message, url: str) -> None:
@@ -269,7 +277,7 @@ async def handle_parse(req: ParseRequest) -> bool:
         # 处理过程要和最终结果同一种排版: 骨架阶段要显示来源, 打码也要从第一秒就生效
         raw_url=req.url,
         spoiler_tag=req.spoiler_tag,
-        custom_content=req.custom_content,
+        custom_content="" if req.config.noprogress else req.custom_content,
     )
     sender = MessageSender(req.cli, req.msg, req.config)
     try:
@@ -335,13 +343,6 @@ async def handle_parse(req: ParseRequest) -> bool:
             )
             return True
 
-        caption = build_caption(
-            parse_result,
-            config=req.config,
-            custom_content=req.custom_content,
-            lang=req.t_.locale,
-            view_label=req.t_("查看"),
-        )
         media_refs = to_list(parse_result.media)
         # 显式要求非空: all() 对空列表返回 True, 不能让它把"没有媒体"当成"全是 GIF"
         gif_only = bool(media_refs) and all(isinstance(i, AniRef) for i in media_refs)
@@ -350,10 +351,14 @@ async def handle_parse(req: ParseRequest) -> bool:
             and gif_only
             and len(media_refs) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD
         ):
+            caption, entities = build_delivery_caption(
+                parse_result, config=req.config, _t=req.t_, custom_content=_caption_note(req, parse_result),
+                raw_url=raw_url,
+            )
             await sender.typing()
-            markup = build_gif_button(to_list(parse_result.media))
-            if not await _post_text(sender, reporter, caption, markup):
-                await sender.text_no_preview(caption, reply_markup=markup)
+            markup = build_gif_button(media_refs)
+            if not await _post_text(sender, reporter, caption, markup, entities=entities):
+                await sender.text_no_preview(caption, reply_markup=markup, entities=entities)
             return True
 
         if not result.processed_list:
@@ -375,10 +380,10 @@ async def handle_parse(req: ParseRequest) -> bool:
             return True
 
         if req.mode == ParseMode.RAW:
-            await send_raw(sender, result, reporter, _t=req.t_, custom_content=req.custom_content)
+            await send_raw(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, result.parse_result))
             return True
         if req.mode == ParseMode.ZIP:
-            await send_zip(sender, result, reporter, _t=req.t_, custom_content=req.custom_content)
+            await send_zip(sender, result, reporter, _t=req.t_, custom_content=_caption_note(req, result.parse_result))
             return True
 
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")

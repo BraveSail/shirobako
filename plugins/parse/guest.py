@@ -6,7 +6,7 @@ bot 会收到 `UpdateBotGuestChatQuery`（pyrogram: `on_guest_message`）,
 
 ⚠️ 回复**必须**走 `answer_guest_query`：bot 不在那个群里, 普通的
 `Message.reply_*` / `send_*` 根本发不出去。它接受的 result 与 inline 是同一套类型,
-所以富文本排版可以复用 `build_rich_markdown` / `build_rich_media`。
+所以富文本排版可以复用 inline 的构建器。
 
 与 inline 的分工: inline 是用户自己在输入框发起、结果由用户选中后发出;
 guest 是 bot 自己在群里发一条 —— 后者要求"只能被允许的人召唤",
@@ -14,6 +14,10 @@ guest 是 bot 自己在群里发一条 —— 后者要求"只能被允许的人
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
+from functools import partial
+from typing import Any
 
 from easy_ai18n import PreLocaleSelector
 from parsehub.utils.helpers import strip_flags, url_only_message_urls
@@ -30,16 +34,21 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.translate import translate_cache_entry, translate_for_display
 from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
+    build_delivery_blocks,
     build_rich_media,
+    cache_media_blocks,
+    cached_rich_message,
     edit_inline_rich_message,
+    result_summary_text,
+    with_cover_fallback,
 )
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
+from plugins.translate import translate_cache_entry, translate_for_display
 from repo.settings import SettingsConfig
 from services import (
     AdminUserService,
@@ -58,27 +67,28 @@ logger = logger.bind(name="GuestMode")
 GUEST_RESULT_ID = "guest-rich"
 
 
-# guest 的状态反馈走 MessageStatusReporter: 它 reply 那条召唤消息发一条进度,
-# 最后把同一条**编辑成结果** —— 与私聊/群自动解析的体验一致 (以前这里进度全丢,
-# 用户只看到"突然出现结果", 没有任何过程)。
-
-
 def _clip(text: str | None, limit: int) -> str:
     """压平换行并截断 (inline/guest 结果项的 title/description 只是一行)。"""
     flat = " ".join((text or "").split())
     return flat if len(flat) <= limit else flat[:limit] + "…"
 
 
-def _result(title: str, description: str, markdown: str, media: list | None = None) -> InlineQueryResultArticle:
+def _result_metadata(parse_result: object) -> tuple[str, str]:
+    summary = result_summary_text(parse_result)
+    return _clip(getattr(parse_result, "title", None), 90) or _clip(summary, 90) or "-", _clip(summary, 200)
+
+
+def _result(title: str, description: str, content: str | list | InputRichMessage) -> InlineQueryResultArticle:
     # 与直发/进度消息同一条通道（blocks 结构化）：inline 结果里的文字也是平台原文，
     # 走 markdown 字符串会被服务端解析，排布与最终消息不一致。
+    rich = content if isinstance(content, InputRichMessage) else InputRichMessage(
+        blocks=markdown_to_blocks(content) if isinstance(content, str) else content
+    )
     return InlineQueryResultArticle(
         id=GUEST_RESULT_ID,
         title=title,
         description=description,
-        input_message_content=InputRichMessageContent(
-            InputRichMessage(blocks=markdown_to_blocks(markdown))
-        ),
+        input_message_content=InputRichMessageContent(rich),
     )
 
 
@@ -103,19 +113,20 @@ async def _send_first_frame(
     与 inline 同构：inline 是"回调给句柄 → 编辑"，这里是"answer 首帧 → 拿句柄 → 编辑"。
     区别只在于句柄的来源，reporter 那边一视同仁。
     """
-    markdown = build_progress_markdown(
-        parse_result,
-        progress=format_label(_t("下 载 中...")),
-        config=config,
-        lang=locale,
-        view_label=_t("查看"),
-        spoiler_tag=spoiler_tag,
-        raw_url=raw_url,
-    )
-    title = _clip(getattr(parse_result, "title", None), 90) or _clip(getattr(parse_result, "content", None), 90) or "-"
-    description = _clip(getattr(parse_result, "content", None), 200)
+    options: dict[str, Any] = {
+        "progress": format_label(_t("下 载 中...")),
+        "config": config,
+        "lang": locale,
+        "view_label": _t("查看"),
+        "raw_url": raw_url,
+    }
+    if getattr(parse_result, "x_status", None) is not None:
+        content = build_delivery_blocks(parse_result, hide_content=spoiler_tag, **options)
+    else:
+        content = build_progress_markdown(parse_result, spoiler_tag=spoiler_tag, **options)
+    title, description = _result_metadata(parse_result)
     try:
-        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown))
+        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, content))
     except Exception as e:  # noqa: BLE001 - 首帧发不出去就退回"只有结果", 不该打断解析
         logger.warning(f"guest 首帧发送失败, 本次没有进度反馈: {type(e).__name__}: {str(e)[:120]}")
         return None
@@ -160,9 +171,10 @@ async def _deliver(
     *,
     title: str,
     description: str,
-    markdown: str,
+    markdown: str = "",
     media: list | None,
     blocks: list | None = None,
+    without_media: Callable[[], list] | None = None,
 ) -> None:
     """把结果送出去 (缓存路径拿不到 Message, 所以不返回)。
 
@@ -176,7 +188,7 @@ async def _deliver(
     ② **退回 ``answer_guest_query`` 直发**。编辑失败时的兜底 (占位没发出去、
     或服务端不接受编辑), 至少保证结果能送出去。
 
-    ``blocks`` 非空时走 blocks 路径 (敏感内容的媒体要靠 raw 的
+    ``blocks`` 是完整消息 (敏感内容的媒体要靠 raw 的
     ``PageBlockPhoto(spoiler=)`` 才能打码, 与 inline 同一套)。
     """
     if inline_message_id:
@@ -191,11 +203,22 @@ async def _deliver(
                 f"编辑 guest 消息失败, 退回 answer_guest_query: {type(e).__name__}: {str(e)[:120]}"
             )
 
+    content = blocks if blocks is not None else markdown
+
+    async def answer(value: str | list | InputRichMessage):
+        return await cli.answer_guest_query(guest_query_id, _result(title, description, value))
+
     try:
-        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown, media))
+        if without_media is not None and blocks is not None:
+            # 原生媒体先去掉抓取失败的封面，视频失败时才退回正文。
+            sent = await with_cover_fallback(InputRichMessage(blocks=blocks), answer)
+        else:
+            sent = await answer(content)
     except Exception as e:
         logger.warning(f"guest 带媒体发送失败, 退回纯文字: {type(e).__name__}: {str(e)[:120]}")
-        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown))
+        # 原生 X 降级也保留原生正文，不退回旧 Markdown。
+        fallback = without_media() if without_media is not None else markdown or content
+        sent = await answer(fallback)
     logger.info(f"guest 结果已发送: inline_message_id={getattr(sent, 'inline_message_id', None)}")
 
 
@@ -233,7 +256,7 @@ async def _answer(
         logger.debug(f"guest: file_id 缓存命中, 直接发送 url={raw_url}")
         if translate:
             cached = await translate_cache_entry(cached, raw_url, locale)
-        markdown, cached_media, cached_blocks = build_cached_rich_content(
+        content, cached_media, cached_blocks = build_cached_rich_content(
             cached,
             raw_url,
             lang=locale,
@@ -242,18 +265,33 @@ async def _answer(
             spoiler_tag=spoiler_tag,
         )
         pr = cached.parse_result
+        title, description = _result_metadata(pr)
+
+        def without_cached_media() -> list:
+            _, main, quoted, reply, _, _ = cache_media_blocks(cached)
+            return build_delivery_blocks(
+                pr,
+                raw_url=raw_url,
+                config=config,
+                lang=locale,
+                view_label=_t("查看"),
+                hide_content=spoiler_tag,
+                media_placeholders=main,
+                quote_media_placeholders=quoted,
+                reply_media_placeholders=reply,
+            )
+
         await _deliver(
             cli,
             guest_query_id,
             # 缓存命中不经过进度: 首帧就是结果本身 (载体还不存在 → 走 answer 直发)
             None,
-            title=_clip(pr.title, 90) or _clip(pr.content, 90) or "-",
-            description=_clip(pr.content, 200),
-            markdown=markdown,
+            title=title,
+            description=description,
+            markdown=content if isinstance(content, str) else "",
             media=cached_media or None,
-            # **一律走 blocks**（与 sender/inline 同一决策）：markdown 字符串通道会
-            # 解析平台原文（行首空格变代码块、``||`` 变 spoiler），blocks 的字面量不会。
-            blocks=markdown_to_blocks(markdown, media_blocks=cached_blocks) if cached_blocks else None,
+            blocks=cached_rich_message(content, cached_media, cached_blocks).blocks,
+            without_media=without_cached_media if isinstance(content, list) and cached_media else None,
         )
         return True
 
@@ -324,7 +362,7 @@ async def _answer(
             if config.video_cover
             else {}
         )
-        media, placeholders, _blocks, quoted_ph, reply_ph, media_urls = build_rich_media(
+        media, placeholders, media_blocks, quoted_ph, reply_ph, media_urls = build_rich_media(
             media_refs,
             result.processed_list,
             video_cover=config.video_cover,
@@ -333,19 +371,28 @@ async def _answer(
             quoted_media_count=getattr(parse_result, "quoted_media_count", 0),
             reply_media_count=getattr(parse_result, "reply_media_count", 0),
         )
-        markdown = build_rich_markdown(
-            parse_result,
-            config=config,
-            lang=locale,
-            view_label=_t("查看"),
-            media_placeholders=placeholders,
-            quote_media_placeholders=quoted_ph,
-            reply_media_placeholders=reply_ph,
-            media_urls=media_urls,
-            hide_content=spoiler_tag,
-        )
-        title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
-        description = _clip(parse_result.content, 200)
+        options: dict[str, Any] = {
+            "config": config,
+            "lang": locale,
+            "view_label": _t("查看"),
+            "media_placeholders": placeholders,
+            "quote_media_placeholders": quoted_ph,
+            "reply_media_placeholders": reply_ph,
+            "media_urls": media_urls,
+            "hide_content": spoiler_tag,
+        }
+        without_media = None
+        if getattr(parse_result, "x_status", None) is not None:
+            render = partial(build_delivery_blocks, parse_result, raw_url=raw_url, **options)
+            blocks = render(media_blocks=media_blocks)
+            markdown = ""
+            if media:
+                without_media = render
+        else:
+            markdown = build_rich_markdown(parse_result, **options)
+            # build_rich_media 返回的是媒体映射，不是完整的消息块列表。
+            blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
+        title, description = _result_metadata(parse_result)
 
         await _deliver(
             cli,
@@ -356,8 +403,8 @@ async def _answer(
             description=description,
             markdown=markdown,
             media=media or None,
-            # **一律走 blocks**（与 sender/inline 同一决策），见上面缓存命中路径的说明
-            blocks=_blocks or None,
+            blocks=blocks,
+            without_media=without_media,
         )
 
         # 不写 file_id 缓存: guest 的结果发在**别人群里的一条 inline 消息**上,
@@ -411,7 +458,6 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         logger.debug(f"guest 查询不是纯链接消息, 跳过: text={(msg.text or msg.caption or '')[:80]!r}")
         return
 
-    # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
     # **一次剥掉全部已注册开关**，group/inline/guest 三条路径行为一致
     _, flags = strip_flags(msg.text or msg.caption)
     spoiler_tag = flags.get("spoiler", "")

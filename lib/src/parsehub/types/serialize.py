@@ -35,6 +35,7 @@ from .result import (
     RichTextParseResult,
     VideoParseResult,
 )
+from .x_status import TextRun, XPost, XStatus, XTrending
 
 
 class ResultRebuildUnavailable(RuntimeError):
@@ -77,9 +78,10 @@ class ResultRebuildUnavailable(RuntimeError):
 #: - 12 = twitter trending 的封面**移进引用块**（2026-11-11）：v11 里它是块外的独立
 #:   媒体（排在消息末尾）⇒ 命中就是用户报的「图片应该在话题里面」。
 #: - 13 = Instagram 结果补上作者账号和主页地址；旧条目的作者行仍是纯文字。
+#: - 14 = 普通 X status 改用原生 DTO，独立 Article 不迁移。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
-_CACHE_CONTENT_VERSION = 13
+_CACHE_CONTENT_VERSION = X_STATUS_CONTENT_VERSION = 14
 
 # 仅提升受影响平台的读门槛，不让其他平台白白重解析和重传媒体。
 _MIN_CONTENT_VERSIONS: dict[str, int] = {
@@ -92,8 +94,10 @@ _MIN_CONTENT_VERSIONS: dict[str, int] = {
 }
 
 
-def minimum_content_version(platform_id: object) -> int:
+def minimum_content_version(platform_id: object, *, x_status: bool = False) -> int:
     """Minimum acceptable version for either cache; zero means no version check."""
+    if x_status:
+        return X_STATUS_CONTENT_VERSION
     return _MIN_CONTENT_VERSIONS.get(platform_id, 0) if isinstance(platform_id, str) else 0
 
 
@@ -163,6 +167,7 @@ _BUILDABLE_PARAMS = frozenset({
     "position_label", "topic_label", "quote_roles", "quote_ids", "origin_line", "reply_count", "polls", "content",
     "video", "photo", "media",
     "markdown_content",
+    "x_status",
 })
 
 
@@ -284,13 +289,37 @@ def _polls_from_payload(payload: Any) -> list[Poll]:
     return polls
 
 
+def _x_status_from_payload(data: dict[str, Any]) -> XStatus:
+    """重建嵌套 DTO，并把 JSON 数组还原为元组。"""
+    def text_run(fields: dict[str, Any]) -> TextRun:
+        return TextRun(**{**fields, "styles": tuple(fields.get("styles", ()))})
+
+    def post(fields: dict[str, Any]) -> XPost:
+        youtube = fields.get("youtube")
+        return XPost(**{
+            **fields,
+            "segments": tuple(text_run(run) for run in fields["segments"]),
+            "youtube": text_run(youtube) if youtube is not None else None,
+        })
+
+    reply = data.get("reply")
+    quoted = data.get("quoted")
+    trending = data.get("trending")
+    return XStatus(
+        main=post(data["main"]),
+        reply=post(reply) if reply is not None else None,
+        quoted=post(quoted) if quoted is not None else None,
+        trending=XTrending(**trending) if trending is not None else None,
+    )
+
+
 def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
     """结果对象 → 可 JSON 化的字典 (媒体带 ``kind``, 且记录**具体类名**)。
 
     ``impl`` 是这套缓存格式自己的字段 (``to_dict()`` 是公开格式, 不动它):
     少了它就只能按 ``type`` 重建, 平台子类会被降级 (见 ``_all_result_classes``)。
     """
-    return {
+    payload = {
         **result.to_dict(),
         "media": _media_to_payload(result.media),
         # ``to_dict()`` 是**公开输出格式**（被测试逐字段冻住），不往里加字段。
@@ -315,11 +344,16 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         # 正文格式版本 —— 缺它的老条目在读回时被判为旧格式重新解析 (见常量定义处)
         "content_version": _CACHE_CONTENT_VERSION,
     }
+    if result.x_status is not None:
+        payload["x_status"] = asdict(result.x_status)
+    return payload
 
 
 def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     """字典 → 结果对象。``result_to_cache_dict`` 的逆运算。"""
-    minimum = minimum_content_version(data.get("platform"))
+    platform_id = data.get("platform")
+    is_x_status = platform_id == Platform.TWITTER.id and data.get("type") == PostType.MULTIMEDIA.value
+    minimum = minimum_content_version(platform_id, x_status=is_x_status)
     if minimum and int(data.get("content_version") or 0) < minimum:
         raise ResultRebuildUnavailable(
             f"缓存内容版本过旧 (content_version={data.get('content_version')!r}), "
@@ -380,6 +414,8 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
             # content 是派生属性: 只喂 markdown_content, 由它算 content
             return target(media=media, markdown_content=data.get("markdown_content", ""), **common)
         if param == "media":
+            if (x_status := data.get("x_status")) is not None:
+                return target(media=media, content=content, x_status=_x_status_from_payload(x_status), **common)
             return target(media=media, content=content, **common)
         raise ValueError(f"不认识的结果类型, 无法重建: {target.__name__}")
 

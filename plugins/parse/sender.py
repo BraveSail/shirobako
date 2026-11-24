@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from easy_ai18n import PreLocaleSelector
 from parsehub.types import AniFile, AniRef, AnyMediaRef, AnyParseResult, ImageFile, LivePhotoFile, VideoFile
-from pyrogram import Client, enums
+from pyrogram import Client, enums, raw, utils
 from pyrogram.errors import FloodWait, Forbidden, SlowmodeWait, WebpageCurlFailed, WebpageMediaEmpty
 from pyrogram.types import (
     InlineKeyboardButton as Ikb,
@@ -24,25 +24,23 @@ from pyrogram.types import (
     InputRichMessage,
     LinkPreviewOptions,
     Message,
+    MessageEntity,
 )
 
 from core import bs
 from log import logger
-from plugins.helpers import (
-    build_caption,
-    build_rich_markdown,
-    format_label,
-)
+from plugins.helpers import build_caption, format_label
 from plugins.parse.cache import cache_media_from_message
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
+    build_delivery_blocks,
     build_rich_media,
     cached_rich_message,
     extract_cache_media,
     rich_cache_entry,
 )
-from plugins.parse.rich_blocks import markdown_to_blocks
+from plugins.parse.x_caption import CaptionNote, build_x_status_caption
 from repo.settings import SettingsConfig
 
 if TYPE_CHECKING:
@@ -72,6 +70,19 @@ GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD = 5
 
 type ReplyMediaGroupItem = InputMediaPhoto | InputMediaVideo | InputMediaDocument
 type PathType = str | os.PathLike[str]
+
+
+class _ExplicitEntities(list[MessageEntity]):
+    def __bool__(self) -> bool:
+        # An explicitly empty list still opts out of the SDK parser, which strips
+        # leading/trailing whitespace even with ParseMode.DISABLED.
+        return True
+
+
+def _entity_options(entities: list[MessageEntity] | None, *, field: str = "entities") -> dict[str, Any]:
+    if entities is None:
+        return {}  # Preserve the SDK's default parsing for legacy callers.
+    return {"parse_mode": enums.ParseMode.DISABLED, field: _ExplicitEntities(entities)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,14 +115,16 @@ class MessageSender:
 
         asyncio.get_running_loop().create_task(fn())
 
-    async def _send_and_schedule_delete[T](self, send_coro_fn: Callable[[], Awaitable[T]]) -> T:
-        sent = await self._send(send_coro_fn)
+    async def _send_and_schedule_delete[T](
+        self, send_coro_fn: Callable[[], Awaitable[T]], *, raise_cover_error: bool = False
+    ) -> T:
+        sent = await self._send(send_coro_fn, raise_cover_error=raise_cover_error)
         if isinstance(sent, Message) or isinstance(sent, list):
             self._delete_later(sent)
         return sent
 
     @staticmethod
-    async def _send[T](send_coro_fn: Callable[[], Awaitable[T]]) -> T:
+    async def _send[T](send_coro_fn: Callable[[], Awaitable[T]], *, raise_cover_error: bool = False) -> T:
         for attempt in range(MAX_RETRIES):
             try:
                 return await send_coro_fn()
@@ -126,6 +139,8 @@ class MessageSender:
                 logger.warning(f"消息发送失败, Bot 无权限: {e}")
                 break
             except Exception as e:
+                if raise_cover_error and isinstance(e, WebpageCurlFailed):
+                    raise  # The final rich sender retries without the cover.
                 logger.warning(f"消息发送失败: {e}")
                 break
             await asyncio.sleep(0.5)
@@ -152,6 +167,7 @@ class MessageSender:
         *,
         link_preview_options: LinkPreviewOptions | None = None,
         reply_markup: Ikm | None = None,
+        entities: list[MessageEntity] | None = None,
     ) -> Message:
         """发一条文本消息。**默认关闭链接预览**。
 
@@ -171,15 +187,38 @@ class MessageSender:
                     text,
                     link_preview_options=link_preview_options,
                     reply_markup=reply_markup,
+                    **_entity_options(entities),
                 )
             ),
         )
 
-    async def text_no_preview(self, text: str, *, reply_markup: Ikm | None = None) -> Message:
+    async def text_no_preview(
+        self, text: str, *, reply_markup: Ikm | None = None, entities: list[MessageEntity] | None = None
+    ) -> Message:
         return await self.text(
             text,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
             reply_markup=reply_markup,
+            entities=entities,
+        )
+
+    async def edit_text_with_entities(
+        self, text: str, entities: list[MessageEntity], *, reply_markup: Ikm | None = None
+    ) -> None:
+        # The rich-message SDK's edit_message_text resets its entities argument
+        # before serializing. Use its encoder and send the explicit TL request.
+        fields = await utils.parse_text_entities(
+            self.cli, text, enums.ParseMode.DISABLED, _ExplicitEntities(entities)
+        )
+        await self.cli.invoke(
+            raw.functions.messages.EditMessage(
+                peer=await self.cli.resolve_peer(self.msg.chat.id),
+                id=self.msg.id,
+                no_webpage=True,
+                reply_markup=await reply_markup.write(self.cli) if reply_markup else None,
+                **fields,
+            ),
+            business_connection_id=self.msg.business_connection_id,
         )
 
 
@@ -188,6 +227,7 @@ class MessageSender:
         document: PathType | BinaryIO,
         *,
         caption: str | None = None,
+        caption_entities: list[MessageEntity] | None = None,
         force_document: bool | None = None,
         use_reply_policy: bool = True,
     ) -> Message:
@@ -201,6 +241,7 @@ class MessageSender:
                     document,
                     caption=caption or "",
                     force_document=force_document,
+                    **_entity_options(caption_entities, field="caption_entities"),
                 )
             ),
         )
@@ -213,11 +254,13 @@ class MessageSender:
         document: PathType | BinaryIO,
         *,
         caption: str | None = None,
+        caption_entities: list[MessageEntity] | None = None,
         use_reply_policy: bool = True,
     ) -> Message:
         return await self.document(
             document,
             caption=caption,
+            caption_entities=caption_entities,
             force_document=True,
             use_reply_policy=use_reply_policy,
         )
@@ -348,6 +391,7 @@ class MessageSender:
         rich_message: InputRichMessage,
         *,
         reply_markup: Ikm | None = None,
+        raise_cover_error: bool = False,
     ) -> Message:
         return cast(
             Message,
@@ -356,9 +400,40 @@ class MessageSender:
                     self.msg.reply_rich if self.config.reply_msg else self.msg.answer_rich,
                     rich_message=rich_message,
                     reply_markup=reply_markup,
-                )
+                ),
+                raise_cover_error=raise_cover_error,
             ),
         )
+
+
+def build_delivery_caption(
+    parse_result: AnyParseResult,
+    *,
+    config: SettingsConfig,
+    _t: PreLocaleSelector,
+    custom_content: str | CaptionNote = "",
+    raw_url: str = "",
+    media_caption: bool = False,
+) -> tuple[str, list[MessageEntity] | None]:
+    """Return native entities for typed X statuses; None keeps legacy HTML parsing."""
+    if getattr(parse_result, "x_status", None) is not None:
+        return build_x_status_caption(
+            parse_result,
+            config=config,
+            custom_content=custom_content,
+            lang=_t.locale,
+            view_label=_t("查看"),
+            raw_url=raw_url,
+            max_length=_CAPTION_MAX_LENGTH if media_caption else 4096,
+        )
+    return build_caption(
+        parse_result,
+        config=config,
+        custom_content=custom_content.text if isinstance(custom_content, CaptionNote) else custom_content,
+        lang=_t.locale,
+        view_label=_t("查看"),
+        max_length=_CAPTION_MAX_LENGTH if media_caption else None,
+    ), None
 
 
 async def send_raw(
@@ -367,20 +442,18 @@ async def send_raw(
     reporter: StatusReporter,
     *,
     _t: PreLocaleSelector,
-    custom_content: str = "",
+    custom_content: str | CaptionNote = "",
 ) -> None:
     """Raw 模式：将文件以原始文档形式上传。"""
     logger.debug("Raw 模式, 直接上传文件")
     await reporter.report_result(result.parse_result, _t("上 传 中..."))
     try:
-        caption = build_caption(
+        caption, entities = build_delivery_caption(
             result.parse_result,
             config=sender.config,
+            _t=_t,
             custom_content=custom_content,
-            lang=_t.locale,
-            view_label=_t("查看"),
-            # 原始文件以媒体 caption 形式发送, Telegram 上限 1024
-            max_length=_CAPTION_MAX_LENGTH,
+            media_caption=True,
         )
         docs: list[InputMediaDocument] = []
         gifs = []
@@ -401,7 +474,9 @@ async def send_raw(
         if len(docs + gifs) == 1:
             all_docs = docs + gifs
             await sender.upload_document()
-            sent_msg = await sender.force_document(media_input(all_docs[0].media), caption=caption)
+            sent_msg = await sender.force_document(
+                media_input(all_docs[0].media), caption=caption, caption_entities=entities
+            )
             if livephoto_videos and sent_msg:
                 await sender.reply_to(sent_msg).force_document(
                     media_input(livephoto_videos[0].media),
@@ -425,7 +500,7 @@ async def send_raw(
                     format_label(_t("GIF 下载链接")),
                     reply_markup=build_gif_button(to_list(result.parse_result.media)),
                 )
-            await sender.text_no_preview(caption)
+            await sender.text_no_preview(caption, entities=entities)
 
     except Exception as e:
         logger.opt(exception=e).debug("详细堆栈")
@@ -444,19 +519,17 @@ async def send_zip(
     reporter: StatusReporter,
     *,
     _t: PreLocaleSelector,
-    custom_content: str = "",
+    custom_content: str | CaptionNote = "",
 ) -> None:
     logger.debug("Zip 模式, 开始打包")
     await reporter.report_result(result.parse_result, _t("打 包 中..."))
     try:
-        caption = build_caption(
+        caption, entities = build_delivery_caption(
             result.parse_result,
             config=sender.config,
+            _t=_t,
             custom_content=custom_content,
-            lang=_t.locale,
-            view_label=_t("查看"),
-            # 打包成一条消息时带 caption, Telegram 上限 1024, 必须留余量
-            max_length=_CAPTION_MAX_LENGTH,
+            media_caption=True,
         )
         if result.output_dir is None:
             raise ValueError("缺少打包目录")
@@ -472,7 +545,7 @@ async def send_zip(
     await reporter.report_result(result.parse_result, _t("上 传 中..."))
     try:
         await sender.upload_document()
-        await sender.document(str(pack_path), caption=caption)
+        await sender.document(str(pack_path), caption=caption, caption_entities=entities)
     except Exception as e:
         logger.opt(exception=e).debug("详细堆栈")
         logger.error(f"上传失败: {e}")
@@ -565,33 +638,21 @@ async def send_rich_media(
         quoted_media_count=getattr(parse_result, "quoted_media_count", 0),
         reply_media_count=getattr(parse_result, "reply_media_count", 0),
     )
-    markdown = build_rich_markdown(
+    blocks = build_delivery_blocks(
         parse_result,
         config=sender.config,
+        raw_url=parse_result.raw_url or raw_url,
         lang=_t.locale,
         view_label=_t("查看"),
         custom_content=custom_content,
         media_placeholders=placeholders,
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
+        media_blocks=media_blocks,
         media_urls=media_urls,
         hide_content=spoiler_tag,
     )
-    # **一律走 blocks 结构化通道**（2026-11-02 定案）。
-    #
-    # 以前只有两种情况走 blocks（敏感媒体要打码、折叠引用卡片带媒体），其余走
-    # ``InputRichMessageMarkdown`` —— 那条通道的语义是"这段是 markdown，请解析"，
-    # 而我们喂的是**平台原文**（字面量）。语义错配的代价是每撞上一个语法就要打补丁：
-    # 行首 4 空格 → 缩进代码块、``||`` → spoiler、``#``/``_``/``*`` → 各种语法。
-    # 补丁之间还互相破坏（换全角空格解决代码块，结果宽度翻倍把对齐搞歪）。
-    #
-    # blocks 通道的每个块携带**字面量文本**，服务端不解析 —— 原文的缩进、``||``、
-    # ``#`` 全都不需要转义，也不会误解。这才是对的方向，不是再补一个字符替换。
-    blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
-    logger.debug(
-        f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}, "
-        f"markdown_len={len(markdown)}"
-    )
+    logger.debug(f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}")
     rich = InputRichMessage(blocks=blocks)
 
     message = await _post_rich(sender, rich, reporter=reporter)
@@ -643,8 +704,6 @@ async def _post_rich(
     编辑失败 (状态消息被用户手动删掉、内容被判为未变更等) 时退回新建 ——
     结果不能因为"收尾方式"失败而丢失。
     """
-    from pyrogram.errors import WebpageCurlFailed
-
     from plugins.parse.inline_rich import strip_video_cover
 
     async def _send(r: InputRichMessage) -> Message:
@@ -656,7 +715,7 @@ async def _post_rich(
                 raise  # 交给外层"去掉封面重试", 别退化成新建一条
             except Exception as e:
                 logger.warning(f"编辑状态消息失败, 改为新建结果: {type(e).__name__}: {e}")
-        return await sender.rich_message(rich_message=r)
+        return await sender.rich_message(rich_message=r, raise_cover_error=True)
 
     try:
         return await _send(rich)

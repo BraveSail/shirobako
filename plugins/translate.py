@@ -43,9 +43,8 @@ https://x.com/user/status/123 #翻译
 ## 只换正文文本，保留完整排版结构（含引用块 / 回复块 / 投票 / 话题卡片）
 
 ``apply_translation`` 只替换主帖文本，以及（若存在 ``quote_ids``）并发翻译被回复 /
-被引用推文块内的文本。作者行 / 引用署名行 / 引用块结构 / 投票占位符 / trending 卡片 /
-发布时间 / 浏览量 / 点赞 / 标签 / 页脚 / 折叠 / **媒体归位** 全部保持原形态，
-所以 ``#t`` 的输出与不加 ``#t`` **同形**，唯一差别是正文与引用内容换成了目标语言。
+被引用推文块内的文本。原生状态仅替换 ``XStatus`` 的各角色文本片段，不构造 Markdown；
+独立 Article 与旧状态仍走 Markdown。作者、投票、卡片、统计与媒体归位均不变。
 """
 
 from __future__ import annotations
@@ -53,12 +52,14 @@ from __future__ import annotations
 import asyncio
 import copy
 import re
-from typing import TypeVar
+from dataclasses import replace
 from urllib.parse import quote
 
 from parsehub.provider_api.twitter import Twitter, XTranslationFailure
+from parsehub.types.x_status import TextRun, XPost, XStatus, text_runs
 from parsehub.utils import http
 from parsehub.utils.helpers import SecretCookie, _quote_line
+from pydantic import TypeAdapter, ValidationError
 
 from core import pl_cfg
 from log import logger
@@ -69,8 +70,9 @@ logger = logger.bind(name="Translate")
 
 #: 译文缓存 TTL（7 天）—— 推文内容与译文稳定，缓存后重复 ``#t`` 请求零外部 API 往返
 _TRANSLATE_CACHE_TTL = 7 * 24 * 60 * 60
-
-_T = TypeVar("_T")
+# 原生译文的 schema / 分段规则变化时只升此版本，不影响旧 Markdown 译文缓存。
+_RUNS_CACHE_VERSION = "v1"
+_RUNS_CACHE: TypeAdapter[tuple[TextRun, ...]] = TypeAdapter(tuple[TextRun, ...])
 
 #: 我们的界面语言 → X 的 ``dstLang``。
 #:
@@ -241,21 +243,82 @@ def log_translation_outcome(url: str, lang: str, changed: bool, *, label: str) -
     logger.info("{}: changed={} tweet_id={} lang={}", label, changed, _tweet_id_for_log(url), x_lang_for(lang))
 
 
+async def _request_translation(client: Twitter, tweet_id: str, dst_lang: str) -> tuple[str, dict] | None:
+    try:
+        return await client.translate_tweet(tweet_id, dst_lang)
+    except Exception as e:  # noqa: BLE001 - 单帖翻译失败不应阻断其它帖子
+        _log_failure(tweet_id, dst_lang, e, stage="translate_tweet")
+        return None
+
+
 async def _translate_id_markdown(client: Twitter, tweet_id: str, dst_lang: str) -> str | None:
     """用既有 Twitter 客户端翻译单条推文 id（优先读 Redis 译文缓存）；不可用或失败返回 ``None``。"""
     key = cache_key("translate", tweet_id, dst_lang)
     if cached := await get_optional(key):
         logger.debug(f"#t 译文缓存命中: tweet_id={tweet_id} lang={dst_lang}")
         return cached
-    try:
-        translated, entities = await client.translate_tweet(tweet_id, dst_lang)
-    except Exception as e:  # noqa: BLE001 - 翻译失败不能把整条解析弄挂
-        _log_failure(tweet_id, dst_lang, e, stage="translate_tweet")
+    result = await _request_translation(client, tweet_id, dst_lang)
+    if result is None:
         return None
-    md = to_markdown(translated, entities)
+    md = to_markdown(*result)
     if md:
         await set_with_ttl(key, md, _TRANSLATE_CACHE_TTL)
     return md
+
+
+def _has_text(runs: tuple[TextRun, ...]) -> bool:
+    return any(run.text.strip() for run in runs)
+
+
+async def _translate_id_runs(client: Twitter, tweet_id: str, dst_lang: str) -> tuple[TextRun, ...]:
+    key = cache_key("translate-runs", _RUNS_CACHE_VERSION, tweet_id, dst_lang)
+    if cached := await get_optional(key):
+        try:
+            runs = _RUNS_CACHE.validate_json(cached, strict=True)
+        except ValidationError:
+            pass  # 旧格式或损坏条目只视为该帖未命中，不动 Markdown 或其它角色的缓存。
+        else:
+            if _has_text(runs):
+                logger.debug("#t 原生译文缓存命中: tweet_id={} lang={}", _safe_tweet_id(tweet_id), dst_lang)
+                return runs
+    result = await _request_translation(client, tweet_id, dst_lang)
+    if result is None:
+        return ()
+    try:
+        runs = text_runs(*result, translation=True)
+        if _has_text(runs):
+            await set_with_ttl(key, _RUNS_CACHE.dump_json(runs).decode(), _TRANSLATE_CACHE_TTL)
+            return runs
+    except Exception as e:  # noqa: BLE001 - 此角色回退，其它角色照常
+        _log_failure(tweet_id, dst_lang, e, stage="text_runs")
+    return ()
+
+
+async def _translate_x_status(
+    status: XStatus, main_id: str, quote_ids: dict[str, str], dst_lang: str,
+) -> XStatus:
+    targets: dict[str, tuple[str, XPost]] = {}
+    for role, post, tweet_id in (
+        ("main", status.main, main_id),
+        ("reply", status.reply, str(quote_ids.get("reply") or "").strip()),
+        ("quoted", status.quoted, str(quote_ids.get("quoted") or "").strip()),
+    ):
+        if tweet_id and post is not None and _has_text(post.segments):
+            targets[role] = (tweet_id, post)
+    if not targets:
+        return status
+
+    # 有些上下文的回复与引用指向同一帖。先去重，再并发；只换各角色的 segments。
+    ids = tuple(dict.fromkeys(tweet_id for tweet_id, _ in targets.values()))
+    client = _build_twitter_client()
+    translated = await asyncio.gather(*(_translate_id_runs(client, tweet_id, dst_lang) for tweet_id in ids))
+    by_id = dict(zip(ids, translated, strict=True))
+    changes = {
+        role: replace(post, segments=runs)
+        for role, (tweet_id, post) in targets.items()
+        if (runs := by_id[tweet_id]) and runs != post.segments
+    }
+    return replace(status, **changes) if changes else status
 
 
 async def translate_tweet_markdown(url: str, lang: str) -> str | None:
@@ -417,10 +480,10 @@ def set_body(
 
 
 async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
-    """``#t`` 的实现：把 ``parse_result`` 的主帖与引用推文换成平台译文。
+    """把当前展示结果的主帖与引用推文换成平台译文，不改共享 DTO。
 
     Args:
-        parse_result: 已解析的结果（媒体是否下载过无所谓 —— 只改文本部分）。
+        parse_result: 本次展示独占的结果；共享结果请用 ``translate_for_display``。
         url: 原推文链接。
         lang: 目标界面语言（``zh-hans`` / ``ja-jp`` …）。
 
@@ -436,6 +499,14 @@ async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
     main_id = match[1]
     dst_lang = x_lang_for(lang)
     quote_ids = dict(getattr(parse_result, "quote_ids", None) or {})
+    status = getattr(parse_result, "x_status", None)
+    if isinstance(status, XStatus):
+        translated = await _translate_x_status(status, main_id, quote_ids, dst_lang)
+        if translated is status:
+            return False
+        parse_result.x_status = translated  # type: ignore[attr-defined]
+        return True
+
     reply_id = str(quote_ids.get("reply") or "").strip()
     quoted_id = str(quote_ids.get("quoted") or "").strip()
 
@@ -463,7 +534,7 @@ async def apply_translation(parse_result: object, url: str, lang: str) -> bool:
     return True
 
 
-async def translate_for_display(parse_result: _T, url: str, lang: str) -> _T:
+async def translate_for_display[T](parse_result: T, url: str, lang: str) -> T:
     """浅拷贝 ``parse_result`` 并就地翻译正文/引用，原对象不动（用于进度展示与发送）。"""
     cloned = copy.copy(parse_result)
     try:
@@ -475,7 +546,7 @@ async def translate_for_display(parse_result: _T, url: str, lang: str) -> _T:
     return cloned if changed else parse_result
 
 
-async def translate_cache_entry(entry: _T, url: str, lang: str) -> _T:
+async def translate_cache_entry[T](entry: T, url: str, lang: str) -> T:
     """克隆持久化缓存条目并翻译其 ``parse_result``（复用已上传的 file_id，零下载/零上传）。"""
     pr = entry.parse_result.model_copy(deep=True)  # type: ignore[attr-defined]
     try:

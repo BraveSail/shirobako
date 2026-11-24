@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from easy_ai18n import PreLocaleSelector
 
+from plugins.parse.x_caption import NOTE_PATTERN
 from repo.settings import ParseMode, SettingsConfig
 
 if TYPE_CHECKING:
@@ -25,13 +26,23 @@ class ParseRequest:
     t_: PreLocaleSelector
     bypass_cache: bool = False
     delete_share_url_msg: bool = False
-    custom_content: str = ""
+    include_custom_content: bool = False
     #: 用户手动要求打码时**命中的标记** (``#nsfw`` / ``#spoiler``, 空串=没要求)。
     #: 存标记而不是 bool, 因为摘要要显示它。
     spoiler_tag: str = ""
     #: ``#t`` 命中 —— 要求把这条推文**译成用户语言**再发。
     #: 与 ``spoiler_tag`` 同一层（都是「链接后面空一格的独立 token」），可并存。
     translate: bool = False
+
+    @property
+    def custom_content(self) -> str:
+        """Compatibility adapter for rich and legacy deliveries, not native X captions."""
+        if not self.include_custom_content or not (text := self.msg.text):
+            return ""
+        if self.msg.entities:
+            text = self.cli.parser.unparse(text, self.msg.entities, is_html=True)  # type: ignore[assignment]
+        match = NOTE_PATTERN.search(text)
+        return match[1].strip() if match else ""
 
     @property
     def chat_id(self) -> int | None:

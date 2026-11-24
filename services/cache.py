@@ -20,18 +20,22 @@
 import asyncio
 import hashlib
 import json
+import re
 import time
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
+from urllib.parse import urlsplit
 
 from parsehub.types.result import AnyParseResult
 from parsehub.types.serialize import (
+    _CACHE_CONTENT_VERSION,
     can_rebuild_from_cache,
     minimum_content_version,
     result_from_cache_dict,
     result_to_cache_dict,
 )
+from parsehub.types.x_status import XStatus
 from pydantic import BaseModel
 
 from core import bs
@@ -209,6 +213,11 @@ class CacheParseResult(BaseModel):
     #: ``> <i><a …>作者</a> …</i>`` 变成一行裸文字）。
     #: 非 RichText 平台没有这个属性，存空串。
     markdown_content: str = ""
+    #: 普通 X status 的原生正文；Article 与其它平台仍用旧渲染源。
+    x_status: XStatus | None = None
+    x_trending_cover_url: str = ""
+    #: 下载失败的链接不在 file_id 列表中；保留平铺位置以重建角色桶。
+    x_failed_media: dict[int, str] = {}
     author_name: str = ""
     author_handle: str = ""
     author_url: str = ""
@@ -304,10 +313,8 @@ FOOTER_META_FIELDS_VERSION = 1
 #: - 12 = 该封面**移进话题引用块**（2026-11-11）：v11 里它是块外独立媒体 ⇒
 #:   命中就是「图片应该在话题里面」。
 #: - 13 = Instagram 补上作者账号和主页地址。
-#:
-#: ⚠️ 与 lib 侧 ``parsehub.types.serialize._CACHE_CONTENT_VERSION`` 是**同一语义的两个副本**，
-#: 改动必须同步（lib 决定结果层缓存，这里决定持久层缓存）。
-CONTENT_VERSION = 13
+#: - 14 = 原生 X status；结果层和持久层共用同一个写版本。
+CONTENT_VERSION = _CACHE_CONTENT_VERSION
 
 
 class CacheMedia(BaseModel):
@@ -326,6 +333,24 @@ class CacheEntry(BaseModel):
     media: list[CacheMedia] | None = None
     rich: bool = False
     author_metadata_version: int = 1
+
+
+def _is_x_status_cache(result: CacheParseResult, url: str) -> bool:
+    if result.x_status is not None:
+        return True
+    # 旧 X Article 也可通过 status URL 请求，故先检查 Article 的正文源。
+    if result.markdown_content or result.platform not in ("", "twitter"):
+        return False
+    try:
+        parsed = urlsplit(url if "://" in url else f"//{url}")
+    except ValueError:
+        return False
+    host, path = parsed.hostname or "", parsed.path
+    return (
+        host.removeprefix("www.").removeprefix("mobile.") in ("x.com", "twitter.com", "fixupx.com")
+        and re.search(r"/status/\d+(?:/|$)", path) is not None
+        and re.search(r"/article/\d+(?:/|$)", path) is None
+    )
 
 
 class PersistentCache:
@@ -398,7 +423,9 @@ class PersistentCache:
             self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
             return None
 
-        minimum = minimum_content_version(entry.parse_result.platform)
+        minimum = minimum_content_version(
+            entry.parse_result.platform, x_status=_is_x_status_cache(entry.parse_result, url),
+        )
         if minimum and entry.parse_result.content_version < minimum:
             self.logger.debug(
                 f"{entry.parse_result.platform} 缓存内容版本过旧 "

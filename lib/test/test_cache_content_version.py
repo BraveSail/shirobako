@@ -90,6 +90,13 @@ def test_current_instagram_entry_keeps_its_author_link():
 
 @pytest.mark.parametrize("platform", [Platform.TWITTER, Platform.DOUYIN, Platform.BANGUMI, Platform.LINUXDO, Platform.BILIBILI])
 def test_instagram_update_does_not_invalidate_other_versioned_platforms(platform):
-    data = result_to_cache_dict(_result(platform))
+    result = _result(platform)
+    if platform == Platform.TWITTER:
+        from parsehub.parsers.parser.twitter import TwitterArticleParseResult
+
+        result = TwitterArticleParseResult(markdown_content="# An X Article shared as a status URL")
+        result.platform = platform
+        result.raw_url = "https://x.com/u/status/1"
+    data = result_to_cache_dict(result)
     data["content_version"] = 12
     assert result_from_cache_dict(data).platform == platform

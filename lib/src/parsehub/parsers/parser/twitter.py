@@ -1,7 +1,7 @@
 import html
 from collections.abc import Sequence
 from typing import Any, ClassVar
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlsplit, urlunparse
 
 from ...provider_api.twitter import (
     Twitter,
@@ -22,6 +22,7 @@ from ...types import (
     RichTextParseResult,
     VideoRef,
 )
+from ...types.x_status import TextRun, XPost, XStatus, XTrending
 from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
@@ -286,8 +287,8 @@ class TwitterParser(BaseParser):
         return f"{block.rstrip()}\n{extra}\n\n"
 
     @staticmethod
-    async def _youtube_card(text: str | None) -> tuple[str, list[AnyMediaRef]]:
-        """把正文里的 YouTube 链接渲染成可点的**卡片行**（标题链到视频）。
+    async def _youtube_link(text: str | None) -> TextRun | None:
+        """取正文里首个可用的 YouTube 卡片（仅标题和链接）。
 
         **作用域: 只给被引用 / 被回复的推文用** —— 它们本来就渲染成引用卡片,
         卡片正文里的链接应当是可点的、有标题的。
@@ -313,10 +314,82 @@ class TwitterParser(BaseParser):
         for link in find_youtube_links(text):
             card = await fetch_card(link)
             if card:
-                href = html.escape(card.url, quote=True)
-                label = html.escape(card.title)
-                return f'> <i><a href="{href}">{label}</a></i>', []
-        return "", []
+                return TextRun(card.title, card.url, ("italic",))
+        return None
+
+    @staticmethod
+    def _youtube_quote(card: TextRun | None) -> str:
+        if card is None:
+            return ""
+        return f'> <i><a href="{html.escape(card.url, quote=True)}">{html.escape(card.text)}</a></i>'
+
+    @staticmethod
+    async def _youtube_card(text: str | None) -> tuple[str, list[AnyMediaRef]]:
+        """兼容旧卡片行接口；正文结构不从这里的 HTML 恢复。"""
+        return TwitterParser._youtube_quote(await TwitterParser._youtube_link(text)), []
+
+    @staticmethod
+    async def _related_youtube(post: TwitterTweet | None, *, legacy: bool) -> TextRun | None:
+        if post is None:
+            return None
+        # Article 仍用旧正文；普通 status 的候选链接取自原文片段，而不是 Markdown。
+        text = post.full_text if legacy else "".join(f" {run.url} " if run.url else run.text for run in post.segments)
+        return await TwitterParser._youtube_link(text)
+
+    @staticmethod
+    def _trending_path(url: str) -> str:
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            return ""
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+            "x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com",
+        }:
+            return ""
+        path = parsed.path.rstrip("/")
+        return path if path.startswith("/i/trending/") else ""
+
+    @staticmethod
+    def _native_status(
+        tweet: TwitterTweet,
+        *,
+        reply_youtube: TextRun | None,
+        quoted_youtube: TextRun | None,
+        cover_index: int | None,
+    ) -> XStatus:
+        indexes = TwitterParser._poll_indexes(tweet)
+
+        def post(
+            source: TwitterTweet, segments: tuple[TextRun, ...], role: str, youtube: TextRun | None = None,
+        ) -> XPost:
+            return XPost(
+                segments=segments,
+                author_name=source.author_name or "",
+                author_handle=source.author_handle or "",
+                author_url=profile_url(Platform.TWITTER, source.author_handle or ""),
+                poll_index=indexes.get(role),
+                youtube=youtube,
+            )
+
+        def related(source: TwitterTweet | None, role: str, youtube: TextRun | None) -> XPost | None:
+            if source and (source.media or youtube or role in indexes or any(r.text.strip() for r in source.segments)):
+                return post(source, source.segments, role, youtube)
+            return None
+
+        segments = tweet.segments
+        trending = None
+        if card := tweet.trending:
+            trending = XTrending(title=card.title, subtitle=card.subtitle, url=card.url, cover_index=cover_index)
+            if path := TwitterParser._trending_path(card.url):
+                # Remove only the matching entity run(s), never an unlinked literal or the rest of its line.
+                segments = tuple(run for run in segments if TwitterParser._trending_path(run.url) != path)
+
+        return XStatus(
+            main=post(tweet, segments, "main"),
+            reply=related(tweet.reply_to, "reply", reply_youtube),
+            quoted=related(tweet.quoted_status, "quoted", quoted_youtube),
+            trending=trending,
+        )
 
     @staticmethod
     def _hashtags(tweet: TwitterTweet) -> list[str]:
@@ -376,29 +449,22 @@ class TwitterParser(BaseParser):
         # trending 卡片的话题封面：**不在** ``tweet.media`` 里（那里的图是 X 的
         # 通用占位图，已在 `_parse_unified_card_media` 里丢掉），由 provider 层
         # 从话题页补取后放在 ``tweet.trending.cover``。排主帖媒体末尾。
+        cover_index = None
         if tweet.trending and tweet.trending.cover:
+            cover_index = len(media)
             media.append(ImageRef(url=tweet.trending.cover))
 
-        # 被**引用 / 被回复**推文正文里的 YouTube 链接 -> 引用卡片 (标题可点) + 封面。
-        # 只有这两种推文才处理: 它们本来就渲染成引用卡片, 卡片里的链接该有封面。
-        # **主帖自己的正文不处理** —— 它既不是引用也不是回复, 链接原样留着。
-        reply_yt_quote, reply_yt_media = (
-            await TwitterParser._youtube_card(tweet.reply_to.full_text) if tweet.reply_to else ("", [])
-        )
-        quoted_yt_quote, quoted_yt_media = (
-            await TwitterParser._youtube_card(tweet.quoted_status.full_text) if tweet.quoted_status else ("", [])
-        )
+        # 每个关联帖只走原有的一次卡片查询流程，同一份标题/链接同时给结构和旧引用行。
+        legacy = tweet.article is not None
+        reply_youtube = await TwitterParser._related_youtube(tweet.reply_to, legacy=legacy)
+        quoted_youtube = await TwitterParser._related_youtube(tweet.quoted_status, legacy=legacy)
+        reply_yt_quote = TwitterParser._youtube_quote(reply_youtube)
+        quoted_yt_quote = TwitterParser._youtube_quote(quoted_youtube)
 
         # 媒体顺序 = [正文..., 被回复..., 被引用...]（渲染层从末尾往前切两个引用块）。
-        # 每档里"卡片自己正文的 YouTube 封面"排在该档媒体的**末尾**。
-        reply_media = [
-            *TwitterParser.to_media_refs(tweet.reply_to.media if tweet.reply_to else None),
-            *reply_yt_media,
-        ]
-        quoted_media = [
-            *TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None),
-            *quoted_yt_media,
-        ]
+        # YouTube 链接卡片只有文字，不占媒体索引。
+        reply_media = TwitterParser.to_media_refs(tweet.reply_to.media if tweet.reply_to else None)
+        quoted_media = TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None)
         media.extend(reply_media)
         media.extend(quoted_media)
 
@@ -461,6 +527,9 @@ class TwitterParser(BaseParser):
             quote_ids=quote_ids,
             hashtags=TwitterParser._hashtags(tweet),
             polls=polls,
+            x_status=TwitterParser._native_status(
+                tweet, reply_youtube=reply_youtube, quoted_youtube=quoted_youtube, cover_index=cover_index,
+            ),
         )
 
 

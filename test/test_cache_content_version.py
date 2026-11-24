@@ -138,7 +138,10 @@ def test_current_instagram_entry_is_reused():
 
 @pytest.mark.parametrize("platform", ["twitter", "douyin", "bangumi", "linuxdo", "bilibili"])
 def test_instagram_update_preserves_other_versioned_entries(platform):
-    assert _get(_entry_payload(platform=platform, content_version=12)) is not None
+    payload = _entry_payload(platform=platform, content_version=12)
+    if platform == "twitter":
+        payload["parse_result"]["markdown_content"] = "# An X Article shared as a status URL"
+    assert _get(payload) is not None
 
 
 def test_both_cache_layers_write_the_same_version():

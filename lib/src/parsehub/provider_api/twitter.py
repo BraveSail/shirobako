@@ -14,6 +14,7 @@ from loguru import logger
 
 from ..errors import TranslationUnavailable
 from ..types import ParseError
+from ..types.x_status import TextRun, text_runs
 from ..utils import http
 from ..utils.helpers import UA, to_datetime, to_int
 
@@ -419,7 +420,10 @@ class Twitter:
         # 点赞数在 legacy.favorite_count (匿名请求同样返回)
         like_count = legacy.get("favorite_count")
         # 标签取**平台实体**（服务端已算好边界）—— 正则猜边界会多吃日文标点（见 hashtags 字段说明）
-        hashtags = self._extract_hashtags(legacy.get("entities") or {})
+        legacy_entities = legacy.get("entities")
+        if not isinstance(legacy_entities, dict):
+            legacy_entities = {}
+        hashtags = self._extract_hashtags(legacy_entities)
 
         if article := node.get("article", {}):
             ta = ArticleRenderer(article["article_results"]["result"]).render()
@@ -439,29 +443,45 @@ class Twitter:
                 poll=self._parse_poll(node),
             )
 
-        richtext: dict | None = None
-        if note_tweet := node.get("note_tweet"):
-            note_result = note_tweet.get("note_tweet_results", {}).get("result", {})
-            full_text = note_result.get("text", None)
+        note_tweet = node.get("note_tweet") or {}
+        note_result = (note_tweet.get("note_tweet_results") or {}).get("result") or {}
+        note_entities = note_result.get("entity_set")
+        if not isinstance(note_entities, dict):
+            note_entities = {}
+        note_text = note_result.get("text")
+        if isinstance(note_text, str) and note_text:
+            original_text = note_text
+            entities = note_entities
             richtext = note_result.get("richtext")
-            url_entities = (note_result.get("entity_set") or {}).get("urls") or []
-            if not full_text:
-                full_text = legacy.get("full_text", "")
-                richtext = None
-                url_entities = legacy["entities"].get("urls", [])
         else:
-            full_text = legacy.get("full_text", "")
-            richtext = legacy.get("richtext")
-            url_entities = legacy["entities"].get("urls", [])
+            legacy_text = legacy.get("full_text")
+            original_text = legacy_text if isinstance(legacy_text, str) else ""
+            entities = legacy_entities
+            richtext = None if note_tweet else legacy.get("richtext")
+        if not isinstance(richtext, dict):
+            richtext = None
+
+        media_list: list[TwitterVideo | TwitterPhoto | TwitterAni] = []
+        media_urls: list[str] = []
+        for item in self._entity_objects(legacy_entities.get("media")):
+            if parsed := self._media_from_dict(item):
+                media_list.append(parsed)
+                if isinstance(url := item.get("url"), str) and url:
+                    media_urls.append(url)
+
+        # Match each text with its own entity set before the compatibility projection
+        # inserts Markdown or replaces t.co tokens. Legacy media can also belong to a note.
+        segments = text_runs(
+            original_text,
+            entities,
+            richtext_tags=(richtext or {}).get("richtext_tags") or (),
+            media_urls=media_urls,
+        )
 
         # 长推文的局部加粗在 richtext_tags 里 (索引指向**未展开**的原文,
         # 必须在短链展开前应用 —— 展开改长度会让区间漂移)。
-        full_text = self._apply_richtext(full_text, richtext)
-        full_text = self._restore_short_urls(full_text, url_entities)
-
-        media_list: list[TwitterVideo | TwitterPhoto | TwitterAni] = [
-            parsed for i in (legacy["entities"].get("media") or []) if (parsed := self._media_from_dict(i))
-        ]
+        full_text = self._apply_richtext(original_text, richtext)
+        full_text = self._restore_short_urls(full_text, self._entity_objects(entities.get("urls")))
 
         # 「统一卡片」(``unified_card``) 里的媒体 —— **视频常常只在这里**。
         # 实测 ``x.com/Apple/status/2104922864910815586``：``legacy`` 上只有 ``entities``
@@ -480,10 +500,7 @@ class Twitter:
         poll = self._parse_poll(node)
 
         # 长推文的标签在 note_tweet 的 entity_set 里, 与 legacy 的合并（去重保序）
-        hashtags = self._extract_hashtags(
-            legacy.get("entities") or {},
-            ((node.get("note_tweet") or {}).get("note_tweet_results") or {}).get("result", {}).get("entity_set") or {},
-        )
+        hashtags = self._extract_hashtags(legacy_entities, note_entities)
 
         return TwitterTweet(
             tweet_id=tweet_id,
@@ -501,6 +518,7 @@ class Twitter:
             hashtags=hashtags,
             poll=poll,
             trending=self._parse_trending_card(node),
+            segments=segments,
         )
 
     @staticmethod
@@ -784,6 +802,10 @@ class Twitter:
             return None
 
     @staticmethod
+    def _entity_objects(value: object) -> list[dict]:
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, (list, tuple)) else []
+
+    @staticmethod
     def _apply_richtext(text: str, richtext: dict | None) -> str:
         """把 ``richtext_tags`` 的样式区间织成 markdown 标记 (目前只处理 ``Bold``)。
 
@@ -808,27 +830,29 @@ class Twitter:
 
         ``richtext_tags`` 缺失 / 为空 / 区间越界时原样返回 (旧响应没有这个字段)。
         """
-        tags = (richtext or {}).get("richtext_tags") or []
+        tags = Twitter._entity_objects((richtext or {}).get("richtext_tags"))
         if not tags:
             return text
 
         length = len(text)
         spans: list[tuple[int, int, str]] = []
         for tag in tags:
+            start_index, end_index = tag.get("from_index"), tag.get("to_index")
+            if start_index is None or end_index is None:
+                continue
             try:
                 # UTF-16 偏移 -> code point 下标（emoji 在前面时两者不相等）
-                start = Twitter._utf16_index_to_codepoint(text, int(tag.get("from_index")))
-                end = Twitter._utf16_index_to_codepoint(text, int(tag.get("to_index")))
-            except (TypeError, ValueError):
+                start = Twitter._utf16_index_to_codepoint(text, int(start_index))
+                end = Twitter._utf16_index_to_codepoint(text, int(end_index))
+            except (TypeError, ValueError, OverflowError):
                 continue
             if start < 0 or end <= start or start >= length:
                 continue  # 越界/空区间 —— 宁可少裹一段, 不能让切片炸掉整条解析
             end = min(end, length)
-            markers = [
-                _INLINE_STYLES[t]
-                for t in (tag.get("richtext_types") or [])
-                if t in _INLINE_STYLES
-            ]
+            types = tag.get("richtext_types")
+            if not isinstance(types, (list, tuple)):
+                continue
+            markers = [_INLINE_STYLES[t] for t in types if isinstance(t, str) and t in _INLINE_STYLES]
             if markers:
                 spans.append((start, end, "".join(markers)))
 
@@ -865,7 +889,7 @@ class Twitter:
         for entity in url_entities:
             short_url = entity.get("url")
             expanded_url = entity.get("expanded_url")
-            if short_url and expanded_url:
+            if isinstance(short_url, str) and short_url and isinstance(expanded_url, str) and expanded_url:
                 text = text.replace(short_url, expanded_url)
         return text
 
@@ -882,8 +906,8 @@ class Twitter:
         out: list[str] = []
         seen: set[str] = set()
         for source in sources:
-            for entity in (source or {}).get("hashtags") or []:
-                name = str((entity or {}).get("text") or "").strip().lstrip("#").strip()
+            for entity in Twitter._entity_objects(source.get("hashtags")):
+                name = str(entity.get("text") or "").strip().lstrip("#").strip()
                 if name and name not in seen:
                     seen.add(name)
                     out.append(name)
@@ -1081,9 +1105,12 @@ class TwitterTweet:
         hashtags: list[str] | None = None,
         poll: TwitterPoll | None = None,
         trending: TrendingCard | None = None,
+        *,
+        segments: tuple[TextRun, ...] | None = None,
     ):
         self.tweet_id = tweet_id
         self.full_text = re.sub(r"\s*https://t\.co/[^\s,]+$", "", full_text or "") if media else full_text
+        self.segments = segments if segments is not None else ((TextRun(full_text),) if full_text else ())
         self.media = media
         self.article = article
         self.author_name = author_name

@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from easy_ai18n import PreLocaleSelector
 from parsehub import AnyParseResult
@@ -30,13 +31,6 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.translate import (
-    apply_translation,
-    log_translation_fallback,
-    log_translation_outcome,
-    translate_cache_entry,
-    translate_for_display,
-)
 from plugins.filters import platform_filter
 from plugins.helpers import (
     build_rich_markdown,
@@ -46,15 +40,18 @@ from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
     build_cached_rich_content,
+    build_delivery_blocks,
     build_rich_media,
     cache_media_blocks,
     cached_rich_message,
     edit_inline_rich_message,
+    result_summary_text,
     rich_cache_entry,
     upload_media_for_cache,
 )
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
+from plugins.translate import translate_cache_entry, translate_for_display
 from repo.settings import SettingsConfig
 from services import AdminUserService, ParseService, SettingsService, UserService
 from services.cache import CacheEntry, parse_cache, persistent_cache
@@ -299,13 +296,9 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         await parse_cache.set(raw_url, parse_result)
 
     # ``#t``: 预览里也直接显示译文（用户看到的选择项就该是最终形态）。
-    # 失败时保持原文 —— 开关不该让预览变成空白。
+    # 只改展示副本，不能污染选中后或不带 #t 时复用的解析缓存。
     if translate:
-        try:
-            changed = await apply_translation(parse_result, raw_url, lang)
-            log_translation_outcome(raw_url, lang, changed, label="inline #t 翻译")
-        except Exception as e:  # noqa: BLE001 - 翻译失败不该挡住预览
-            log_translation_fallback(raw_url, lang, e, source="inline_preview")
+        parse_result = await translate_for_display(parse_result, raw_url, lang)
 
     results = await build_inline_results(parse_result, cli, lang, config, spoiler_tag=spoiler_tag)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
@@ -358,7 +351,8 @@ async def _upload_and_cache_inline_media(
     ``media_urls`` 是原始 URL 表 (与 media 平铺对齐) —— 存进缓存, 缓存命中时正文外链图
     才能换成上传媒体引用 (见 ``inline_rich.rich_cache_entry``)。
     """
-    uploaded = await upload_media_for_cache(cli, media)
+    upload_options = {"preserve_animations": True} if getattr(parse_result, "x_status", None) is not None else {}
+    uploaded = await upload_media_for_cache(cli, media, **upload_options)
     if not uploaded:
         return None
     if len(uploaded) != len(media):
@@ -480,20 +474,23 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 quoted_media_count=getattr(parse_result, "quoted_media_count", 0),
                 reply_media_count=getattr(parse_result, "reply_media_count", 0),
             )
-            markdown = build_rich_markdown(
-                parse_result,
-                config=config,
-                lang=lang,
-                view_label=_t("查看"),
-                media_placeholders=placeholders,
-                quote_media_placeholders=quoted_placeholders,
-                reply_media_placeholders=reply_placeholders,
-                media_urls=media_urls,
-                hide_content=spoiler_tag,
+            render_options: dict[str, Any] = {
+                "config": config,
+                "lang": lang,
+                "view_label": _t("查看"),
+                "media_placeholders": placeholders,
+                "quote_media_placeholders": quoted_placeholders,
+                "reply_media_placeholders": reply_placeholders,
+                "media_urls": media_urls,
+                "hide_content": spoiler_tag,
+            }
+            native_status = getattr(parse_result, "x_status", None) is not None
+            legacy_edit: dict[str, Any] = (
+                {} if native_status else {"markdown": build_rich_markdown(parse_result, **render_options)}
             )
             logger.debug(
                 f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "
-                f"markdown={len(markdown)}, sensitive={parse_result.is_sensitive}"
+                f"native_status={native_status}, sensitive={parse_result.is_sensitive}"
             )
             # 两条路都先自己上传拿 file_id: 编辑时就用 file_id 引用 (不再上传), 同时这条
             # inline 消息的媒体也进了缓存 —— 以前 inline 从不写, 每次选中都得重新下载。
@@ -505,8 +502,14 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             # 记账成功时用**缓存里那套 file_id 版 blocks** —— 与缓存命中同一套渲染，
             # 也不会把本地文件再上传一遍。
             cached_blocks = cache_media_blocks(entry)[4] if entry is not None else None
-            blocks = markdown_to_blocks(markdown, media_blocks=cached_blocks or media_blocks)
-            await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, blocks=blocks)
+            delivery_media = cached_blocks or media_blocks
+            if native_status:
+                blocks = build_delivery_blocks(
+                    parse_result, raw_url=raw_url, media_blocks=delivery_media, **render_options
+                )
+            else:
+                blocks = markdown_to_blocks(legacy_edit["markdown"], media_blocks=delivery_media)
+            await edit_inline_rich_message(cli, inline_message_id, blocks=blocks, **legacy_edit)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             # ``MESSAGE_ID_INVALID`` on an inline edit means Telegram no longer accepts
@@ -546,7 +549,7 @@ def build_cached_rich_result(
 ) -> InlineQueryResult:
     """缓存路径的富文本结果项 (带 file_id 媒体, 一项同时给图和页脚)。"""
     _t = t_[lang]
-    markdown, media, media_blocks = build_cached_rich_content(
+    content, media, media_blocks = build_cached_rich_content(
         entry,
         raw_url,
         lang=lang,
@@ -559,12 +562,8 @@ def build_cached_rich_result(
     return InlineQueryResultArticle(
         id=RICH_RESULT_ID,
         title=clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-",
-        description=clip_inline_text(entry.parse_result.content, INLINE_DESC_LIMIT),
-        input_message_content=InputRichMessageContent(
-            cached_rich_message(
-                markdown, media, media_blocks, sensitive=bool(entry.parse_result.is_sensitive)
-            )
-        ),
+        description=clip_inline_text(result_summary_text(entry.parse_result), INLINE_DESC_LIMIT),
+        input_message_content=InputRichMessageContent(cached_rich_message(content, media, media_blocks)),
         reply_markup=reply_markup,
     )
 
@@ -594,6 +593,16 @@ def build_inline_rich_content(
         两条路径行为必须一致)。
     """
     _t = t_[lang]
+    if getattr(parse_result, "x_status", None) is not None:
+        blocks = build_delivery_blocks(
+            parse_result,
+            config=config,
+            lang=lang,
+            view_label=_t("查看"),
+            hide_content=spoiler_tag,
+            omit_legacy_media=True,
+        )
+        return InputRichMessageContent(InputRichMessage(blocks=blocks))
     markdown = build_rich_markdown(
         parse_result, config=config, lang=lang, view_label=_t("查看"), hide_content=spoiler_tag
     )
@@ -643,7 +652,7 @@ async def build_inline_results(
         InlineQueryResultArticle(
             id=RICH_RESULT_ID,
             title=title,
-            description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
+            description=clip_inline_text(result_summary_text(parse_result), INLINE_DESC_LIMIT),
             thumb_url=cover or None,
             thumb_width=320 if cover else None,
             thumb_height=320 if cover else None,

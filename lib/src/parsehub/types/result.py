@@ -23,7 +23,7 @@ from .media_file import AniFile, AnyMediaFile, BrokenMedia, ImageFile, LivePhoto
 from .media_ref import AniRef, AnyMediaRef, ImageRef, LivePhotoRef, VideoRef
 from .platform import Platform
 from .post import PostType
-
+from .x_status import XStatus
 
 #: 图片文件的**魔数**（前几字节）。用于下载后校验响应体真是图片。
 #:
@@ -150,6 +150,7 @@ class ParseResult(ABC):  # noqa: B024
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        x_status: XStatus | None = None,
     ):
         """
         :param title: 标题
@@ -194,6 +195,7 @@ class ParseResult(ABC):  # noqa: B024
             留空时渲染层**回退**到位置推断 (老缓存与未改的平台照旧)。
         :param polls: **投票的结构化数据**, 顺序 = 正文里 ``{{poll:N}}`` 占位符的出现顺序
             (lib 不拼表格文案; 渲染层按占位符索引取这里的数据再本地化)。
+        :param x_status: 普通 X status 的结构化正文，只供内部渲染和缓存。
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -231,6 +233,7 @@ class ParseResult(ABC):  # noqa: B024
         """回复数; 平台没提供时为 None (渲染层跳过那一段)"""
         self.polls: list[Poll] = list(polls or [])
         """投票的结构化数据; 顺序 = 正文里 ``{{poll:N}}`` 占位符的出现顺序"""
+        self.x_status = x_status
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -656,6 +659,7 @@ class MultimediaParseResult(ParseResult):
         origin_line: str = "",
         reply_count: int | None = None,
         polls: Sequence[Poll] | None = None,
+        x_status: XStatus | None = None,
     ):
         super().__init__(
             title=title,
@@ -680,6 +684,7 @@ class MultimediaParseResult(ParseResult):
             origin_line=origin_line,
             reply_count=reply_count,
             polls=polls,
+            x_status=x_status,
         )
 
 

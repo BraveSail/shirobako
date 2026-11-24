@@ -20,8 +20,10 @@ from pyrogram.types import (
     InputMediaPhoto,
     InputMediaVideo,
     InputRichBlockAnimation,
+    InputRichBlockParagraph,
     InputRichMessage,
     InputRichMessageMedia,
+    RichTextUrl,
 )
 
 from log import logger
@@ -43,6 +45,134 @@ RICH_MEDIA_KIND: dict[type, str] = {
 
 #: 富文本结果项的 result_id (选中回调靠它区分)
 RICH_RESULT_ID = "rich"
+
+
+class _MediaPlaceholder(str):
+    """Legacy placeholder plus native media identity; never parse it back as Markdown."""
+
+    url: str
+    media_id: str
+    ref_index: int | None
+
+    def __new__(cls, value: str, url: str, media_id: str = "", *, ref_index: int | None = None):
+        item = super().__new__(cls, value)
+        item.url = url
+        item.media_id = media_id
+        item.ref_index = ref_index
+        return item
+
+
+class _MediaURLs(list[str]):
+    """Public body URL list with the complete source layout for X cache writes."""
+
+    def __init__(self, main: list[_MediaPlaceholder], reply: list[_MediaPlaceholder], quoted: list[_MediaPlaceholder]):
+        super().__init__(item.url for item in main)
+        self.main = main
+        self.reply = reply
+        self.quoted = quoted
+
+
+class _RenderedCacheMedia(list):
+    """File IDs extracted in rendered order rather than upload/source order."""
+
+
+def result_summary_text(parse_result: object) -> str | None:
+    """Use the displayed X post's literal main text, never its legacy Markdown copy."""
+    if (status := getattr(parse_result, "x_status", None)) is not None:
+        return "".join(run.text for run in status.main.segments)
+    return getattr(parse_result, "content", None)
+
+
+def _trending_cover_url(parse_result) -> str:
+    if (url := getattr(parse_result, "x_trending_cover_url", "")):
+        return url
+    status = getattr(parse_result, "x_status", None)
+    index = status.trending.cover_index if status and status.trending else None
+    refs = getattr(parse_result, "media", None)
+    if isinstance(refs, Sequence) and index is not None and 0 <= index < len(refs):
+        return str(getattr(refs[index], "url", "") or "")
+    return ""
+
+
+def _split_trending_media(main, cover_url: str, cover_index: int | None):
+    # The cover is one image ref appended to main before the reply/quote tails.
+    # On cache hits the original index is no longer meaningful; select its actual URL.
+    for i in range(len(main) - 1, -1, -1):
+        item = main[i]
+        if isinstance(item, _MediaPlaceholder) and cover_url and item.url == cover_url and (
+            item.ref_index is None or item.ref_index == cover_index
+        ):
+            return [*main[:i], *main[i + 1:]], [item]
+    return main, []
+
+
+def build_delivery_blocks(
+    parse_result,
+    *,
+    config,
+    raw_url: str = "",
+    lang: str = "",
+    view_label: str = "",
+    custom_content: str = "",
+    hide_content: str = "",
+    progress: str = "",
+    media_placeholders: Sequence[str] = (),
+    quote_media_placeholders: Sequence[str] = (),
+    reply_media_placeholders: Sequence[str] = (),
+    media_blocks: dict | None = None,
+    media_urls: Sequence[str] = (),
+    omit_legacy_media: bool = False,
+) -> list:
+    """Build native X blocks, or preserve the existing legacy platform renderer."""
+    if (status := getattr(parse_result, "x_status", None)) is not None:
+        from plugins.parse.rich_blocks import SpoilerVideoBlock
+        from plugins.parse.x_status import build_x_status_blocks
+
+        blocks = media_blocks or {}
+        sensitive = bool(getattr(parse_result, "is_sensitive", False))
+
+        def resolve(placeholders):
+            result = []
+            for item in placeholders:
+                if not isinstance(item, _MediaPlaceholder):
+                    continue
+                if item.media_id:
+                    if (block := blocks.get(item.media_id)) is not None:
+                        # The SDK animation writer emits PageBlockVideo without its spoiler flag.
+                        if sensitive and isinstance(block, InputRichBlockAnimation):
+                            block = SpoilerVideoBlock(block.animation, caption=block.caption)
+                        result.append(block)
+                elif item.url:
+                    result.append(InputRichBlockParagraph(RichTextUrl(item.url, item.url)))
+            return result
+
+        main, trending = _split_trending_media(
+            media_placeholders, _trending_cover_url(parse_result),
+            status.trending.cover_index if status.trending else None,
+        )
+        return build_x_status_blocks(
+            parse_result, config=config, raw_url=raw_url, lang=lang, view_label=view_label,
+            custom_content=custom_content, hide_content=hide_content, progress=progress,
+            main_media=resolve(main), reply_media=resolve(reply_media_placeholders),
+            quoted_media=resolve(quote_media_placeholders), trending_media=resolve(trending),
+        )
+
+    from plugins.helpers import build_rich_markdown
+    from plugins.parse.rich_blocks import markdown_to_blocks
+
+    markdown = build_rich_markdown(
+        parse_result, config=config, lang=lang, view_label=view_label, custom_content=custom_content,
+        hide_content=hide_content, progress=progress, media_placeholders=media_placeholders,
+        quote_media_placeholders=quote_media_placeholders, reply_media_placeholders=reply_media_placeholders,
+        media_urls=media_urls,
+    )
+    if omit_legacy_media:
+        # inline imports this module; only import its legacy helper when rendering a preview.
+        from plugins.parse.inline import strip_media_markdown
+
+        markdown = strip_media_markdown(markdown)
+    return markdown_to_blocks(markdown, media_blocks=media_blocks)
+
 
 def build_rich_media(
     media_refs: Sequence[AnyMediaRef],
@@ -76,17 +206,13 @@ def build_rich_media(
 
     thumbs = video_thumbs or {}
     media: list[InputRichMessageMedia] = []
-    placeholders: list[str] = []
     media_blocks: dict[str, Any] = {}
     index = 0
     # 每个 ref 产出的占位符 (一个 ref 可能展开成多个文件), 供末尾切分引用帖媒体
-    per_ref: list[list[str]] = []
-    # 与 placeholders **平铺对齐**的原始 URL (同一个 ref 展开出的多份共用它的 url)。
-    # 渲染层靠它把正文外链图换成上传媒体引用 (见 helpers.rewrite_external_images)。
-    urls_flat: list[str] = []
+    per_ref: list[list[_MediaPlaceholder]] = []
 
-    for media_ref, processed in zip(media_refs, processed_list, strict=False):
-        group: list[str] = []
+    for ref_index, (media_ref, processed) in enumerate(zip(media_refs, processed_list, strict=False)):
+        group: list[_MediaPlaceholder] = []
         per_ref.append(group)
         ref_url = str(getattr(media_ref, "url", "") or "")
 
@@ -98,9 +224,7 @@ def build_rich_media(
         if isinstance(processed.source, BrokenMedia) or not str(getattr(processed.source, "path", "") or ""):
             fallback = fallback_url or ref_url
             text = f"[{fallback}]({fallback})" if fallback else ""
-            group.append(text)
-            placeholders.extend(group)
-            urls_flat.extend([fallback] * len(group))
+            group.append(_MediaPlaceholder(text, fallback, ref_index=ref_index))
             continue
 
         file_paths = processed.output_paths or [processed.source.path]
@@ -146,11 +270,8 @@ def build_rich_media(
             media_id = f"m{index}"
             index += 1
             media.append(InputRichMessageMedia(media_id, item))
-            placeholder = f"![](tg://{kind}?id={media_id})"
-            placeholders.append(placeholder)
+            placeholder = _MediaPlaceholder(f"![](tg://{kind}?id={media_id})", ref_url, media_id, ref_index=ref_index)
             group.append(placeholder)
-            # URL 与占位符**同步追加** —— 一个 ref 展开成多份时共用它的 url
-            urls_flat.append(ref_url)
             # blocks 路径: 官方 API 的 InputRichBlockPhoto/Video 没有 spoiler, 自定义块才有
             match processed.source:
                 case ImageFile():
@@ -166,30 +287,20 @@ def build_rich_media(
     reply_count = max(0, min(reply_media_count, tail_split))
     head_split = tail_split - reply_count
 
-    def flat(groups: list[list[str]]) -> list[str]:
+    def flat(groups: list[list[_MediaPlaceholder]]) -> list[_MediaPlaceholder]:
         return [p for ref_group in groups for p in ref_group]
 
-    # urls 按 placeholder 的顺序切同一刀: urls_flat 与 placeholders 是逐步同步追加的,
-    # 按 per_ref 的分组边界切出正文段 (前面切给引用块的段不带回 — 渲染层只用正文段)。
-    def urls_slice(end: int) -> list[str]:
-        count = sum(len(g) for g in per_ref[:end])
-        return urls_flat[:count]
-
-    return (
-        media,
-        flat(per_ref[:head_split]),
-        media_blocks,
-        flat(per_ref[tail_split:]),
-        flat(per_ref[head_split:tail_split]),
-        urls_slice(head_split),
-    )
+    main = flat(per_ref[:head_split])
+    quoted = flat(per_ref[tail_split:])
+    reply = flat(per_ref[head_split:tail_split])
+    return media, list(main), media_blocks, list(quoted), list(reply), _MediaURLs(main, reply, quoted)
 
 
 async def edit_inline_rich_message(
     cli: Client,
     inline_message_id: str,
     *,
-    markdown: str,
+    markdown: str = "",
     media: list[InputRichMessageMedia] | None = None,
     blocks: list | None = None,
 ) -> bool:
@@ -198,12 +309,12 @@ async def edit_inline_rich_message(
     媒体会在这一步真正上传 (peer=self), 所以调用方要保证文件还在本地。
     返回是否成功 —— **返回值不能当成功判据**, 用户看到的消息才是。
 
-    ``blocks`` 非空时走 blocks 路径: 官方 API 的富文本媒体块没有 spoiler 字段,
+    ``blocks`` 显式传入时走 blocks 路径: 官方 API 的富文本媒体块没有 spoiler 字段,
     敏感内容只有 raw 的 ``PageBlockPhoto/Video(spoiler=True)`` 才能打码。
     """
     unpacked = utils.unpack_inline_message_id(inline_message_id)
     session = await cli.get_session(unpacked.dc_id, is_media=True)
-    if blocks:
+    if blocks is not None:
         rich = InputRichMessage(blocks=blocks)
     else:
         # 兜底：调用方没给 blocks 时退回字符串通道。**正常路径不该走到这里** ——
@@ -250,7 +361,9 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
 
     from services.cache import CacheMediaType
 
-    sensitive = bool(getattr(entry.parse_result, "is_sensitive", False))
+    pr = entry.parse_result
+    native_x = getattr(pr, "x_status", None) is not None
+    sensitive = bool(getattr(pr, "is_sensitive", False))
     media: list[InputRichMessageMedia] = []
     placeholders: list[str] = []
     media_blocks: dict[str, Any] = {}
@@ -270,7 +383,7 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
                 continue
         media_id = f"m{index}"
         media.append(InputRichMessageMedia(media_id, item))
-        placeholders.append(f"![](tg://{kind}?id={media_id})")
+        placeholders.append(_MediaPlaceholder(f"![](tg://{kind}?id={media_id})", getattr(m, "url", "") or "", media_id))
         # 映射**总是**产出 (spoiler 由 sensitive 决定): 需要它的不只有打码 ——
         # "折叠的引用卡片带媒体"也必须走 blocks 才能把图留在引用块内
         # (见 helpers.markdown_needs_blocks)。
@@ -279,10 +392,14 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
         match m.type:
             case CacheMediaType.PHOTO:
                 media_blocks[media_id] = SpoilerPhotoBlock(item, spoiler=sensitive)
+            case CacheMediaType.ANIMATION if native_x and not sensitive:
+                media_blocks[media_id] = InputRichBlockAnimation(item)
             case CacheMediaType.VIDEO | CacheMediaType.ANIMATION:
                 media_blocks[media_id] = SpoilerVideoBlock(item, spoiler=sensitive)
 
-    pr = entry.parse_result
+    if native_x:
+        for position, url in sorted((getattr(pr, "x_failed_media", None) or {}).items()):
+            placeholders.insert(position, _MediaPlaceholder(f"[{url}]({url})", url))
     quoted_count = max(0, min(int(getattr(pr, "quoted_media_count", 0) or 0), len(placeholders)))
     tail_split = len(placeholders) - quoted_count
     reply_count = max(0, min(int(getattr(pr, "reply_media_count", 0) or 0), tail_split))
@@ -333,6 +450,28 @@ def _poll_to_cache_dicts(polls) -> list[dict]:
     return out
 
 
+def _cache_x_media(media, urls: _MediaURLs, cover_url: str, cover_index: int | None):
+    """Write file IDs in source role order, preserving links for failed downloads."""
+    main, trending = _split_trending_media(urls.main, cover_url, cover_index)
+    source = [*urls.main, *urls.reply, *urls.quoted]
+    # Native delivery emits reply and trending before the main gallery; inline pre-upload
+    # already gives source order. Pair IDs before assigning URLs or replaying the roles.
+    items = [*urls.reply, *trending, *main, *urls.quoted] if isinstance(media, _RenderedCacheMedia) else source
+    uploaded = [item for item in items if item.media_id]
+    if len(media) != len(uploaded):
+        return None
+    by_id = {
+        item.media_id: cached.model_copy(update={"url": item.url})
+        for item, cached in zip(uploaded, media, strict=True)
+    }
+    return (
+        [by_id[item.media_id] for item in source if item.media_id],
+        {i: item.url for i, item in enumerate(source) if not item.media_id},
+        len(urls.quoted),
+        len(urls.reply),
+    )
+
+
 def rich_cache_entry(
     parse_result,
     media: list,
@@ -359,6 +498,17 @@ def rich_cache_entry(
     from plugins.helpers import get_parse_author_name
     from services.cache import CONTENT_VERSION, FOOTER_META_FIELDS_VERSION, CacheEntry, CacheParseResult
 
+    status = getattr(parse_result, "x_status", None)
+    cover_url = _trending_cover_url(parse_result) if status is not None else ""
+    failed_media: dict[int, str] = {}
+    if status is not None and isinstance(urls, _MediaURLs):
+        mapped = _cache_x_media(
+            media, urls, cover_url, status.trending.cover_index if status.trending else None,
+        )
+        if mapped is not None:
+            media, failed_media, quoted_media_count, reply_media_count = mapped
+            urls = None  # Already aligned and written using native identities.
+
     # 把 URL 灌进媒体项 (顺序一致; 数量不符时不硬灌, 让那几项留空 —— 退化为剥图)
     url_list = list(urls or [])
     if url_list and len(url_list) == len(media or []):
@@ -378,6 +528,9 @@ def rich_cache_entry(
             # **富文本正文的源**：RichText 平台的 ``content`` 是 markdown 转出来的纯文本,
             # 只存它会让缓存命中时引用块/链接全塌（见 CacheParseResult.markdown_content）。
             markdown_content=getattr(parse_result, "markdown_content", "") or "",
+            x_status=status,
+            x_trending_cover_url=cover_url,
+            x_failed_media=failed_media,
             position_label=getattr(parse_result, "position_label", "") or "",
             topic_label=getattr(parse_result, "topic_label", "") or "",
             quote_roles=list(getattr(parse_result, "quote_roles", None) or []),
@@ -436,15 +589,25 @@ def build_cached_rich_content(
     view_label: str = "",
     custom_content: str = "",
     spoiler_tag: str = "",
-) -> tuple[str, list[InputRichMessageMedia]]:
+) -> tuple[str | list, list[InputRichMessageMedia], dict]:
     """从缓存条目重建富文本正文与媒体块 (file_id 复用, 零上传)。
 
     **直发与 inline 共用这一条**, 免得两边各写一份排版:
-    缓存里存的只有解析字段, 排版一律交给 ``build_rich_markdown_by_str``。
+    缓存里只存解析字段: X status 直接输出 native blocks，其它平台保留旧 Markdown。
 
     :param spoiler_tag: 用户这次要求遮住内容 (``/s``)。缓存存的是**解析字段**
         而非渲染结果, 所以遮与不遮在排版时决定 —— 命中缓存也必须照遮。
     """
+    media, placeholders, quoted_placeholders, reply_placeholders, media_blocks, media_urls = cache_media_blocks(entry)
+    if getattr(entry.parse_result, "x_status", None) is not None:
+        blocks = build_delivery_blocks(
+            entry.parse_result, config=config, raw_url=raw_url, lang=lang,
+            view_label=view_label, custom_content=custom_content, hide_content=spoiler_tag,
+            media_placeholders=placeholders, quote_media_placeholders=quoted_placeholders,
+            reply_media_placeholders=reply_placeholders, media_blocks=media_blocks, media_urls=media_urls,
+        )
+        return blocks, media, media_blocks
+
     from plugins.helpers import build_rich_markdown_by_str
 
     # 平台: 优先用缓存里存的短名; 老缓存没这个字段 ⇒ 按 raw_url 推断。
@@ -455,7 +618,6 @@ def build_cached_rich_content(
 
         platform = ParseHub().get_platform(raw_url) if raw_url else None
 
-    media, placeholders, quoted_placeholders, reply_placeholders, media_blocks, media_urls = cache_media_blocks(entry)
     markdown = build_rich_markdown_by_str(
         entry.parse_result.title,
         entry.parse_result.content,
@@ -499,7 +661,7 @@ def build_cached_rich_content(
 
 
 def cached_rich_message(
-    markdown: str,
+    markdown: str | list,
     media: list[InputRichMessageMedia],
     media_blocks: dict | None = None,
     *,
@@ -516,12 +678,17 @@ def cached_rich_message(
 
     ``sensitive`` 参数保留但不再决定通道 —— 打码信息已经在 ``media_blocks`` 里了。
     """
+    if isinstance(markdown, list):
+        return InputRichMessage(blocks=markdown)
+
     from plugins.parse.rich_blocks import markdown_to_blocks
 
     return InputRichMessage(blocks=markdown_to_blocks(markdown, media_blocks=media_blocks))
 
 
-async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]) -> list:
+async def upload_media_for_cache(
+    cli: Client, media: list[InputRichMessageMedia], *, preserve_animations: bool = False
+) -> list:
     """把 ``media`` 里的**本地文件**上传成 file_id, 就地换成 file_id 引用, 并返回可缓存的条目。
 
     为什么需要这一步:
@@ -584,6 +751,18 @@ async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]
                 # (编辑时用的是这份 file_id, 原来的 thumb 已经不在参数里了)。
                 thumb_path = getattr(inner, "thumb", None)
                 thumb = await cli.save_file(thumb_path) if thumb_path else None
+                attributes: list[raw.base.DocumentAttribute] = [
+                    raw.types.DocumentAttributeVideo(
+                        duration=int(getattr(inner, "duration", 0) or 0),
+                        w=int(getattr(inner, "width", 0) or 0),
+                        h=int(getattr(inner, "height", 0) or 0),
+                        supports_streaming=bool(getattr(inner, "supports_streaming", True)),
+                    )
+                ]
+                is_animation = preserve_animations and isinstance(inner, InputMediaAnimation)
+                if is_animation:
+                    # RichBlock._parse distinguishes animations from videos by the document attributes.
+                    attributes.append(raw.types.DocumentAttributeAnimated())
                 uploaded = await cli.invoke(
                     raw.functions.messages.UploadMedia(
                         peer=raw.types.InputPeerSelf(),
@@ -591,30 +770,27 @@ async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]
                             file=await cli.save_file(source),
                             mime_type=getattr(inner, "mime_type", None) or "video/mp4",
                             thumb=thumb,
-                            attributes=[
-                                raw.types.DocumentAttributeVideo(
-                                    duration=int(getattr(inner, "duration", 0) or 0),
-                                    w=int(getattr(inner, "width", 0) or 0),
-                                    h=int(getattr(inner, "height", 0) or 0),
-                                    supports_streaming=bool(getattr(inner, "supports_streaming", True)),
-                                )
-                            ],
+                            attributes=attributes,
                         ),
                     )
                 )
                 document = uploaded.document
                 file_id = FileId(
-                    file_type=FileType.VIDEO,
+                    file_type=FileType.ANIMATION if is_animation else FileType.VIDEO,
                     dc_id=document.dc_id,
                     media_id=document.id,
                     access_hash=document.access_hash,
                     file_reference=document.file_reference,
                 ).encode()
-                # 换成 file_id 引用: **带着封面**（从刚上传的 document 里把缩略图
-                # 的 file_id 取出来）—— 否则编辑出去的就是没封面的视频。
-                cover = _thumb_file_id(document, cli)
-                item.media = InputMediaVideo(file_id, thumb=cover, supports_streaming=True)
-                entries.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id, cover_file_id=cover))
+                if is_animation:
+                    item.media = InputMediaAnimation(file_id)
+                    entries.append(CacheMedia(type=CacheMediaType.ANIMATION, file_id=file_id))
+                else:
+                    # 换成 file_id 引用: **带着封面**（从刚上传的 document 里把缩略图
+                    # 的 file_id 取出来）—— 否则编辑出去的就是没封面的视频。
+                    cover = _thumb_file_id(document, cli)
+                    item.media = InputMediaVideo(file_id, thumb=cover, supports_streaming=True)
+                    entries.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id, cover_file_id=cover))
             logger.debug(f"inline 媒体已上传并记账: type={type(entries[-1]).__name__}")
         except Exception as e:  # noqa: BLE001 - 记账失败不能影响发送本身
             logger.warning(f"inline 媒体上传记账失败 (改由后续步骤上传, 只是不写缓存): {type(e).__name__}: {e}")
@@ -704,7 +880,7 @@ def extract_cache_media(rich_message) -> list:
     """
     from services.cache import CacheMedia, CacheMediaType
 
-    found: list = []
+    found: list = _RenderedCacheMedia()
 
     def _file_id(obj) -> str | None:
         """从一个 pyrogram 媒体对象上取 file_id(未绑 client 时可能为 None)。"""
@@ -772,6 +948,7 @@ __all__ = [
     "RICH_MEDIA_KIND",
     "RICH_RESULT_ID",
     "build_cached_rich_content",
+    "build_delivery_blocks",
     "build_rich_media",
     "cache_media_blocks",
     "edit_inline_rich_message",

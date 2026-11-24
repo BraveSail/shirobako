@@ -12,7 +12,7 @@ from db import get_session
 from log import logger
 from plugins.context import get_config_target
 from plugins.helpers import build_progress_markdown, format_label
-from plugins.parse.inline_rich import edit_inline_rich_message
+from plugins.parse.inline_rich import build_delivery_blocks, edit_inline_rich_message
 from plugins.parse.rich_blocks import markdown_to_blocks
 from plugins.parse.sender import MessageSender
 from repo.settings import SettingsConfig
@@ -55,6 +55,38 @@ async def disable_progress_on_report_forbidden(msg: Message, config: SettingsCon
     logger.warning(f"已自动关闭解析进度: {target}")
 
 
+def _render_progress(
+    parse_result: Any,
+    text: str,
+    *,
+    t: PreLocaleSelector,
+    config: SettingsConfig,
+    raw_url: str,
+    spoiler_tag: str,
+    custom_content: str,
+) -> str | list:
+    options: dict[str, Any] = {
+        "progress": format_label(text),
+        "config": config,
+        "lang": t.locale,
+        "view_label": t("查看"),
+        "custom_content": custom_content,
+        "raw_url": raw_url,
+    }
+    if getattr(parse_result, "x_status", None) is not None:
+        return build_delivery_blocks(parse_result, hide_content=spoiler_tag, **options)
+    return build_progress_markdown(parse_result, spoiler_tag=spoiler_tag, **options)
+
+
+async def _progress_signature(content: str | list) -> str | bytes:
+    if isinstance(content, str):
+        return content
+    # Progress blocks contain no media. Compare every block, including the changing footer,
+    # using local TL serialization, not the SDK object's printable representation.
+    rich = await InputRichMessage(blocks=content).write(client=None)
+    return rich.write()
+
+
 class MessageStatusReporter(StatusReporter):
     """基于 Telegram Message 的状态报告器"""
 
@@ -80,22 +112,21 @@ class MessageStatusReporter(StatusReporter):
         self._raw_url = raw_url
         self._spoiler_tag = spoiler_tag
         self._custom_content = custom_content
-        self._last_markdown: str | None = None
+        self._last_signature: str | bytes | None = None
         self._last_rich_at = 0.0
         # 最后一次拿到的解析结果 —— 进度刷新要用它渲染完整排版, 不能退回骨架
         self._parse_result: Any = None
 
-    def _render(self, parse_result: Any, text: str) -> str:
+    def _render(self, parse_result: Any, text: str) -> str | list:
         """把处理过程渲染成与最终结果**同一种排版**的富文本。"""
-        return build_progress_markdown(
+        return _render_progress(
             parse_result,
-            progress=format_label(text),
+            text,
+            t=self._t,
             config=self._config,
-            lang=self._t.locale,
-            view_label=self._t("查看"),
+            raw_url=self._raw_url,
             spoiler_tag=self._spoiler_tag,
             custom_content=self._custom_content,
-            raw_url=self._raw_url,
         )
 
     async def report(self, text: str) -> None:
@@ -121,27 +152,24 @@ class MessageStatusReporter(StatusReporter):
         self._parse_result = parse_result
         await self._send_rich(self._render(parse_result, text))
 
-    async def _send_rich(self, markdown: str, *, throttle: bool = False) -> None:
+    async def _send_rich(self, content: str | list, *, throttle: bool = False) -> None:
         """把处理过程作为**富文本**发送/编辑 (与最终结果同一种排版)。
 
-        判重靠自己记录的 markdown 而不是 ``msg.text`` —— 富文本消息的 ``text`` 是空的,
+        判重靠自己记录的签名而不是 ``msg.text`` —— 富文本消息的 ``text`` 是空的,
         用它会每次都不相等、每次都编辑。
 
         :param throttle: 进度刷新用 —— 距上次编辑不足 ``_MIN_PROGRESS_INTERVAL`` 就丢弃。
             **阶段切换与结果不走节流**, 否则"解析中 → 下载中"这种快切换会被吞掉。
         """
-        if not markdown or markdown == self._last_markdown:
+        if not content or (throttle and monotonic() - self._last_rich_at < _MIN_PROGRESS_INTERVAL):
             return
-        if throttle and monotonic() - self._last_rich_at < _MIN_PROGRESS_INTERVAL:
-            return
-        self._last_markdown = markdown
-        self._last_rich_at = monotonic()
-        # **与最终结果同一条通道**（blocks 结构化）：处理过程也必须这样，否则平台原文
-        # 在占位消息里仍会被 markdown 解析（行首空格变代码块、``||`` 变 spoiler），
-        # 出现「占位消息格式不对、最终消息正常」的割裂（用户报过）。
-        # blocks 里段落文本是字面量，两种消息的排版才真正一致。
-        blocks = markdown_to_blocks(markdown)
         try:
+            signature = await _progress_signature(content)
+            if signature == self._last_signature:
+                return
+            self._last_signature = signature
+            self._last_rich_at = monotonic()
+            blocks = markdown_to_blocks(content) if isinstance(content, str) else content
             if self._msg is None:
                 self._msg = await MessageSender(self._cli, self._user_msg, self._config).rich_message(
                     rich_message=InputRichMessage(blocks=blocks)
@@ -274,24 +302,23 @@ class InlineStatusReporter(StatusReporter):
         self._raw_url = raw_url
         self._spoiler_tag = spoiler_tag
         self._custom_content = custom_content
-        self._last_markdown: str | None = None
+        self._last_signature: str | bytes | None = None
         self._last_rich_at = 0.0
         # 最后一次拿到的解析结果 —— 进度刷新要用它渲染完整排版, 不能退回骨架
         self._parse_result: Any = None
         # 报错后要恢复的内容 (按下"回退"时的占位)
         self._last_text: str | None = None
 
-    def _render(self, parse_result: Any, text: str) -> str:
-        """与最终结果**同一种排版**的处理过程 markdown。"""
-        return build_progress_markdown(
+    def _render(self, parse_result: Any, text: str) -> str | list:
+        """与最终结果**同一种排版**的处理过程。"""
+        return _render_progress(
             parse_result,
-            progress=format_label(text),
+            text,
+            t=self._t,
             config=self._user_config,
-            lang=self._t.locale,
-            view_label=self._t("查看"),
+            raw_url=self._raw_url,
             spoiler_tag=self._spoiler_tag,
             custom_content=self._custom_content,
-            raw_url=self._raw_url,
         )
 
     async def report(self, text: str) -> None:
@@ -309,24 +336,27 @@ class InlineStatusReporter(StatusReporter):
         self._parse_result = parse_result
         await self._edit_rich(self._render(parse_result, text))
 
-    async def _edit_rich(self, markdown: str, *, throttle: bool = False) -> None:
+    async def _edit_rich(self, content: str | list, *, throttle: bool = False) -> None:
         """把处理过程编辑成**富文本** (与最终结果同一种排版)。
 
         顺带把结果项上的键盘摘掉 —— ``edit_inline_rich_message`` 内部就是
         ``EditInlineBotMessage(..., reply_markup=ReplyKeyboardHide())``,
         所以第一次进度更新时按钮就消失了 (比等结果出来再摘更早)。
         """
-        if not markdown or markdown == self._last_markdown:
+        if not content or (throttle and monotonic() - self._last_rich_at < _MIN_PROGRESS_INTERVAL):
             return
-        if throttle and monotonic() - self._last_rich_at < _MIN_PROGRESS_INTERVAL:
-            return
-        self._last_markdown = markdown
-        self._last_rich_at = monotonic()
         try:
-            # 与直发同一条通道（blocks 结构化），见 _send_rich 里的说明
-            await edit_inline_rich_message(
-                self._cli, self._mid, markdown=markdown, blocks=markdown_to_blocks(markdown)
-            )
+            signature = await _progress_signature(content)
+            if signature == self._last_signature:
+                return
+            self._last_signature = signature
+            self._last_rich_at = monotonic()
+            if isinstance(content, str):
+                await edit_inline_rich_message(
+                    self._cli, self._mid, markdown=content, blocks=markdown_to_blocks(content)
+                )
+            else:
+                await edit_inline_rich_message(self._cli, self._mid, blocks=content)
         except (FloodWait, SlowmodeWait):
             pass
         except Forbidden as e:
