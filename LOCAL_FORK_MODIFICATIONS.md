@@ -81,7 +81,9 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
   **不再需要 `additional_contexts` 或构建期覆盖安装**。
   - 历史坑（已作废，别再往 lock 里写 git 源）：builder 镜像**没有 git**，`uv sync --frozen`
     遇到 git 源会直接失败 —— 这也是当初要搞「PyPI 占位 + 构建期覆盖」的原因。
-- `Dockerfile.deploy` + `compose.deploy.yaml` 是本仓库的部署方式；`Dockerfile` 为通用构建。
+- `Dockerfile.deploy` 统一用于生产本地构建和 GHCR CI（含 Bun/SABR）；`Dockerfile` 为通用构建。
+- `compose.deploy.yaml` 保留本地构建方式；`docker-compose.yaml` 使用 `ghcr.io/bravesail/shirobako`
+  预构建镜像，两者项目名、宿主网络、数据/日志挂载与日志轮转一致。发布标签规则见 README。
 
 ## 6. HTTP 客户端统一走 curl_cffi（`lib/src/parsehub/utils/http.py`）
 

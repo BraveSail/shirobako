@@ -78,18 +78,64 @@
 
 ### 🐳 Docker 运行 (推荐)
 
-本仓库不发布预构建镜像，用仓库内的 `compose.deploy.yaml` 本地构建（解析库已内置于
-`lib/`，**只需克隆本仓库**）：
+在可访问 Redis 的 Linux 宿主机上（默认 `redis://127.0.0.1:6379/0`），
+任选 GHCR 镜像或本地构建。两份 Compose 使用相同的项目名、宿主机网络及
+`./data` / `./logs` 绑定挂载，不要分别启动两套实例。
 
 ```bash
-git clone git@github.com:BraveSail/shirobako.git
+git clone https://github.com/BraveSail/shirobako.git
 cd shirobako
-cp .env.example .env   # 至少填 API_ID / API_HASH / BOT_TOKEN
-docker compose -f compose.deploy.yaml build bot
-docker compose -f compose.deploy.yaml up -d
+cp .env.example .env   # 仅首次安装；至少填 API_ID / API_HASH / BOT_TOKEN
 ```
 
-> 只想用上游的现成镜像（不含本仓库的改动）可以拉 `ghcr.io/z-mio/parse_hub_bot:latest`。
+**方式 A — 拉取 GHCR 预构建镜像**（首次成功发布后可用）：
+
+```bash
+docker compose -f docker-compose.yaml pull bot
+docker compose -f docker-compose.yaml up -d --no-build bot
+```
+
+一个镜像索引同时包含 `linux/amd64` 和 `linux/arm64`，Compose 自动选择宿主架构。
+要固定部署版本，在 `.env` 中设置完整镜像引用，例如
+`SHIROBAKO_IMAGE=ghcr.io/bravesail/shirobako:v1.2.3` 或
+`ghcr.io/bravesail/shirobako@sha256:<索引摘要>`。首次创建的包可能是私有的，
+需要匿名拉取时可在 GHCR 包设置中改为公开。
+
+**方式 B — 本地构建**（首次镜像发布前同样可用）：
+
+```bash
+docker compose -f compose.deploy.yaml build bot
+docker compose -f compose.deploy.yaml up -d bot
+```
+
+CI 和本地生产构建统一使用 `Dockerfile.deploy`，包含 Bun 与 SABR 依赖。
+现有 `compose.deploy.yaml` 部署可继续使用 `scripts/deploy_remote.sh`。
+如曾使用旧版上游 `docker-compose.yaml`，先备份命名卷数据并迁移到 `./data` /
+`./logs`，再停止旧项目并切换。
+
+#### 镜像发布
+
+| 事件 | 结果 |
+|---|---|
+| 推送到 `main` | 两个原生 runner 各自用 `Dockerfile.deploy` 构建镜像，运行默认启动命令，连接隔离的测试端点，检查 CPU 架构、SQLite 迁移、FFmpeg、Bun 和 SABR。两边通过后，把验过的镜像组成一个索引，首次写入 `sha-<完整提交 SHA>`。 |
+| 手动运行 **Docker Image CI** | 默认只做两种架构的检查。在 `main` 勾选 `publish` 后按分支推送的规则发布。 |
+| 发布 GitHub Release（含预发布） | 将该提交已核验的索引 digest 加上原始版本标签。缺少已核验索引，或版本已指向其他 digest，发布任务失败。仅推送 Git 标签不会触发发布。 |
+
+SHA 标签只写一次。版本标签允许 1–128 个 ASCII 字母、数字、下划线、点或连字符，
+首字符为字母、数字或下划线。`main`、`latest` 和 `sha-` 前缀已保留。
+只有发布任务使用内置 `GITHUB_TOKEN` 的 `packages: write` 权限。
+请为本仓库授予包的 Actions 写权限，并让此工作流独占这些标签的写入权。这些规则从使用新版工作流的运行开始生效。
+如果旧 SHA 标签缺少双架构验证标记，请选择新验证的提交发布版本。
+
+`main` 与 `latest` 在同一把发布锁内沿各自已发布提交的历史向前移动。候选提交须为锁内读取的
+main 顶端或其祖先，两者之间的最终差异仅可涉及 `README.md`、`README.zh-CN.md`、
+`LOCAL_FORK_MODIFICATIONS.md` 和 `doc/` 下的 Markdown。因此，构建期间即使追加这些路径的
+`[skip ci]` 文档提交，也可把两个标签推进到实际验过的代码提交。SHA 标签始终对应实际构建的源码。
+若跳过的改动超出上述范围，或整次推送都被跳过、没有启动构建，可在当前 main 手动发布。重写历史后须先核对现有标签指向。
+
+GitHub 可保留最多 100 个等待中的发布任务。队列满或两个标签之间的写入被打断时，可重跑目标发布；
+若三天后构建产物已过期，重跑全部任务。离线探针验证到机器人发起代理握手为止，上线后的 Telegram
+就绪检查仍由 `scripts/wait_ready.py` 完成。
 
 ### 💻 源码运行
 

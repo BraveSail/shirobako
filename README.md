@@ -81,19 +81,72 @@ builds, tests and deploys everything. See
 
 ### 🐳 Run with Docker (recommended)
 
-No prebuilt image is published; build locally with the repository's `compose.deploy.yaml`
-(the parser library is vendored in `lib/`, so **a single clone is enough**):
+On a Linux host with Redis available (default: `redis://127.0.0.1:6379/0`),
+use either the published image or a local build. Both Compose files use host networking,
+the same project name and `./data` / `./logs` bind mounts. Do not start both as separate deployments.
 
 ```bash
-git clone git@github.com:BraveSail/shirobako.git
+git clone https://github.com/BraveSail/shirobako.git
 cd shirobako
-cp .env.example .env   # at least API_ID / API_HASH / BOT_TOKEN
-docker compose -f compose.deploy.yaml build bot
-docker compose -f compose.deploy.yaml up -d
+cp .env.example .env   # new installs only; fill API_ID / API_HASH / BOT_TOKEN
 ```
 
-> For the upstream image (without the local changes) you can still pull
-> `ghcr.io/z-mio/parse_hub_bot:latest`.
+**Option A — prebuilt GHCR image** (available after the first successful publication):
+
+```bash
+docker compose -f docker-compose.yaml pull bot
+docker compose -f docker-compose.yaml up -d --no-build bot
+```
+
+Compose selects the host platform from one image index supporting `linux/amd64`
+and `linux/arm64`. To pin a deployment, set `SHIROBAKO_IMAGE` in `.env` to a
+full image reference such as `ghcr.io/bravesail/shirobako:v1.2.3` or
+`ghcr.io/bravesail/shirobako@sha256:<index digest>`. The first package may be
+private. Enable public visibility in GHCR if anonymous pulls are needed.
+
+**Option B — build locally** (also works before the first image is published):
+
+```bash
+docker compose -f compose.deploy.yaml build bot
+docker compose -f compose.deploy.yaml up -d bot
+```
+
+Both CI and local production builds use `Dockerfile.deploy`, including Bun and SABR.
+Existing `compose.deploy.yaml` deployments can keep using `scripts/deploy_remote.sh`.
+If migrating from the old upstream `docker-compose.yaml`, back up and migrate any
+existing named-volume data to `./data` / `./logs`, and stop the old project first.
+
+#### Image publication
+
+| Event | Result |
+|---|---|
+| Push to `main` | Each native runner builds `Dockerfile.deploy`, boots the default command against an isolated test endpoint and checks the CPU, SQLite migrations, FFmpeg, Bun and SABR. After both pass, the writer assembles their tested images into one index tagged `sha-<full commit SHA>`. |
+| Manual **Docker Image CI** | The default runs both checks. Enable `publish` on `main` for the same publication as a push. |
+| Published GitHub Release (including a prerelease) | Applies the exact release tag to the verified index digest already published for the tagged commit. A missing verified index or a different digest under that version fails the release job. A bare Git tag push has no publish job. |
+
+SHA tags are write-once. Version tags accept 1–128 ASCII letters, digits,
+underscores, dots and hyphens, starting with a letter, digit or underscore.
+`main`, `latest` and the `sha-` prefix are reserved. Only the publish job gets
+`packages: write` with the built-in `GITHUB_TOKEN`. Give this repository Actions
+access to the package and keep this workflow its sole tag writer. These rules
+apply to runs using this workflow revision. A legacy SHA tag without the
+two-platform verification marker requires a new verified commit for release.
+
+`main` and `latest` advance from their published commits under a single writer
+lock. A candidate must reach the current main tip by ancestry, with net changes
+limited to `README.md`, `README.zh-CN.md`, `LOCAL_FORK_MODIFICATIONS.md` and
+Markdown under `doc/`. Thus a newer documentation commit with `[skip ci]` can
+leave both aliases on the verified code commit, even if it landed during the
+build. The SHA label identifies the commit actually built. For a skipped change
+outside those paths, or if CI skipped the whole push and no build ran, run a
+manual publish on current main. Rewritten history
+requires checking the existing aliases before advancing them.
+
+GitHub queues up to 100 waiting writers. If the queue fills or one alias write
+is interrupted, rerun the intended publication. If its three-day artifacts
+have expired, rerun all jobs. The offline probe covers startup through the
+first proxy handshake. Deployment readiness still uses `scripts/wait_ready.py`
+with a real Telegram connection.
 
 ### 💻 Run from Source
 
