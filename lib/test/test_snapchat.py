@@ -7,7 +7,6 @@ fixture ``fixtures/snapchat_spotlight.html`` 从**真实页面**裁剪（只留 
 from __future__ import annotations
 
 import asyncio
-import os
 from datetime import UTC, date
 from pathlib import Path
 
@@ -185,16 +184,12 @@ def test_parser_wraps_snapchat_error_as_parse_error():
             asyncio.run(Snapchatarse()._do_parse(PAGE_URL))
 
 
-# ── 真实链接（默认跳过，避免平台风控：设 SNAPCHAT_NETWORK=1 手动跑）──────
-
-
-@pytest.mark.skipif(
-    not os.environ.get("SNAPCHAT_NETWORK"),
-    reason="需要真实网络；设 SNAPCHAT_NETWORK=1 启用（避免频繁请求被风控）",
-)
-def test_real_spotlight_link_offline_marker():
-    video = asyncio.run(fetch_video(PAGE_URL))
-    assert video.url.startswith("https://")
-    assert "sc-cdn.net" in video.url
-    assert video.title
-    assert video.author_handle
+def test_real_spotlight_link_replays_the_captured_response():
+    """The network boundary is recorded; the real fetch/parser path still runs."""
+    with patch_async_get(FakeResponse(text=HTML)) as get:
+        video = asyncio.run(fetch_video(PAGE_URL))
+    get.assert_awaited_once()
+    call = get.await_args
+    assert call is not None and call.args[0] == PAGE_URL
+    assert video.url == TARGET_DIRECT_URL
+    assert video.title == "Views 💕" and video.author_handle == "shreypatel57"

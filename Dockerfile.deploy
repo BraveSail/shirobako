@@ -19,6 +19,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY . .
 
+FROM build AS functional-test
+
+# FFmpeg includes ffprobe. Keep these tools and the dev/CLI deps out of runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg git media-types \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project --all-packages --all-groups --all-extras
+
+CMD ["/app/.venv/bin/python", "scripts/ci/functional_tests.py"]
+
 FROM python:3.12-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

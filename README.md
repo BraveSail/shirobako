@@ -120,8 +120,9 @@ existing named-volume data to `./data` / `./logs`, and stop the old project firs
 
 | Event | Result |
 |---|---|
-| Push to `main` | Each native runner builds `Dockerfile.deploy`, boots the default command against an isolated test endpoint and checks the CPU, SQLite migrations, FFmpeg, Bun and SABR. After both pass, the writer assembles their tested images into one index tagged `sha-<full commit SHA>`. |
-| Manual **Docker Image CI** | The default runs both checks. Enable `publish` on `main` for the same publication as a push. |
+| Pull request to `main` | Runs both complete pytest suites offline, plus the production image smoke check on both architectures. No publication. |
+| Push to `main` | Requires both full pytest suites and both native image smoke checks (startup, architecture, SQLite migrations, FFmpeg, Bun and SABR). The writer combines the tested images into one index tagged `sha-<full commit SHA>`. |
+| Manual **Docker Image CI** | Runs the same checks. Enable `publish` on `main` to publish the verified images. |
 | Published GitHub Release (including a prerelease) | Applies the exact release tag to the verified index digest already published for the tagged commit. A missing verified index or a different digest under that version fails the release job. A bare Git tag push has no publish job. |
 
 SHA tags are write-once. Version tags accept 1–128 ASCII letters, digits,
@@ -129,8 +130,9 @@ underscores, dots and hyphens, starting with a letter, digit or underscore.
 `main`, `latest` and the `sha-` prefix are reserved. Only the publish job gets
 `packages: write` with the built-in `GITHUB_TOKEN`. Give this repository Actions
 access to the package and keep this workflow its sole tag writer. These rules
-apply to runs using this workflow revision. A legacy SHA tag without the
-two-platform verification marker requires a new verified commit for release.
+apply to runs using this workflow revision. Release tags require the `v2`
+verification marker (full functional suites and both image smoke checks).
+Startup-only `v1` SHA tags stay immutable; release a newly verified commit instead.
 
 `main` and `latest` advance from their published commits under a single writer
 lock. A candidate must reach the current main tip by ancestry, with net changes
@@ -158,8 +160,8 @@ uv run bot.py
 ### 🧪 Tests
 
 ```bash
-uv run pytest test/                        # bot
-uv run --package parsehub pytest lib/test/ # parser library
+docker build -f Dockerfile.deploy --target functional-test -t shirobako-functional .
+docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges shirobako-functional
 ```
 
 ### 🔄 Sync upstream

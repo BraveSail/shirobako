@@ -19,30 +19,41 @@ class ImagePublicationTest(unittest.TestCase):
         self.docs = self.commit("doc/rollout.md", "[skip ci]")
         self.tags = {}
         self.revisions = {}
+        self.indexes = {}
         self.writes = []
         for sha in (self.code, self.docs):
-            digest = ci.digest_of(sha.encode())
+            self.indexes[sha] = {
+                "schemaVersion": 2,
+                "mediaType": ci.INDEX_TYPE,
+                "annotations": {ci.PROBE: "v2", "org.opencontainers.image.revision": sha},
+                "manifests": [{"platform": {"os": "linux", "architecture": arch}} for arch in ci.ARCHES],
+            }
+            digest = ci.digest_of(json.dumps(self.indexes[sha]).encode())
             self.tags["sha-" + sha] = digest
             self.revisions[digest] = sha
         self.enterContext(patch.object(ci, "tag_digest", self.tags.get))
         self.enterContext(patch.object(ci, "regctl", self.registry))
         self.env = self.enterContext(patch.dict(os.environ))
-        self.env.update(GITHUB_SHA=self.code, GITHUB_EVENT_NAME="push")
+        self.env.update(
+            GITHUB_SHA=self.code, GITHUB_EVENT_NAME="push", CI_FUNCTIONAL_RESULT="success", CI_SMOKE_RESULT="success"
+        )
 
     @staticmethod
     def commit(path, message="change"):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(message)
         subprocess.run(["git", "add", path], check=True)
-        subprocess.run(["git", "-c", "user.name=CI", "-c", "user.email=ci@example.invalid",
-                        "commit", "-qm", message], check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=CI", "-c", "user.email=ci@example.invalid",
+             "-c", "commit.gpgsign=false", "commit", "-qm", message],
+            check=True,
+        )
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
     def registry(self, group, command, *args):
         if (group, command) == ("manifest", "get"):
             sha = self.revisions[args[0].split("@")[1]]
-            return json.dumps({"mediaType": ci.INDEX_TYPE, "annotations": {ci.PROBE: "v1", "org.opencontainers.image.revision": sha},
-                               "manifests": [{"platform": {"os": "linux", "architecture": a}} for a in ci.ARCHES]})
+            return json.dumps(self.indexes[sha]).encode()
         if (group, command) == ("image", "inspect"):
             sha = self.revisions[args[-1].split("@")[1]]
             return json.dumps({"config": {"Labels": {"org.opencontainers.image.source": ci.SOURCE,
@@ -80,7 +91,10 @@ class ImagePublicationTest(unittest.TestCase):
         self.assertEqual(self.writes, ["latest"])
 
     def test_release_is_idempotent_and_refuses_version_reuse(self):
-        self.env.update(GITHUB_EVENT_NAME="release", RELEASE_TAG="v1.0.0-rc.1")
+        self.env.update(
+            GITHUB_EVENT_NAME="release", RELEASE_TAG="v1.0.0-rc.1",
+            CI_FUNCTIONAL_RESULT="skipped", CI_SMOKE_RESULT="skipped",
+        )
         ci.main()
         ci.main()
         self.env["GITHUB_SHA"] = self.docs
@@ -103,4 +117,50 @@ class ImagePublicationTest(unittest.TestCase):
         with patch.object(ci, "regctl", return_value=b'{"schemaVersion":2,"layers":[]}'):
             with self.assertRaisesRegex(ValueError, "verified two-platform index"):
                 ci.main()
+        self.assertEqual(self.writes, [])
+
+    def test_startup_only_index_cannot_be_promoted(self):
+        self.env.update(GITHUB_EVENT_NAME="release", RELEASE_TAG="v1")
+        old_index = {
+            "schemaVersion": 2,
+            "mediaType": ci.INDEX_TYPE,
+            "annotations": {ci.PROBE: "v1", "org.opencontainers.image.revision": self.code},
+            "manifests": [{"platform": {"os": "linux", "architecture": arch}} for arch in ci.ARCHES],
+        }
+        with patch.object(ci, "regctl", return_value=json.dumps(old_index).encode()):
+            with self.assertRaisesRegex(ValueError, "not the verified two-platform index"):
+                ci.main()
+        self.assertEqual(self.writes, [])
+
+    def test_main_cannot_replace_a_startup_only_sha_tag(self):
+        index = self.indexes[self.code]
+        index["annotations"][ci.PROBE] = "v1"
+        digest = ci.digest_of(json.dumps(index).encode())
+        self.tags["sha-" + self.code] = digest
+        self.revisions[digest] = self.code
+        with self.assertRaisesRegex(ValueError, "not the verified two-platform index"):
+            ci.main()
+        self.assertEqual(self.writes, [])
+
+    def test_release_rejects_index_body_not_matching_pinned_digest(self):
+        self.env.update(GITHUB_EVENT_NAME="release", RELEASE_TAG="v1")
+        self.indexes[self.code]["annotations"]["unverified"] = "different body"
+        with self.assertRaisesRegex(ValueError, "digest does not match"):
+            ci.main()
+        self.assertEqual(self.writes, [])
+
+    def test_publisher_refuses_pull_request_event(self):
+        self.env["GITHUB_EVENT_NAME"] = "pull_request"
+        with self.assertRaisesRegex(ValueError, "Unsupported publication event"):
+            ci.main()
+        self.assertEqual(self.writes, [])
+
+    def test_old_workflow_rerun_cannot_mint_a_v2_index(self):
+        self.env.pop("CI_FUNCTIONAL_RESULT")
+        self.env["RUNNER_TEMP"] = str(Path.cwd())
+        digest = self.tags.pop("sha-" + self.code)
+        with patch.object(ci, "assemble_index", return_value=digest) as assemble:
+            with self.assertRaisesRegex(ValueError, "Functional and smoke jobs must both succeed"):
+                ci.main()
+            assemble.assert_not_called()
         self.assertEqual(self.writes, [])

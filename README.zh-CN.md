@@ -117,15 +117,16 @@ CI 和本地生产构建统一使用 `Dockerfile.deploy`，包含 Bun 与 SABR �
 
 | 事件 | 结果 |
 |---|---|
-| 推送到 `main` | 两个原生 runner 各自用 `Dockerfile.deploy` 构建镜像，运行默认启动命令，连接隔离的测试端点，检查 CPU 架构、SQLite 迁移、FFmpeg、Bun 和 SABR。两边通过后，把验过的镜像组成一个索引，首次写入 `sha-<完整提交 SHA>`。 |
-| 手动运行 **Docker Image CI** | 默认只做两种架构的检查。在 `main` 勾选 `publish` 后按分支推送的规则发布。 |
+| 向 `main` 提交 PR | 离线运行 Bot 和解析库完整 pytest，并在两种架构上运行生产镜像冒烟测试，不发布。 |
+| 推送到 `main` | 两套全量 pytest 和两个架构的生产镜像冒烟均须通过（启动、架构、SQLite 迁移、FFmpeg、Bun、SABR）。把验过的镜像组成索引，首次写入 `sha-<完整提交 SHA>`。 |
+| 手动运行 **Docker Image CI** | 运行同样的检查。在 `main` 勾选 `publish` 后才发布。 |
 | 发布 GitHub Release（含预发布） | 将该提交已核验的索引 digest 加上原始版本标签。缺少已核验索引，或版本已指向其他 digest，发布任务失败。仅推送 Git 标签不会触发发布。 |
 
 SHA 标签只写一次。版本标签允许 1–128 个 ASCII 字母、数字、下划线、点或连字符，
 首字符为字母、数字或下划线。`main`、`latest` 和 `sha-` 前缀已保留。
 只有发布任务使用内置 `GITHUB_TOKEN` 的 `packages: write` 权限。
 请为本仓库授予包的 Actions 写权限，并让此工作流独占这些标签的写入权。这些规则从使用新版工作流的运行开始生效。
-如果旧 SHA 标签缺少双架构验证标记，请选择新验证的提交发布版本。
+发布版本要求 `v2` 验证标记（两套功能测试和两个架构的镜像冒烟）。旧版仅验启动的 `v1` SHA 标签不覆盖，请选择新验证的提交发布版本。
 
 `main` 与 `latest` 在同一把发布锁内沿各自已发布提交的历史向前移动。候选提交须为锁内读取的
 main 顶端或其祖先，两者之间的最终差异仅可涉及 `README.md`、`README.zh-CN.md`、
@@ -147,8 +148,8 @@ uv run bot.py
 ### 🧪 测试
 
 ```bash
-uv run pytest test/                       # bot
-uv run --package parsehub pytest lib/test/  # 解析库
+docker build -f Dockerfile.deploy --target functional-test -t shirobako-functional .
+docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges shirobako-functional
 ```
 
 ### 🔄 同步上游

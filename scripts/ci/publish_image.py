@@ -12,6 +12,8 @@ SOURCE = "https://github.com/bravesail/shirobako"
 ARCHES = ("amd64", "arm64")
 INDEX_TYPE = "application/vnd.oci.image.index.v1+json"
 PROBE = "io.github.bravesail.shirobako.startup-check"
+# v1 covered only startup; v2 requires functional CI and both startup checks.
+VERIFICATION_VERSION = "v2"
 DOCS = ("README.md", "README.zh-CN.md", "LOCAL_FORK_MODIFICATIONS.md", "doc/**/*.md")
 
 
@@ -71,7 +73,7 @@ def assemble_index(layout, sha, artifacts):
 
     index = {
         "schemaVersion": 2, "mediaType": INDEX_TYPE,
-        "annotations": {"org.opencontainers.image.revision": sha, PROBE: "v1"},
+        "annotations": {"org.opencontainers.image.revision": sha, PROBE: VERIFICATION_VERSION},
         "manifests": descriptors,
     }
     raw = json.dumps(index, separators=(",", ":")).encode()
@@ -90,16 +92,20 @@ def verified_digest(sha, release):
             digest = assemble_index(layout, sha, Path(os.environ["RUNNER_TEMP"], "images"))
             copy_tag(f"{layout}@{digest}", sha_tag, digest)
     ref = f"{IMAGE}@{digest}"
-    index = json.loads(regctl("manifest", "get", ref, "--format", "raw-body"))
+    raw = regctl("manifest", "get", ref, "--format", "raw-body")
+    index = json.loads(raw)
     annotations = index.get("annotations", {})
     platforms = sorted((m["platform"]["os"], m["platform"]["architecture"]) for m in index.get("manifests", []))
     if (
-        index.get("mediaType") != INDEX_TYPE
+        index.get("schemaVersion") != 2
+        or index.get("mediaType") != INDEX_TYPE
         or platforms != [("linux", arch) for arch in ARCHES]
-        or annotations.get(PROBE) != "v1"
+        or annotations.get(PROBE) != VERIFICATION_VERSION
         or annotations.get("org.opencontainers.image.revision") != sha
     ):
         raise ValueError(f"{ref} is not the verified two-platform index for {sha}")
+    if digest_of(raw) != digest:
+        raise ValueError(f"Registry digest does not match the index body for {ref}")
     return digest
 
 
@@ -120,7 +126,14 @@ def main():
     sha = os.environ["GITHUB_SHA"]
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected a full commit SHA")
-    release = os.environ["GITHUB_EVENT_NAME"] == "release"
+    event = os.environ["GITHUB_EVENT_NAME"]
+    if event not in {"push", "workflow_dispatch", "release"}:
+        raise ValueError(f"Unsupported publication event: {event}")
+    release = event == "release"
+    # An old workflow rerun fetches today's writer from main, but it cannot
+    # attest that the functional job ran. Do not let it mint a v2 digest.
+    if not release and any(os.environ.get(job) != "success" for job in ("CI_FUNCTIONAL_RESULT", "CI_SMOKE_RESULT")):
+        raise ValueError("Functional and smoke jobs must both succeed before publishing")
     if release:
         tag = os.environ["RELEASE_TAG"]
         valid = re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}", tag)

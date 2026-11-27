@@ -1,6 +1,8 @@
 name: Docker Image CI
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   release:
@@ -15,6 +17,22 @@ on:
 permissions: {}
 
 jobs:
+  functional:
+    if: github.event_name != 'release'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run full bot and parser suites offline
+        run: |
+          docker buildx build --platform linux/amd64 --target functional-test --load \
+            -f Dockerfile.deploy -t shirobako-functional:ci .
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges shirobako-functional:ci
+
   verify:
     if: github.event_name != 'release'
     permissions:
@@ -48,13 +66,13 @@ jobs:
             -t "verified:$ARCH" .
           bash scripts/ci/smoke-image.sh "verified:$ARCH" "$ARCH"
       - name: Save tested image and config digest
-        if: github.event_name == 'push' || inputs.publish
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
         run: |
           mkdir -p "$RUNNER_TEMP/verified"
           docker image inspect --format '{{.Id}}' "verified:$ARCH" > "$RUNNER_TEMP/verified/config.id"
           docker image save -o "$RUNNER_TEMP/verified/image.tar" "verified:$ARCH"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push' || inputs.publish
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
         with:
           name: verified-${{ matrix.arch }}
           path: ${{ runner.temp }}/verified/
@@ -64,11 +82,12 @@ jobs:
           compression-level: 1
 
   publish:
-    needs: verify
+    needs: [verify, functional]
     if: >-
       !cancelled() && github.repository == 'BraveSail/shirobako' &&
       (github.event_name == 'release' || (needs.verify.result == 'success' &&
-      github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.publish)))
+      needs.functional.result == 'success' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))))
     permissions:
       contents: read
       packages: write
@@ -103,5 +122,7 @@ jobs:
         run: printf '%s' "$GHCR_TOKEN" | regctl registry login ghcr.io -u "$GITHUB_ACTOR" --pass-stdin
       - name: Publish verified digest
         env:
+          CI_FUNCTIONAL_RESULT: ${{ needs.functional.result }}
+          CI_SMOKE_RESULT: ${{ needs.verify.result }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: python3 scripts/ci/publish_image.py
