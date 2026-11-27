@@ -21,9 +21,7 @@ from pyrogram.types import (
     InputRichBlockParagraph,
     InputRichBlockPhoto,
     InputRichBlockSectionHeading,
-    InputRichBlockTable,
     InputRichBlockVideo,
-    RichBlockTableCell,
     RichText,
     RichTextBold,
     RichTextCode,
@@ -42,13 +40,11 @@ from plugins.helpers import (
     _METADATA_TIMEZONE,
     TAG_LINE_DISPLAY_BUDGET,
     _display_width,
-    _poll_field,
-    _poll_int,
     _should_fold,
     tag_page_url,
 )
 from plugins.parse.notes import ParseNote, note_block
-from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
+from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock, build_poll_blocks
 
 if TYPE_CHECKING:
     from repo.settings import SettingsConfig
@@ -137,39 +133,6 @@ def _body(post: XPost, *, summary: str, fold: bool, quoted: bool) -> list[InputR
     return [_paragraph(post.segments, italic=quoted)]
 
 
-def _poll(polls: Sequence, index: int | None, lang: str) -> list[InputRichBlock]:
-    if index is None or not 0 <= index < len(polls):
-        return []
-    poll = polls[index]
-    options = list(_poll_field(poll, "options") or ())
-    if not options:
-        return []
-    _t = t_[lang] if lang else t_
-    counts = [_poll_int(_poll_field(option, "count")) for option in options]
-    total_votes = _poll_int(_poll_field(poll, "total_votes"))
-    weighted = any(count is not None for count in counts)
-    denominator = _poll_int(_poll_field(poll, "voters")) or total_votes or sum(count or 0 for count in counts)
-    labels = [_t("选项")]
-    if weighted:
-        labels.extend((_t("票数"), _t("占比")))
-    rows = [[RichBlockTableCell(label, is_header=True) for label in labels]]
-    for option, count in zip(options, counts, strict=True):
-        cells = [RichBlockTableCell(str(_poll_field(option, "text") or ""))]
-        if weighted:
-            percent = f"{round(count * 100 / denominator) if denominator else 0}%" if count is not None else None
-            cells.extend((RichBlockTableCell(None if count is None else str(count)), RichBlockTableCell(percent)))
-        rows.append(cells)
-    blocks: list[InputRichBlock] = []
-    if total_votes is not None and not weighted:
-        head = _t("投票")
-        if total_votes:
-            total = total_votes
-            head += _METADATA_SEPARATOR + _t(f"共 {total:,} 票")
-        blocks.append(InputRichBlockParagraph(head))
-    blocks.append(InputRichBlockTable(rows))
-    return blocks
-
-
 def _gallery(media: Sequence[InputRichBlock]) -> list[InputRichBlock]:
     """Keep non-media fallbacks in order, but out of Telegram's media-only collage."""
     blocks: list[InputRichBlock] = []
@@ -201,7 +164,7 @@ def _post_content(
     post: XPost, polls: Sequence, *, summary: str, lang: str, fold: bool, quoted: bool,
 ) -> list[InputRichBlock]:
     blocks = _body(post, summary=summary, fold=fold, quoted=quoted)
-    blocks.extend(_poll(polls, post.poll_index, lang))
+    blocks.extend(build_poll_blocks(polls, post.poll_index, lang))
     if post.youtube and post.youtube.text:
         blocks.append(_paragraph([post.youtube], italic=True))
     return blocks

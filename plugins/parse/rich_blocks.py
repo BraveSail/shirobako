@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import html
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from pyrogram import raw
 from pyrogram.types import (
@@ -55,7 +57,7 @@ if TYPE_CHECKING:
 
 #: 表格行判据与渲染层同源（``plugins.helpers._TABLE_ROW_RE``）——
 #: 正文表格、引用块内表格、preserve_linebreaks 的跳过逻辑共用同一个定义。
-from plugins.helpers import _LIST_CHECKBOX_RE, _LIST_ITEM_RE, _TABLE_ROW_RE, _markdown_list_items
+from plugins.helpers import _LIST_CHECKBOX_RE, _LIST_ITEM_RE, _TABLE_ROW_RE, _markdown_list_items, _poll_display
 
 logger = __import__("loguru").logger.bind(name="RichBlocks")
 
@@ -193,6 +195,63 @@ _TABLE_SEPARATOR_CELL_RE = re.compile(r":?-{2,}:?")
 _DETAILS_TAG_RE = re.compile(r"</?details>")
 
 
+def build_poll_blocks(polls: Sequence, index: int | None, lang: str) -> list[InputRichBlock]:
+    if index is None or not 0 <= index < len(polls) or (display := _poll_display(polls[index], lang)) is None:
+        return []
+    heading, rows = display
+    blocks: list[InputRichBlock] = [InputRichBlockParagraph(heading)] if heading else []
+    blocks.append(InputRichBlockTable([
+        [RichBlockTableCell(cell, is_header=i == 0) for cell in row] for i, row in enumerate(rows)
+    ]))
+    return blocks
+
+
+# Outside an HTML quote boundary, require the exact persisted standalone token.
+_LEGACY_POLL_LINE_RE = re.compile(r"(?P<open>> |<blockquote>)?\{\{poll:(?P<index>\d+)\}\}(?P<close></blockquote>)?")
+
+
+class LegacyPollSlots:
+    """Keep the compatibility layout as text, but insert poll blocks only at reserved body slots."""
+
+    def __init__(self, polls: Sequence, lang: str):
+        self._polls = polls
+        self._lang = lang
+        self._prefix = f"Poll{uuid4().hex}x"
+        self._slots: dict[str, str] = {}
+
+    def reserve(self, content: str) -> str:
+        # The app's layout may escape punctuation and rewrite quotes. The alphanumeric
+        # keys survive both and can only be resolved by this render's private map.
+        lines = content.split("\n")
+        fenced = False
+        for i, line in enumerate(lines):
+            if line.lstrip(" >\t").startswith("```"):
+                fenced = not fenced
+            elif not fenced and (match := _LEGACY_POLL_LINE_RE.fullmatch(line)):
+                key = f"{self._prefix}{len(self._slots)}"
+                self._slots[key] = match["index"]
+                lines[i] = f"{match['open'] or ''}{key}{match['close'] or ''}"
+        return "\n".join(lines)
+
+    def __contains__(self, token: str) -> bool:
+        return token in self._slots
+
+    def render(self, token: str) -> list[InputRichBlock]:
+        digits = self._slots[token]
+        try:
+            index = int(digits)
+        except ValueError:
+            logger.warning("投票占位符索引无效, 已删除该行")
+            return []
+        if index >= len(self._polls):
+            logger.warning(f"投票占位符索引越界, 已删除该行: index={index}, polls={len(self._polls)}")
+            return []
+        blocks = build_poll_blocks(self._polls, index, self._lang)
+        if not blocks:
+            logger.warning(f"投票数据为空, 已删除占位符行: index={index}")
+        return blocks
+
+
 def _table_block(rows: list[str]) -> InputRichBlockTable | None:
     """markdown 表格行组 → ``Table`` 块; 没有 ``|---|`` 分隔行时返回 None。
 
@@ -217,7 +276,9 @@ def _table_block(rows: list[str]) -> InputRichBlockTable | None:
     )
 
 
-def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) -> list[InputRichBlock]:
+def _quote_children(
+    quoted: list[str], media_blocks: dict[str, InputRichBlock], poll_slots: LegacyPollSlots | None,
+) -> list[InputRichBlock]:
     """引用块（``>`` 行）内的子块。
 
     四种行各有归属: 独立的分隔线 → ``Divider``（署名行与正文之间的那条线,
@@ -231,6 +292,7 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
         line.strip() in ("---", "***", "___")
         or _MEDIA_PLACEHOLDER_RE.match(line.strip())
         or _TABLE_ROW_RE.match(line.strip())
+        or (poll_slots is not None and line.strip() in poll_slots)
         # 图集标签也是结构行：不认的话整段（含 `<tg-collage>`）会被并成一个
         # 纯文本段落，标签原样显示给用户（真机实测就是这样）
         or line.strip() in ("<tg-collage>", "</tg-collage>")
@@ -265,7 +327,12 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
     while _qidx < len(quoted):
         line = quoted[_qidx]
         stripped = line.strip()
-        if stripped in ("---", "***", "___"):
+        if poll_slots is not None and stripped in poll_slots:
+            if poll := poll_slots.render(stripped):
+                flush_table()
+                flush_text()
+                children.extend(poll)
+        elif stripped in ("---", "***", "___"):
             flush_table()
             flush_text()
             children.append(InputRichBlockDivider())
@@ -313,7 +380,8 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
 
 
 def _list_block(
-    lines: list[str], start: int, first: re.Match[str], media_blocks: dict[str, InputRichBlock]
+    lines: list[str], start: int, first: re.Match[str], media_blocks: dict[str, InputRichBlock],
+    poll_slots: LegacyPollSlots | None,
 ) -> tuple[InputRichBlockList, int]:
     """Read siblings at one indentation; give each item's children to the block parser."""
     marker = first[2][-1]
@@ -333,7 +401,9 @@ def _list_block(
             item_lines.append(leading[content_indent:] + body)
         # The converter emits nested lists on a new, indented line. A number
         # at the start of this item's own text is not a second list marker.
-        children = markdown_to_blocks("\n".join(item_lines), media_blocks=media_blocks, _allow_first_list=False)
+        children = markdown_to_blocks(
+            "\n".join(item_lines), media_blocks=media_blocks, poll_slots=poll_slots, _allow_first_list=False,
+        )
         items.append(
             InputRichBlockListItem(
                 children or [InputRichBlockParagraph("")],
@@ -347,7 +417,8 @@ def _list_block(
 
 
 def markdown_to_blocks(
-    markdown: str, *, media_blocks: dict[str, InputRichBlock] | None = None, _allow_first_list: bool = True
+    markdown: str, *, media_blocks: dict[str, InputRichBlock] | None = None,
+    poll_slots: LegacyPollSlots | None = None, _allow_first_list: bool = True,
 ) -> list[InputRichBlock]:
     """把富文本 markdown 转成 blocks 列表。
 
@@ -384,6 +455,13 @@ def markdown_to_blocks(
         # 空行结束段落
         if not stripped:
             flush_paragraph(paragraph)
+            i += 1
+            continue
+
+        if poll_slots is not None and stripped in poll_slots:
+            if poll := poll_slots.render(stripped):
+                flush_paragraph(paragraph)
+                blocks.extend(poll)
             i += 1
             continue
 
@@ -433,7 +511,7 @@ def markdown_to_blocks(
             blocks.append(
                 InputRichBlockDetails(
                     parse_inline(summary),
-                    markdown_to_blocks(body, media_blocks=media_blocks),
+                    markdown_to_blocks(body, media_blocks=media_blocks, poll_slots=poll_slots),
                 ),
             )
             continue
@@ -474,7 +552,7 @@ def markdown_to_blocks(
                     i += 1
             blocks.append(
                 InputRichBlockBlockQuotation(
-                    markdown_to_blocks("\n".join(inner_lines).strip(), media_blocks=media_blocks)
+                    markdown_to_blocks("\n".join(inner_lines).strip(), media_blocks=media_blocks, poll_slots=poll_slots)
                 )
             )
             continue
@@ -560,12 +638,12 @@ def markdown_to_blocks(
             while i < len(lines) and lines[i].strip().startswith(">"):
                 quoted.append(re.sub(r"^\s*>\s?", "", lines[i]))
                 i += 1
-            blocks.append(InputRichBlockBlockQuotation(_quote_children(quoted, media_blocks)))
+            blocks.append(InputRichBlockBlockQuotation(_quote_children(quoted, media_blocks, poll_slots)))
             continue
 
         if (i or _allow_first_list) and (item := _LIST_ITEM_RE.match(line)):
             flush_paragraph(paragraph)
-            block, i = _list_block(lines, i, item, media_blocks)
+            block, i = _list_block(lines, i, item, media_blocks, poll_slots)
             blocks.append(block)
             continue
 

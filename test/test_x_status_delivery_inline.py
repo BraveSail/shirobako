@@ -34,8 +34,9 @@ from plugins.parse import guest, inline, reporters
 from plugins.parse.inline_rich import RICH_RESULT_ID, rich_cache_entry
 from repo.settings.schema import DEFAULT_SETTINGS_CONFIG
 from services import pipeline
-from services.cache import CacheEntry, CacheMediaType
+from services.cache import CacheEntry, CacheMediaType, CacheParseResult
 from services.media import ProcessedMedia
+from test.test_document_delivery_cache import _cache_photo
 
 URL = "https://x.com/a/status/123"
 DOCUMENT_URL = "https://www.pixiv.net/artworks/12345"
@@ -579,6 +580,24 @@ def test_guest_legacy_edit_contains_text_and_media_not_mapping_keys(setup):
     assert isinstance(final, tl.InputRichMessage)
     assert "legacy summary" in _text(final)
     assert 101 in _photos(final)
+
+
+def test_guest_falls_back_from_rejected_legacy_cached_photo_without_losing_poll(setup):
+    cached = CacheEntry(parse_result=CacheParseResult(
+        platform="twitter", title="Cached poll", markdown_content="正文\n\n> 引用\n> {{poll:0}}",
+        polls=[{"options": [{"text": "A | B"}]}],
+    ), media=[_cache_photo(101)])
+    service, _ = setup(_status(typed=False), cached=cached)
+    cli = FakeTelegram(reject_guest_media=True)
+    _guest(cli)
+    service.parse.assert_not_awaited()
+    assert len(cli.guest) == 2 and _photos(cli.guest[0]) == [101] and not _photos(cli.guest[1])
+    assert not cli.uploads and not cli.edits
+    fallback = cli.guest[1].rich_message
+    (quote,) = (node for node in _nodes(fallback) if isinstance(node, tl.PageBlockBlockquoteBlocks))
+    (table,) = (node for node in _nodes(quote) if isinstance(node, tl.PageBlockTable))
+    assert "A | B" in _text(table)
+    assert any(isinstance(node, tl.TextUrl) and node.url == URL for node in _nodes(fallback))
 
 
 def test_guest_denial_emits_rich_notice_without_parse(setup):

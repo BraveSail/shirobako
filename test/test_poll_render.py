@@ -12,11 +12,21 @@
 退回 ``SimpleNamespace``（字段名相同）—— ``_render_poll`` 对两者都吃（``getattr``）。
 """
 
+import asyncio
 import types
+from io import BytesIO
 
 import pytest
+from parsehub.types import Platform, RichTextParseResult
+from parsehub.types.document import Block, Document, paragraph
+from pyrogram.raw import types as tl
+from pyrogram.raw.core import TLObject
+from pyrogram.types import InputRichMessage
 
 from plugins.helpers import _render_poll, build_rich_markdown, build_rich_markdown_by_str, replace_poll_placeholders
+from plugins.parse import inline_rich
+from repo.settings.schema import DEFAULT_SETTINGS_CONFIG
+from services import cache
 
 try:  # lib 侧的 Poll 类（phase1）；没有就退回等价 duck-type
     from parsehub.types import Poll, PollOption
@@ -50,6 +60,9 @@ LINUXDO_POLL = _poll(
 #: youtube：匿名拿不到单项票数，只有选项与总票数 → 单列 + 「投票 · 共 N 票」头部
 YOUTUBE_POLL = _poll([("选项A", None), ("选项B", None)], total_votes=1_800_000)
 
+LINUXDO_URL = "https://linux.do/t/topic/123"
+WIRE_CONFIG = DEFAULT_SETTINGS_CONFIG.model_copy(update={"hide_desc": False, "hide_source": False})
+
 
 def _config():
     return types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
@@ -74,6 +87,88 @@ def _parse_result(content, polls, **overrides):
     }
     fields.update(overrides)
     return types.SimpleNamespace(**fields)
+
+
+def _wire(message):
+    async def encode():
+        return await message.write(client=None)
+
+    stream = BytesIO(asyncio.run(encode()).write())
+    decoded = TLObject.read(stream)
+    assert isinstance(decoded, tl.InputRichMessage) and stream.read() == b""
+    return decoded.blocks
+
+
+def _walk(node):
+    if isinstance(node, list):
+        for child in node:
+            yield from _walk(child)
+    elif isinstance(node, TLObject):
+        yield node
+        for field in node.__slots__:
+            yield from _walk(getattr(node, field, None))
+
+
+def _text(node):
+    return "".join(child.text for child in _walk(node) if isinstance(child, tl.TextPlain))
+
+
+def _linuxdo_result(**kwargs):
+    result = RichTextParseResult(**kwargs)
+    result.raw_url, result.platform = LINUXDO_URL, Platform.LINUXDO
+    return result
+
+
+def _legacy_entry(monkeypatch, markdown, polls):
+    written = inline_rich.rich_cache_entry(_linuxdo_result(markdown_content=markdown, polls=polls), [])
+    assert written is not None
+    # Version 14 predates shared Document; replay the stored schema, not a null Document field.
+    written.parse_result.content_version = 14
+    payload = written.model_dump_json(exclude={"parse_result": {"document", "x_status"}})
+    persistent = cache.PersistentCache()
+
+    async def read(key):
+        assert key == persistent._key(LINUXDO_URL)
+        return payload
+
+    async def reject_delete(_keys):
+        pytest.fail("the pre-Document record must be a valid cache hit")
+
+    monkeypatch.setattr(cache, "get_optional", read)
+    monkeypatch.setattr(cache, "delete_keys", reject_delete)
+    entry = asyncio.run(persistent.get(LINUXDO_URL))
+    assert entry is not None
+    assert entry.parse_result.document is None and "document" not in entry.parse_result.model_fields_set
+    return entry
+
+
+def _cached_wire(entry, lang):
+    body, media, media_blocks = inline_rich.build_cached_rich_content(entry, LINUXDO_URL, config=WIRE_CONFIG, lang=lang)
+    return _wire(inline_rich.cached_rich_message(body, media, media_blocks))
+
+
+def _native_wire(result, lang):
+    blocks = inline_rich.build_delivery_blocks(result, config=WIRE_CONFIG, raw_url=result.raw_url, lang=lang)
+    return _wire(InputRichMessage(blocks=blocks))
+
+
+def _assert_table(table, rows):
+    assert [[_text(cell) for cell in row.cells] for row in table.rows] == rows
+    assert all(cell.header for cell in table.rows[0].cells)
+
+
+def _assert_quoted_poll(blocks, rows, *, heading=None):
+    (quote,) = (node for node in _walk(blocks) if isinstance(node, tl.PageBlockBlockquoteBlocks))
+    tables = [node for node in _walk(quote.blocks) if isinstance(node, tl.PageBlockTable)]
+    assert len(tables) == 1, "expected one native poll table inside the quote"
+    (table,) = tables
+    _assert_table(table, rows)
+    before, _, after = _text(quote).partition(_text(table))
+    assert "引用前" in before and "引用后" in after
+    if heading:
+        assert heading in before
+    assert "{{poll:" not in _text(blocks)
+    return table
 
 
 # ── ① 三列表格 + 语言切换 ─────────────────────────────────────────────
@@ -139,13 +234,22 @@ def test_placeholder_inside_a_quote_block_gets_the_prefix_on_every_line():
     assert "<i>" not in out, "表格行包 <i> 会让服务端不再认成表格"
 
 
-def test_quote_block_placeholder_survives_build_rich_markdown():
-    """全链路: 引用块里的占位符在 build_rich_markdown 里被替换、前缀保留。"""
-    pr = _parse_result("正文\n\n> 引用文字\n> {{poll:0}}", [OFFICIAL_POLL])
-    md = build_rich_markdown(pr, config=_config(), lang="zh-hans")
-    assert "{{poll:" not in md
-    assert "> | 选项 | 票数 | 占比 |" in md
-    assert "> | 青い | 51 | 51% |" in md
+@pytest.mark.parametrize(
+    ("lang", "labels"),
+    [("zh-hans", ["选项", "票数", "占比"]), ("fr-fr", ["Option", "Votes", "Part"])],
+    ids=["zh-hans", "fr-fr"],
+)
+def test_pre_document_cache_keeps_a_localized_quote_poll_native(monkeypatch, lang, labels):
+    option = "青い | <b>literal</b>"
+    poll = _poll([(option, 51), ("赤い", 49)], total_votes=100)
+    entry = _legacy_entry(monkeypatch, "正文\n\n> 引用前\n> {{poll:0}}\n> 引用后", [poll])
+
+    blocks = _cached_wire(entry, lang)
+
+    table = _assert_quoted_poll(blocks, [labels, [option, "51", "51%"], ["赤い", "49", "49%"]])
+    assert [node for node in _walk(blocks) if isinstance(node, tl.PageBlockTable)] == [table]
+    assert any(isinstance(block, tl.PageBlockParagraph) and _text(block) == "正文" for block in blocks)
+    assert isinstance(table.rows[1].cells[0].text, tl.TextPlain)
 
 
 # ── ③ youtube 单列 + 头部 ──────────────────────────────────────────────
@@ -188,12 +292,51 @@ def test_linuxdo_header_is_localized():
     assert md.startswith('📊 Poll("你被封过号吗" · 222 voters)\n\n| Option | Votes | Share |')
 
 
+@pytest.mark.parametrize(
+    ("lang", "labels", "heading"),
+    [
+        ("zh-hans", ["选项", "票数", "占比"], "📊 投票（「你被封过号吗」 · 222 人参与）"),
+        ("en-us", ["Option", "Votes", "Share"], '📊 Poll("你被封过号吗" · 222 voters)'),
+    ],
+    ids=["zh-hans", "en-us"],
+)
+def test_native_linuxdo_poll_keeps_the_localized_title_and_voters(lang, labels, heading):
+    # The sum of the option counts is not the number of participants.
+    poll = _poll(
+        [(option.text, option.count) for option in LINUXDO_POLL.options],
+        total_votes=182, voters=222, title=LINUXDO_POLL.title,
+    )
+    result = _linuxdo_result(document=Document((paragraph("正文"), Block("poll", index=0))), polls=[poll])
+
+    blocks = _native_wire(result, lang)
+
+    (table,) = (block for block in _walk(blocks) if isinstance(block, tl.PageBlockTable))
+    _assert_table(table, [
+        labels,
+        ["还在用a/感觉良好", "71", "32%"],
+        ["没用过a/", "31", "14%"],
+        ["一直觉得a/比o/恶心", "80", "36%"],
+    ])
+    before, _, _ = _text(blocks).partition(_text(table))
+    assert heading in before, "expected the localized title and voters above the native table"
+
+
 def test_linuxdo_header_without_title():
     """没有标题时只拼「N 人参与」; 人数为 0 时连它也没有 → 只剩「📊 投票」。"""
     only_voters = _render_poll(_poll([("A", 1)], total_votes=1, voters=5), "zh-hans")
     assert only_voters.startswith("📊 投票（5 人参与）")
     bare = _render_poll(_poll([("A", 1)], total_votes=1, voters=0), "zh-hans")
     assert bare.startswith("📊 投票\n\n| 选项 | 票数 | 占比 |")
+
+
+def test_native_linuxdo_poll_keeps_title_when_no_one_has_voted():
+    # Discourse reports zero participants as None while preserving the title and counts.
+    poll = _poll([("A", 0), ("B", 0)], total_votes=0, voters=None, title="刚开的投票")
+    result = _linuxdo_result(document=Document((Block("poll", index=0),)), polls=[poll])
+    blocks = _native_wire(result, "zh-hans")
+    assert "📊 投票（「刚开的投票」）" in _text(blocks)
+    (table,) = (block for block in _walk(blocks) if isinstance(block, tl.PageBlockTable))
+    _assert_table(table, [["选项", "票数", "占比"], ["A", "0", "0%"], ["B", "0", "0%"]])
 
 
 def test_linuxdo_legacy_degrade_has_no_header():
@@ -361,26 +504,30 @@ def test_cache_entry_without_polls_defaults_to_empty():
     assert rich_cache_entry(bare, []).parse_result.polls == []
 
 
-def test_cached_render_roundtrip_from_cache_entry():
-    """写缓存 → 读缓存 → 渲染: 表格还在 (缓存命中路径的端到端)。"""
-    from plugins.parse.inline_rich import build_cached_rich_content, rich_cache_entry
-    from services.cache import CacheEntry, CacheParseResult
+def test_japanese_legacy_cache_poll_blocks_match_fresh_document(monkeypatch):
+    polls = [OFFICIAL_POLL, YOUTUBE_POLL]
+    fresh = _linuxdo_result(
+        markdown_content="legacy fallback must not render",
+        document=Document((
+            paragraph("正文"),
+            Block("poll", index=0),
+            Block("quote", children=(paragraph("引用前"), Block("poll", index=1), paragraph("引用后"))),
+        )),
+        polls=polls,
+    )
+    entry = _legacy_entry(monkeypatch, "正文\n\n{{poll:0}}\n\n> 引用前\n> {{poll:1}}\n> 引用后", polls)
 
-    result = _parse_result("正文\n\n{{poll:0}}\n\n> 引用\n> {{poll:1}}", [OFFICIAL_POLL, YOUTUBE_POLL])
-    entry = rich_cache_entry(result, [])
-    # 模拟缓存往返 (Redis 里存的是 JSON)
-    entry = CacheEntry.model_validate(
-        CacheEntry(
-            parse_result=CacheParseResult.model_validate(entry.parse_result.model_dump(mode="json"))
-        ).model_dump(mode="json")
-    )
-    markdown, _media, _blocks = build_cached_rich_content(
-        entry, "https://x.com/a/status/1", lang="ja-jp", config=_config()
-    )
-    assert "{{poll" not in markdown
-    assert "| 選択肢 | 票数 | 割合 |" in markdown
-    assert "> 投票 · 合計 1,800,000 票" in markdown, markdown
-    assert "> | 選択肢 |" in markdown
+    def assert_polls(blocks):
+        quote_table = _assert_quoted_poll(blocks, [["選択肢"], ["选项A"], ["选项B"]],
+                                          heading="投票 · 合計 1,800,000 票")
+        (main_table,) = (block for block in _walk(blocks) if isinstance(block, tl.PageBlockTable)
+                         and block is not quote_table)
+        _assert_table(main_table, [["選択肢", "票数", "割合"], ["青い", "51", "51%"], ["赤い", "49", "49%"]])
+
+    cold = _native_wire(fresh, "ja-jp")
+    assert "legacy fallback must not render" not in _text(cold)
+    assert_polls(cold)
+    assert_polls(_cached_wire(entry, "ja-jp"))
 
 
 def test_old_cache_entry_without_polls_renders_the_legacy_way():

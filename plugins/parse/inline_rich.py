@@ -83,9 +83,14 @@ class _RenderedCacheMedia(list):
     """File IDs extracted in rendered order rather than upload/source order."""
 
 
-def has_structured_body(parse_result: object) -> bool:
+def _has_native_body(parse_result: object) -> bool:
     """An empty Document is intentional; XStatus alone is the v14 compatibility path."""
     return getattr(parse_result, "document", None) is not None or getattr(parse_result, "x_status", None) is not None
+
+
+def has_structured_body(parse_result: object) -> bool:
+    """Route bodies and legacy structured polls through the native delivery builder."""
+    return _has_native_body(parse_result) or bool(getattr(parse_result, "polls", None))
 
 
 def _summary_blocks(blocks: Sequence[Block]) -> Iterator[Block]:
@@ -219,21 +224,23 @@ def build_delivery_blocks(
         )
 
     from plugins.helpers import build_rich_markdown
-    from plugins.parse.rich_blocks import markdown_to_blocks
+    from plugins.parse.rich_blocks import LegacyPollSlots, markdown_to_blocks
 
+    polls = getattr(parse_result, "polls", None)
+    poll_slots = LegacyPollSlots(polls, lang) if polls else None
     markdown = build_rich_markdown(
         parse_result, config=config, lang=lang, view_label=view_label,
         custom_content=custom_content if isinstance(custom_content, str) else "",
         hide_content=hide_content, progress=progress, media_placeholders=media_placeholders,
         quote_media_placeholders=quote_media_placeholders, reply_media_placeholders=reply_media_placeholders,
-        media_urls=media_urls,
+        media_urls=media_urls, defer_polls=poll_slots.reserve if poll_slots is not None else None,
     )
     if omit_legacy_media:
         # inline imports this module; only import its legacy helper when rendering a preview.
         from plugins.parse.inline import strip_media_markdown
 
         markdown = strip_media_markdown(markdown)
-    rendered = markdown_to_blocks(markdown, media_blocks=media_blocks)
+    rendered = markdown_to_blocks(markdown, media_blocks=media_blocks, poll_slots=poll_slots)
     if isinstance(custom_content, ParseNote) and custom_content:
         append_content_blocks(rendered, [note_block(custom_content)], hide_content)
     return rendered
@@ -750,17 +757,21 @@ def build_cached_rich_content(
     view_label: str = "",
     custom_content: str | ParseNote = "",
     spoiler_tag: str = "",
+    omit_media: bool = False,
 ) -> tuple[str | list, list[InputRichMessageMedia], dict]:
     """从缓存条目重建富文本正文与媒体块 (file_id 复用, 零上传)。
 
     **直发与 inline 共用这一条**, 免得两边各写一份排版:
-    缓存里只存解析字段: Document 和旧 XStatus 输出 native blocks，其它旧条目保留 Markdown。
+    缓存里只存解析字段: Document、旧 XStatus、含结构化投票的旧正文输出 native blocks。
 
     :param spoiler_tag: 用户这次要求遮住内容 (``/s``)。缓存存的是**解析字段**
         而非渲染结果, 所以遮与不遮在排版时决定 —— 命中缓存也必须照遮。
     """
     media, placeholders, quoted_placeholders, reply_placeholders, media_blocks, media_urls = cache_media_blocks(entry)
-    if has_structured_body(entry.parse_result):
+    if omit_media:
+        # Keep source slots for broken-link fallbacks but drop the Telegram media.
+        media, media_blocks = [], {}
+    if _has_native_body(entry.parse_result):
         blocks = build_delivery_blocks(
             entry.parse_result, config=config, raw_url=raw_url, lang=lang,
             view_label=view_label, custom_content=custom_content, hide_content=spoiler_tag,
@@ -770,6 +781,7 @@ def build_cached_rich_content(
         return blocks, media, media_blocks
 
     from plugins.helpers import build_rich_markdown_by_str
+    from plugins.parse.rich_blocks import LegacyPollSlots, markdown_to_blocks
 
     # 平台: 优先用缓存里存的短名; 老缓存没这个字段 ⇒ 按 raw_url 推断。
     # **必须给一个真实平台** —— 渲染里标签等依赖它, 传 None 会静默降级成纯文本。
@@ -779,6 +791,8 @@ def build_cached_rich_content(
 
         platform = ParseHub().get_platform(raw_url) if raw_url else None
 
+    polls = entry.parse_result.polls
+    poll_slots = LegacyPollSlots(polls, lang) if polls else None
     markdown = build_rich_markdown_by_str(
         entry.parse_result.title,
         entry.parse_result.content,
@@ -794,9 +808,7 @@ def build_cached_rich_content(
         origin_line=entry.parse_result.origin_line,
         reply_count=entry.parse_result.reply_count,
         hashtags=entry.parse_result.hashtags,
-        # 投票数据（``{{poll:N}}`` 的渲染源）—— 老缓存没有这个字段时为 [],
-        # 渲染层不替换占位符（老缓存里本来也没有占位符）
-        polls=entry.parse_result.polls,
+        defer_polls=poll_slots.reserve if poll_slots is not None else None,
         # 板头图数量: 漏传就是缓存命中时 banner 掉回正文中间
         banner_media_count=entry.parse_result.banner_media_count,
         author_name=entry.parse_result.author_name,
@@ -818,13 +830,13 @@ def build_cached_rich_content(
         hide_content=spoiler_tag,
         platform=platform,
     )
-    if isinstance(custom_content, ParseNote) and custom_content:
-        from plugins.parse.rich_blocks import markdown_to_blocks
-
-        blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
-        append_content_blocks(blocks, [note_block(custom_content)], spoiler_tag)
-        return blocks, media, media_blocks
-    return markdown, media, media_blocks
+    note = custom_content if isinstance(custom_content, ParseNote) else None
+    if poll_slots is None and not note:
+        return markdown, media, media_blocks
+    blocks = markdown_to_blocks(markdown, media_blocks=media_blocks, poll_slots=poll_slots)
+    if note:
+        append_content_blocks(blocks, [note_block(note)], spoiler_tag)
+    return blocks, media, media_blocks
 
 
 def cached_rich_message(

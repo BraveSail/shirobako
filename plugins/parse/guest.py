@@ -38,7 +38,6 @@ from plugins.parse.inline_rich import (
     build_cached_rich_content,
     build_delivery_blocks,
     build_rich_media,
-    cache_media_blocks,
     cached_rich_message,
     edit_inline_rich_message,
     has_structured_body,
@@ -262,18 +261,11 @@ async def _answer(
         title, description = _result_metadata(pr)
 
         def without_cached_media() -> list:
-            _, main, quoted, reply, _, _ = cache_media_blocks(cached)
-            return build_delivery_blocks(
-                pr,
-                raw_url=raw_url,
-                config=config,
-                lang=locale,
-                view_label=_t("查看"),
-                hide_content=spoiler_tag,
-                media_placeholders=main,
-                quote_media_placeholders=quoted,
-                reply_media_placeholders=reply,
+            fallback, no_media, available = build_cached_rich_content(
+                cached, raw_url, lang=locale, config=config, view_label=_t("查看"),
+                spoiler_tag=spoiler_tag, omit_media=True,
             )
+            return cached_rich_message(fallback, no_media, available).blocks
 
         await _deliver(
             cli,

@@ -316,20 +316,23 @@ def test_author_without_profile_url_stays_plain():
 
 
 def test_media_sits_above_the_quote_card():
-    """主推自己的媒体要排在引用卡片之上: 正文 → 标签 → 媒体 → 引用"""
+    """主推正文 → 自带媒体 → 引用卡 → 标签；普通块引用不属于尾卡。"""
     from parsehub.types import ImageParseResult, Platform
 
     result = ImageParseResult(content="主推正文", photo=[])
     result.platform = Platform.TWITTER
     result.raw_url = "https://x.com/a/status/1"
     result.content = "主推正文\n\n> 引用 某人 @other：\n> 被引用的内容"
+    result.quote_roles = ["quoted"]
+    result.tags = ["示例标签"]
 
     markdown = build_rich_markdown(
         result,
         config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
         media_placeholders=["![](tg://photo?id=m0)"],
     )
-    assert markdown.index("主推正文") < markdown.index("tg://photo?id=m0") < markdown.index("被引用的内容")
+    assert (markdown.index("主推正文") < markdown.index("tg://photo?id=m0")
+            < markdown.index("被引用的内容") < markdown.index("#示例标签"))
 
 
 def test_reply_quote_stays_above_the_body():

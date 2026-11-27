@@ -54,12 +54,12 @@ from plugins.helpers import (
     tag_page_url,
 )
 from plugins.parse.notes import ParseNote
+from plugins.parse.rich_blocks import build_poll_blocks
 from plugins.parse.x_status import (
     _GALLERY_ITEMS,
     _application_custom_blocks,
     _gallery,
     _main_gallery,
-    _poll,
     _preview_offset,
 )
 
@@ -250,7 +250,7 @@ class _Renderer:
         if kind == "rule":
             return [InputRichBlockDivider()]
         if kind == "poll":
-            return _poll(self.polls, node.index, self.lang)
+            return build_poll_blocks(self.polls, node.index, self.lang)
         if kind == "list":
             items = [InputRichBlockListItem(
                 self.children(item, media) or [InputRichBlockParagraph("")],

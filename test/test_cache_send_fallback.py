@@ -1,79 +1,95 @@
-"""缓存发送 (file_id 复用) 的失败回退。
-
-Telegram 官方明确说 file_id 可能随时间失效、不建议长期存储。旧实现在发送失败时
-只记日志并 `return False` —— 用户**什么都收不到**。现在失败要清掉那条坏缓存并
-返回 False, 让调用方继续走正常解析 (重新下载 + 重建缓存)。
-"""
+"""A cached native send recovers stale IDs without discarding valid shared media."""
 
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from parsehub.types.document import Block, Document, paragraph
+from pyrogram.errors import ChatWriteForbidden, FileIdInvalid, FileReferenceExpired, FileReferenceInvalid
+from pyrogram.raw import types as tl
+
+from i18n import t_
 from plugins.parse import handlers
+from plugins.parse.context import ParseRequest
+from plugins.parse.sender import MessageSender
+from repo.settings import ParseMode
+from repo.settings.schema import DEFAULT_SETTINGS_CONFIG
+from services.cache import CacheEntry, CacheParseResult
+from test.test_document_delivery_cache import _cache_photo, _photos, _walk
+
+URL = "https://x.com/a/status/1"
 
 
-def _run(cached, *, send_error: Exception | None):
-    """跑 _try_send_cached, 返回 (是否发出, 是否清了缓存)。"""
-    sender = SimpleNamespace()
-    req = SimpleNamespace(t_="t", custom_content="", spoiler_tag="")
-
-    removed: list[str] = []
-
-    async def fake_remove(url: str) -> None:
-        removed.append(url)
-
-    send = AsyncMock(side_effect=send_error) if send_error else AsyncMock(return_value=None)
+def _run(*, send_error=None, remove_error=None, spoiler_tag="", translate_error=None, sensitive=False):
+    msg = SimpleNamespace(reply_rich=AsyncMock(side_effect=send_error))
+    config = DEFAULT_SETTINGS_CONFIG.model_copy(update={"reply_msg": True})
+    req = ParseRequest(None, msg, URL, ParseMode.PREVIEW, config, t_["zh-hans"],
+                       spoiler_tag=spoiler_tag, translate=translate_error is not None)
+    sender = MessageSender(req.cli, req.msg, req.config)
+    entry = CacheEntry(parse_result=CacheParseResult(
+        platform="twitter", document=Document((paragraph("正文"), Block("media", index=0))), is_sensitive=sensitive,
+    ), media=[_cache_photo(101)])
+    remove = AsyncMock(side_effect=remove_error)
     with (
-        patch.object(handlers, "send_cached", new=send),
-        patch.object(handlers.persistent_cache, "remove", new=fake_remove),
+        patch.object(handlers.persistent_cache, "remove", remove),
+        patch.object(handlers, "translate_cache_entry", AsyncMock(side_effect=translate_error)),
     ):
-        ok = asyncio.run(handlers._try_send_cached(sender, cached, "https://x.com/a/status/1", req))
-    return ok, removed
+        ok = asyncio.run(handlers._try_send_cached(sender, entry, URL, req))
+    if translate_error is None:
+        msg.reply_rich.assert_awaited_once()
+        rendered = msg.reply_rich.call_args.kwargs["rich_message"]
+    else:
+        msg.reply_rich.assert_not_awaited()
+        rendered = None
+    return ok, remove, rendered
 
 
 def test_successful_cache_send_reports_sent():
-    ok, removed = _run(cached=object(), send_error=None)
+    ok, remove, rendered = _run()
     assert ok is True
-    assert removed == []          # 成功了不动缓存
+    remove.assert_not_awaited()
+    assert _photos(asyncio.run(_encode(rendered))) == [101]
 
 
-def test_failed_cache_send_drops_the_entry_and_reports_not_sent():
-    """file_id 失效: 清掉坏缓存并返回 False, 让调用方重新解析"""
-    ok, removed = _run(cached=object(), send_error=Exception("Bad Request: wrong file identifier"))
+@pytest.mark.parametrize("error", [FileIdInvalid, FileReferenceExpired, FileReferenceInvalid])
+def test_failed_cache_send_drops_the_entry_and_reports_not_sent(error):
+    ok, remove, _ = _run(send_error=error())
     assert ok is False
-    assert removed == ["https://x.com/a/status/1"]
+    remove.assert_awaited_once_with(URL)
 
 
-def test_try_send_cached_passes_the_spoiler_flag():
-    """缓存命中时也要把标记传下去 —— 这正是"加标记不生效"的根因所在:
+async def _encode(value):
+    return await value.write(client=None)
 
-    缓存路径原先直接发送、不带这个参数, 于是先发普通链接建立缓存后,
-    再对同一链接加 #nsfw 会从 file_id 缓存发出**没遮**的版本。
-    """
-    req = SimpleNamespace(t_="t", custom_content="", spoiler_tag="#nsfw")
-    seen: dict = {}
 
-    async def fake_send(sender, cached, url, **kwargs):
-        seen.update(kwargs)
-
-    with patch.object(handlers, "send_cached", new=fake_send):
-        ok = asyncio.run(handlers._try_send_cached(SimpleNamespace(), object(), "https://x.com/a/status/1", req))
-
+@pytest.mark.parametrize("sensitive", [False, True])
+def test_try_send_cached_passes_the_spoiler_flag(sensitive):
+    ok, remove, rendered = _run(spoiler_tag="#nsfw", sensitive=sensitive)
     assert ok is True
-    assert seen["spoiler_tag"] == "#nsfw"
+    remove.assert_not_awaited()
+    wire = asyncio.run(_encode(rendered))
+    (details,) = [block for block in wire.blocks if isinstance(block, tl.PageBlockDetails)]
+    assert not details.open and "#nsfw" in details.title.text
+    assert _photos(details) == _photos(wire) == [101]
+    (photo,) = [block for block in _walk(details) if isinstance(block, tl.PageBlockPhoto)]
+    assert photo.spoiler is sensitive
 
 
 def test_cache_removal_failure_does_not_raise():
-    """清缓存本身失败也不能把异常抛出去 —— 重新解析才是重点"""
-    sender = SimpleNamespace()
-    req = SimpleNamespace(t_="t", custom_content="", spoiler_tag="")
-
-    async def boom(url: str) -> None:
-        raise RuntimeError("db down")
-
-    with (
-        patch.object(handlers, "send_cached", new=AsyncMock(side_effect=Exception("bad file_id"))),
-        patch.object(handlers.persistent_cache, "remove", new=boom),
-    ):
-        ok = asyncio.run(handlers._try_send_cached(sender, object(), "https://x.com/a/status/1", req))
+    ok, remove, _ = _run(send_error=FileReferenceExpired(), remove_error=RuntimeError("db down"))
     assert ok is False
+    remove.assert_awaited_once_with(URL)
+
+
+@pytest.mark.parametrize("error", [ChatWriteForbidden, TimeoutError, RuntimeError])
+def test_unrelated_send_failure_keeps_cached_file_ids(error):
+    ok, remove, _ = _run(send_error=error())
+    assert ok is False
+    remove.assert_not_awaited()
+
+
+def test_translation_error_keeps_cached_file_ids():
+    ok, remove, _ = _run(translate_error=RuntimeError("translation unavailable"))
+    assert ok is False
+    remove.assert_not_awaited()

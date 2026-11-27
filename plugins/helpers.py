@@ -412,8 +412,8 @@ def _poll_cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _render_poll(poll, lang: str = "") -> str:
-    """把一个投票 (``{{poll:N}}`` 对应的数据) 渲染成本地化的 markdown。
+def _poll_display(poll, lang: str = "") -> tuple[str, list[list[str | None]]] | None:
+    """Localize a poll heading and cells without interpreting option text as markup.
 
     形态与改造前 lib 直接拼出的表格一致, 只有文案换成用户语言:
 
@@ -428,7 +428,7 @@ def _render_poll(poll, lang: str = "") -> str:
     """
     options = list(_poll_field(poll, "options") or [])
     if not options:
-        return ""
+        return None
     # 「有语言就用它, 否则退回默认语言」—— 与 build_rich_markdown 里其它文案同一兜底。
     # ⚠️ **别名必须叫 `_t`**: easy_ai18n 只认调用点源码里的 ``t_`` / ``_t`` 两个字面量名,
     # 换成别的名字 (如 ``translate``) 会静默退回原文 (模板解析不到 → 键对不上)。
@@ -442,20 +442,19 @@ def _render_poll(poll, lang: str = "") -> str:
     # 占比分母 (只在三列时用到): 参与人数 → 总票数 → 选项票数求和
     percent_base = voters or total_votes or sum(count or 0 for count in counts)
 
-    lines: list[str] = []
-    if voters is not None:
+    heading = ""
+    if voters is not None or title:
         # linux.do: 「📊 投票（「标题」 · N 人参与）」—— 两段都可能缺
         details_parts: list[str] = []
         if title:
             details_parts.append(_t(f"「{title}」"))
-        if voters > 0:
+        if voters is not None and voters > 0:
             # 与改造前 lib 的拼法逐字一致: `{voters} 人参与` 不加千分位 (键里也没有 `:,`)
             details_parts.append(_t(f"{voters} 人参与"))
-        head = _t("📊 投票")
+        heading = _t("📊 投票")
         if details_parts:
             details = " · ".join(details_parts)
-            head += _t(f"（{details}）")
-        lines.append(head)
+            heading += _t(f"（{details}）")
     elif total_votes is not None and not has_counts:
         # youtube: 匿名只给选项与总票数 → 「投票 · 共 N 票」(空行分隔表格, 与旧形态一致)
         head_parts = [_t("投票")]
@@ -463,30 +462,32 @@ def _render_poll(poll, lang: str = "") -> str:
             # 变量名 total 是 i18n 键的一部分 (`共 {total:,} 票`), 不能改名
             total = total_votes
             head_parts.append(_t(f"共 {total:,} 票"))
-        lines.append(" · ".join(head_parts))
-    if lines:
-        lines.append("")
+        heading = " · ".join(head_parts)
 
+    labels = [_t("选项")]
     if has_counts:
-        option_label = _t("选项")
-        votes_label = _t("票数")
-        share_label = _t("占比")
-        lines.append(f"| {option_label} | {votes_label} | {share_label} |")
-        lines.append("| --- | --- | --- |")
-        for option, count in zip(options, counts, strict=True):
-            cell = _poll_cell(str(_poll_field(option, "text") or ""))
+        labels.extend((_t("票数"), _t("占比")))
+    rows: list[list[str | None]] = [list(labels)]
+    for option, count in zip(options, counts, strict=True):
+        row: list[str | None] = [str(_poll_field(option, "text") or "")]
+        if has_counts:
             # 与改造前 lib 一致: 票数不加千分位 (只有总票数 `共 {total:,} 票` 有)
-            count_text = "" if count is None else str(count)
-            percent = f"{round(count * 100 / percent_base) if percent_base else 0}%" if count is not None else ""
-            lines.append(f"| {cell} | {count_text} | {percent} |")
-    else:
-        # 全都没有单项票数 (youtube 匿名 / linux.do 老站点退化): 单列表格
-        option_label = _t("选项")
-        lines.append(f"| {option_label} |")
-        lines.append("| --- |")
-        for option in options:
-            cell = _poll_cell(str(_poll_field(option, "text") or ""))
-            lines.append(f"| {cell} |")
+            percent = f"{round(count * 100 / percent_base) if percent_base else 0}%" if count is not None else None
+            row.extend((None if count is None else str(count), percent))
+        rows.append(row)
+    return heading, rows
+
+
+def _render_poll(poll, lang: str = "") -> str:
+    """Retain the legacy Markdown API; Telegram delivery uses native poll blocks."""
+    if (display := _poll_display(poll, lang)) is None:
+        return ""
+    heading, rows = display
+    lines = [heading, ""] if heading else []
+    for i, row in enumerate(rows):
+        lines.append("| " + " | ".join(_poll_cell(cell or "") for cell in row) + " |")
+        if i == 0:
+            lines.append("| " + " | ".join(["---"] * len(row)) + " |")
     return "\n".join(lines)
 
 
@@ -598,6 +599,7 @@ def build_rich_markdown(
     media_urls: Sequence[str] = (),
     hide_content: str = "",
     progress: str = "",
+    defer_polls: Callable[[str], str] | None = None,
 ) -> str:
     """构建富文本 (rich message) 正文: 标题 + 作者 + 原文格式正文 + 媒体 + 页尾。
 
@@ -616,21 +618,17 @@ def build_rich_markdown(
         外链图 Telegram 抓不到就整条 400 (SVG 必炸)。空列表时的行为:
         正文外链图**全部剥掉**(防炸), 图仍以末尾附加媒体的形式出现。
 
-    富文本由 Telegram 服务端解析 markdown, 所以正文直接沿用解析器给出的原文格式
-    (标题/列表/引用/表格/加粗等都会被还原), 不像旧路径那样先转成 HTML 再拼 caption。
-    统计数据与来源放在页尾的 <footer> 里。
+    兼容正文沿用解析器给出的格式 (标题/列表/引用/表格/加粗)，交给本地转换器生成原生块。
+    ``defer_polls`` 只为该转换器预留块位置；直接调用仍可获取旧 Markdown。
     """
     title = (parse_result.title or "").strip()
-    # 投票占位符 (`{{poll:N}}`) 的替换必须排在**一切结构处理之前**:
-    # lib 只出数据 (结果里的 ``polls``), 表格 (含语言) 由渲染层拼。放在
-    # link_hashtags / escape_setext_underlines / preserve_linebreaks 之前,
-    # 生成出来的表格行才能和 lib 旧形态一样走完整套处理 (表格行跳过硬换行等)。
-    # polls 为空 (老缓存 / 没有投票) 时原样返回, 零变化。
-    poll_content = replace_poll_placeholders(
-        rich_content(parse_result).strip(),
-        getattr(parse_result, "polls", None) or [],
-        lang,
-    )
+    body_source = rich_content(parse_result)
+    # Only the persisted body can reserve poll slots; app content is appended later.
+    if defer_polls is not None:
+        poll_content = defer_polls(body_source).strip()
+    else:
+        poll_content = replace_poll_placeholders(body_source.strip(), getattr(parse_result, "polls", None), lang)
+    preserve_containers = defer_polls is not None and poll_content != body_source.strip()
     # 正文外链图 (`![](https://…)`) → `{{media:N}}` 标记 (对不上 media 的剥掉):
     # 富文本正文里的图必须是 tg:// 上传媒体引用, 外链由 Telegram 服务端去抓, 抓不到
     # (SVG / 防盗链 / 404) 就**整条 400** —— linux.do 的 onebox SVG 图标就是实锤。
@@ -785,6 +783,7 @@ def build_rich_markdown(
                 body_text,
                 fold_summary=fold_summary,
                 preserve_lists=bool(getattr(parse_result, "markdown_content", "")),
+                preserve_containers=preserve_containers,
             )
         )
     if trailing_details and not config.hide_desc:
@@ -970,6 +969,7 @@ def build_rich_markdown_by_str(
     reply_count: int | None = None,
     polls: Sequence | None = None,
     banner_media_count: int = 0,
+    defer_polls: Callable[[str], str] | None = None,
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
@@ -1017,6 +1017,7 @@ def build_rich_markdown_by_str(
         reply_media_placeholders=reply_media_placeholders,
         media_urls=media_urls,
         hide_content=hide_content,
+        defer_polls=defer_polls,
     )
 
 
@@ -1820,7 +1821,12 @@ _FOLD_PREVIEW_LINES = 7
 _FOLD_PREVIEW_CHARS = 300
 
 
-def split_fold_preview(content: str, *, preserve_lists: bool = False) -> tuple[str, str]:
+_FOLD_CONTAINER_RE = re.compile(r"</?(?:blockquote|details)>")
+
+
+def split_fold_preview(
+    content: str, *, preserve_lists: bool = False, preserve_containers: bool = False,
+) -> tuple[str, str]:
     """把内容拆成 (外面可见的预览, 折进 details 的剩余部分)。
 
     预览取开头几行 (行数/字符数任一超限即停); 内容全挤在一行时按字符切,
@@ -1846,6 +1852,18 @@ def split_fold_preview(content: str, *, preserve_lists: bool = False) -> tuple[s
 
     if preserve_lists:
         end = _list_preview_boundary(lines, end)
+    if preserve_containers and end < len(lines):
+        # Don't split a quote or details containing a pending poll. The converter
+        # needs the entire container in one fragment to insert its native children.
+        opening: list[int] = []
+        for i, line in enumerate(lines[:end]):
+            for tag in _FOLD_CONTAINER_RE.findall(line):
+                if not tag.startswith("</"):
+                    opening.append(i)
+                elif opening:
+                    opening.pop()
+        if opening:
+            end = opening[0]
     preview = "\n".join(lines[:end]).rstrip()
     rest = "\n".join(lines[end:])
     # Drop blank lines without removing the first list item's indentation.
@@ -1923,7 +1941,9 @@ def _normalize_hr(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
-def _fold_whole(content: str, *, summary: str = "", preserve_lists: bool = False) -> str:
+def _fold_whole(
+    content: str, *, summary: str = "", preserve_lists: bool = False, preserve_containers: bool = False,
+) -> str:
     """把内容折一次: **开头几行留外面当预览**, 其余折进 details。
 
     **用 <details> 而不是 <blockquote expandable>**: 后者一旦块内含空行,
@@ -1935,7 +1955,7 @@ def _fold_whole(content: str, *, summary: str = "", preserve_lists: bool = False
     就是光秃秃一个「展开全文」(曾一度全收起, 用户报「没有前几行」)。
     预览行数与阈值见 ``split_fold_preview`` / ``_FOLD_PREVIEW_*``。
     """
-    preview, rest = split_fold_preview(content, preserve_lists=preserve_lists)
+    preview, rest = split_fold_preview(content, preserve_lists=preserve_lists, preserve_containers=preserve_containers)
     if not rest:
         return content
     folded = f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{rest}\n\n</details>"
@@ -2115,6 +2135,7 @@ def format_text(
     max_length: int | None = None,
     fold_summary: str = "",
     preserve_lists: bool = False,
+    preserve_containers: bool = False,
 ) -> str:
     """格式化输出内容, 按需限制长度, 添加折叠块样式。
 
@@ -2154,7 +2175,9 @@ def format_text(
     # 整篇折叠是唯一的折叠点 (也就不会有嵌套折叠)。
     converted = convert_markdown_quote(text, allow_expandable=False, fold_summary=fold_summary)
     if allow_expandable and _should_fold(converted):
-        return _fold_whole(converted, summary=fold_summary, preserve_lists=preserve_lists)
+        return _fold_whole(
+            converted, summary=fold_summary, preserve_lists=preserve_lists, preserve_containers=preserve_containers,
+        )
     return converted
 
 

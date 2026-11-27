@@ -17,7 +17,16 @@ from parsehub.types import (
     LivePhotoFile,
 )
 from pyrogram import Client, enums
-from pyrogram.errors import FloodWait, Forbidden, SlowmodeWait, WebpageCurlFailed
+from pyrogram.errors import (
+    FileIdInvalid,
+    FileReferenceEmpty,
+    FileReferenceExpired,
+    FileReferenceInvalid,
+    FloodWait,
+    Forbidden,
+    SlowmodeWait,
+    WebpageCurlFailed,
+)
 from pyrogram.types import (
     InlineKeyboardButton as Ikb,
 )
@@ -65,6 +74,7 @@ logger = logger.bind(name="ParseSender")
 _RICH_DOCUMENT_LIMIT = 50
 
 MAX_RETRIES = 5
+CACHED_MEDIA_ERRORS = (FileIdInvalid, FileReferenceEmpty, FileReferenceExpired, FileReferenceInvalid)
 
 
 type PathType = str | Path
@@ -124,6 +134,8 @@ class MessageSender:
                 logger.warning(f"消息发送失败, Bot 无权限: {e}")
                 break
             except Exception as e:
+                if isinstance(e, CACHED_MEDIA_ERRORS):
+                    raise  # Preserve the RPC error for the cache invalidation decision.
                 if raise_cover_error and isinstance(e, WebpageCurlFailed):
                     raise  # The final rich sender retries without the cover.
                 logger.warning(f"消息发送失败: {e}")

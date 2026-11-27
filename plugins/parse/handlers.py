@@ -32,6 +32,7 @@ from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseO
 from plugins.parse.notices import notice_label, rich_notice
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
 from plugins.parse.sender import (
+    CACHED_MEDIA_ERRORS,
     MessageSender,
     build_gif_button,
     send_cached,
@@ -219,15 +220,14 @@ async def _try_send_cached(
     raw_url: str,
     req: ParseRequest,
 ) -> bool:
-    """试着用缓存的 file_id 直接发; 返回 True 表示已发出。
-
-    **失败要清掉这条缓存再继续走解析**, 不能直接把失败抛给用户: Telegram 官方
-    明确说 file_id 可能失效、不建议长期存储 —— 真失效时旧代码只 `return False`,
-    用户**什么都收不到**(只留一条日志)。清掉记录后正常流程会重新下载并重建缓存。
-    """
-    try:
-        if req.translate:
+    """尝试用缓存发送。只有 Telegram 拒绝 file_id/reference 时才清共享条目。"""
+    if req.translate:
+        try:
             cached = await translate_cache_entry(cached, raw_url, req.t_.locale)
+        except Exception as e:
+            logger.warning(f"缓存翻译失败，保留缓存并重新解析: {type(e).__name__}")
+            return False
+    try:
         await send_cached(
             sender,
             cached,
@@ -236,13 +236,15 @@ async def _try_send_cached(
             _t=req.t_,
             spoiler_tag=req.spoiler_tag,
         )
-    except Exception as e:
-        logger.exception(e)
-        logger.warning(f"从缓存发送失败 (file_id 可能已失效), 清除缓存并重新解析: url={raw_url}")
+    except CACHED_MEDIA_ERRORS as e:
+        logger.warning(f"缓存媒体已失效，清除缓存并重新解析: {type(e).__name__} url={raw_url}")
         try:
             await persistent_cache.remove(raw_url)
         except Exception as ce:  # noqa: BLE001 - 清缓存失败不该挡住重新解析
             logger.warning(f"清除失效缓存失败: {type(ce).__name__}: {ce}")
+        return False
+    except Exception as e:
+        logger.warning(f"从缓存发送失败，保留缓存并重新解析: {type(e).__name__} url={raw_url}")
         return False
     logger.debug("file_id 缓存发送成功")
     return True
