@@ -125,6 +125,7 @@ class ParseResult(ABC):  # noqa: B024
     """解析结果基类"""
 
     type: ClassVar[PostType] = PostType.UNKNOWN
+    follow_media_redirects: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -357,6 +358,7 @@ class ParseResult(ABC):  # noqa: B024
                     progress_kwargs=dl_progress_kwargs,
                     connections=connections,
                     backup_urls=getattr(media, "backup_urls", ()),
+                    follow_redirects=self.follow_media_redirects,
                 )
             except Exception as e:
                 shutil.rmtree(output_dir, ignore_errors=True)
@@ -397,6 +399,7 @@ class ParseResult(ABC):  # noqa: B024
                                 headers=headers,
                                 proxy=proxy,
                                 connections=connections,
+                                follow_redirects=self.follow_media_redirects,
                             )
                         except Exception as e:
                             shutil.rmtree(output_dir, ignore_errors=True)

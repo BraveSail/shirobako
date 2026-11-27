@@ -166,6 +166,7 @@ class SegmentDownloader:
         min_split_size: int = 2 * 1024 * 1024,
         timeout: float | http.Timeout | None = None,
         backup_urls: tuple[str, ...] = (),
+        follow_redirects: bool = True,
     ):
         self.save_path = save_path
         self.headers = dict(headers or {})
@@ -178,6 +179,7 @@ class SegmentDownloader:
         self.connections = max(1, connections)
         self.min_split_size = max(1, min_split_size)
         self.timeout = timeout
+        self.follow_redirects = follow_redirects
 
         #: 主地址 + 备用地址（同一份内容的多份 CDN 副本）。
         #: **同一个地址内部**先走 `max_retries` 重试；全用尽再换下一个地址**整体重下**
@@ -326,7 +328,7 @@ class SegmentDownloader:
     async def _resolve_path(self, client: http.AsyncClient) -> Path:
         save_dir, filename = _parse_save_path(self.save_path)
         if not filename:
-            filename = await get_filename_by_url(self.url, client)
+            filename = await get_filename_by_url(self.url, client, follow_redirects=self.follow_redirects)
         if not filename:
             raise DownloadError("无法获取文件名")
 
@@ -371,9 +373,9 @@ class SegmentDownloader:
             response = await client.head(
                 self.url,
                 headers=self._headers({"Accept-Encoding": "identity"}),
-                follow_redirects=True,
+                follow_redirects=self.follow_redirects,
             )
-            if response.status_code < 400:
+            if response.status_code < (400 if self.follow_redirects else 300):
                 total_size = _parse_int(response.headers.get("Content-Length"))
                 etag = response.headers.get("ETag")
                 last_modified = response.headers.get("Last-Modified")
@@ -390,7 +392,7 @@ class SegmentDownloader:
             response = await client.get(
                 self.url,
                 headers=self._headers({"Accept-Encoding": "identity", "Range": "bytes=0-0"}),
-                follow_redirects=True,
+                follow_redirects=self.follow_redirects,
             )
         except http.HTTPError:
             return RangeProbe(False, total_size, etag, last_modified, content_encoding)
@@ -426,10 +428,12 @@ class SegmentDownloader:
         response = await client.get(
             self.url,
             headers=self._headers({"Accept-Encoding": "identity", "Range": "bytes=0-"}),
-            allow_redirects=True,
+            allow_redirects=self.follow_redirects,
             stream=True,
         )
         try:
+            if not self.follow_redirects and 300 <= response.status_code < 400:
+                raise http.HTTPStatusError("下载不允许重定向", response=response)
             response.raise_for_status()
             content_encoding = response.headers.get("Content-Encoding")
             response_total = _parse_int(response.headers.get("Content-Length"))
@@ -481,7 +485,7 @@ class SegmentDownloader:
                 response = await client.get(
                     self.url,
                     headers=self._headers({"Accept-Encoding": "identity", "Range": f"bytes={part.start}-{part.end}"}),
-                    allow_redirects=True,
+                    allow_redirects=self.follow_redirects,
                     stream=True,
                 )
                 try:
@@ -688,6 +692,7 @@ async def download(
     min_split_size: int = 2 * 1024 * 1024,
     timeout: float | http.Timeout | None = None,
     backup_urls: tuple[str, ...] = (),
+    follow_redirects: bool = True,
 ) -> str:
     """
     下载单个文件。服务端支持 Range 时使用多连接分片下载；不支持时回退普通单连接下载。
@@ -707,6 +712,7 @@ async def download(
     :param backup_urls: 同一份内容的**备用地址**（同一平台给的多份 CDN 副本）。
         主地址重试耗尽后按序整体换用 —— 某个副本部分损坏时（实测 B 站 Akamai
         镜像在固定偏移断流，curl 18）换副本是唯一可行的规避。
+    :param follow_redirects: 是否允许探测和传输请求跟随重定向
     :return: 文件路径
 
     .. note::
@@ -726,14 +732,15 @@ async def download(
         min_split_size=min_split_size,
         timeout=timeout,
         backup_urls=backup_urls,
+        follow_redirects=follow_redirects,
     )
     return await downloader.run()
 
 
-async def get_filename_by_url(url: str, client: http.AsyncClient) -> str | None:
+async def get_filename_by_url(url: str, client: http.AsyncClient, *, follow_redirects: bool = True) -> str | None:
     """从 URL 或 HTTP 响应头中获取文件名"""
     try:
-        response = await client.head(url, follow_redirects=True)
+        response = await client.head(url, follow_redirects=follow_redirects)
         response.raise_for_status()
     except http.HTTPError:
         pass

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from html import unescape
 from typing import Any, cast
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import json5
 from bs4 import BeautifulSoup
@@ -36,6 +36,7 @@ _IMPLICIT_INT_RE = re.compile(r"('[^'\n]*'|\"[^\"\n]*\")\s*\*\s*1(?![.\d])")
 _OBJECT_END_RE = re.compile(r"}\s*;.*$", re.DOTALL)
 
 _PAYLOAD_NAME = "cgiDataNew"
+_ARTICLE_IMAGE_HOSTS = frozenset({"mmbiz.qpic.cn", "mmbiz.qlogo.cn"})
 
 
 def _load_payload(html: str) -> dict[str, Any]:
@@ -71,6 +72,48 @@ def _collect_photos(data: dict[str, Any]) -> list[str]:
         for url in [(e.get("watermark_info") or {}).get("cdn_url") or e.get("cdn_url")]
         if url
     ]
+
+
+def _article_image_url(base_url: str, value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(urljoin(base_url, value))
+        host = parsed.hostname
+        if not host or host not in _ARTICLE_IMAGE_HOSTS or parsed.username is not None or parsed.password is not None:
+            return ""
+        if parsed.scheme == "http" and parsed.port in (None, 80):
+            return parsed._replace(scheme="https", netloc=host).geturl()
+        if parsed.scheme == "https" and parsed.port in (None, 443):
+            return parsed.geturl()
+    except ValueError:
+        pass
+    return ""
+
+
+def _mark_article_headings(soup: BeautifulSoup) -> None:
+    """微信编辑器用居中的双段落表示章节标题和副标题，不输出 h2。"""
+    for group in soup.find_all("section", style=True):
+        styles = {
+            key.strip().lower(): value.strip().lower()
+            for part in str(group["style"]).split(";")
+            for key, sep, value in [part.partition(":")]
+            if sep
+        }
+        if styles.get("text-align") != "center":
+            continue
+        paragraphs = group.find_all(recursive=False)
+        if len(paragraphs) != 2 or any(p.name != "p" or p.find("img") for p in paragraphs):
+            continue
+        title, subtitle = paragraphs
+        bold = title.find(("strong", "b"))
+        if (
+            bold
+            and (text := bold.get_text(strip=True))
+            and title.get_text(strip=True) == text
+            and subtitle.get_text(strip=True)
+        ):
+            title.name = "h2"
 
 
 class WXConverter(MarkdownConverter):
@@ -113,8 +156,12 @@ class WX:
 
     @staticmethod
     async def parse(url: str, proxy: str | None = None) -> "WX":
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"https", "http"} or parsed.netloc.lower() != "mp.weixin.qq.com":
+            raise ParseError("不是微信公众平台文章地址")
+        url = parsed._replace(scheme="https").geturl()
         async with http.AsyncClient(proxy=proxy) as client:
-            response = await client.get(url, headers={"User-Agent": UA})
+            response = await client.get(url, headers={"User-Agent": UA}, follow_redirects=False)
         return WX._parse_data(response.text, base_url=url)
 
     @classmethod
@@ -134,13 +181,13 @@ class WX:
                 imgs: list[str] = []
                 media: dict[str, int] = {}
                 for img in soup.find_all("img"):
-                    if not (raw := str(img.get("data-src") or "").strip()):
+                    if not (src := _article_image_url(base_url, str(img.get("data-src") or "").strip())):
                         img.decompose()
                         continue
-                    src = urljoin(base_url, raw)
                     media.setdefault(src, len(imgs))
                     imgs.append(src)
                     img.attrs = {"src": src}
+                _mark_article_headings(soup)
                 return cls(
                     item_show_type=item_show_type,
                     title=data.get("title") or "",

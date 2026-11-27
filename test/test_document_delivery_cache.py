@@ -154,12 +154,12 @@ def test_source_and_persistent_cache_use_document_write_version(redis):
         file_cache = cache.PersistentCache()
         await source_cache.set(URL, result)
         short = json.loads(redis[source_cache._key(URL)])
-        assert short["content_version"] == 15
+        assert short["content_version"] == cache.CONTENT_VERSION
         rebuilt = await source_cache.get(URL)
         assert rebuilt is not None and rebuilt.document == result.document
         await file_cache.set(URL, inline_rich.rich_cache_entry(rebuilt, []))
         long = json.loads(redis[file_cache._key(URL)])["parse_result"]
-        assert long["content_version"] == 15
+        assert long["content_version"] == cache.CONTENT_VERSION
         assert long["document"] == short["document"]
         hit = await file_cache.get(URL)
         assert hit is not None and hit.parse_result.document == rebuilt.document

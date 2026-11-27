@@ -81,9 +81,10 @@ class ResultRebuildUnavailable(RuntimeError):
 #: - 13 = Instagram 结果补上作者账号和主页地址；旧条目的作者行仍是纯文字。
 #: - 14 = 普通 X status 改用原生 DTO，独立 Article 不迁移。
 #: - 15 = 保存共享 Document；旧版本读门槛不变。
+#: - 16 = 微信公众号文章保留章节标题，并下载正文图；旧微信缓存需重建。
 #:
 #: 读缓存时**缺版本/版本低**（老条目）→ 抛 ``ResultRebuildUnavailable`` 让调用方重解析;
-_CACHE_CONTENT_VERSION = 15
+_CACHE_CONTENT_VERSION = 16
 X_STATUS_CONTENT_VERSION = 14
 
 # 仅提升受影响平台的读门槛，不让其他平台白白重解析和重传媒体。
@@ -94,6 +95,7 @@ _MIN_CONTENT_VERSIONS: dict[str, int] = {
     "linuxdo": 12,
     "bilibili": 12,
     "instagram": 13,
+    "weixin": 16,
 }
 
 

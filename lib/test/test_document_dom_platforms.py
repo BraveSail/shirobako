@@ -144,13 +144,13 @@ def test_coolapk_article_uses_only_selected_message_images(monkeypatch):
 
 def test_weixin_lazy_image_does_not_promote_external_src():
     source = ('<p>before</p><img src="https://img.example/not-selected.png">'
-              '<img src="loading.png" data-src="//img.example/actual.png?wx_fmt=png&amp;x=1"><p>after</p>')
+              '<img src="loading.png" data-src="//mmbiz.qpic.cn/actual.png?wx_fmt=png&amp;x=1"><p>after</p>')
     html = '<script>var cgiDataNew = {item_show_type: "0" * 1, content_noencode: ' + json.dumps(source) + '};</script>'
     article = WX._parse_data(html)
     assert article.document is not None
     before, image, after = article.document.blocks
     assert [before.runs[0].text, after.runs[0].text] == ["before", "after"]
-    assert article.imgs == ["https://img.example/actual.png?wx_fmt=png&x=1"]
+    assert article.imgs == ["https://mmbiz.qpic.cn/actual.png?wx_fmt=png&x=1"]
     assert (image.index, image.url) == (0, article.imgs[0])
 
 
