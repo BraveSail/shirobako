@@ -3,11 +3,14 @@
 import asyncio
 import json
 from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from parsehub.types import BrokenMedia, ImageFile, ImageRef, MultimediaParseResult, Platform
 from parsehub.types.document import Block, Document, TextRun, paragraph
 from parsehub.types.x_status import XPost, XStatus
+from pyrogram import utils as tg_utils
 from pyrogram.file_id import FileId, FileType, ThumbnailSource
 from pyrogram.raw import types as tl
 from pyrogram.raw.core import TLObject
@@ -311,3 +314,56 @@ def test_failed_reply_slot_does_not_shift_split_main_outputs_into_reply():
     assert entry.parse_result.failed_media == {2: CDN[2]}
     replay, _, _ = inline_rich.build_cached_rich_content(entry, URL, config=CONFIG, lang="en-us")
     assert _wire(replay).blocks == cold.blocks
+
+
+@pytest.mark.parametrize("own_photo", [False, True])
+def test_linuxdo_reply_card_keeps_its_photo_before_the_floor_text_and_topic_tag(own_photo):
+    url = "https://linux.do/t/topic/3248768/2"
+    result = MultimediaParseResult(
+        tags=["纯水"],
+        # The CDN URL can repeat across floors; only the absolute index identifies each source ref.
+        media=[ImageRef(url=CDN[0]) for _ in range(1 + own_photo)],
+        document=Document((
+            Block("quote", role="reply", runs=(TextRun("First floor · #1"),), children=(
+                Block("media", index=int(own_photo), url=CDN[0]), paragraph("First-floor text"),
+            )),
+            *((Block("media", index=0, url=CDN[0]),) if own_photo else ()),
+            paragraph("Second-floor text"),
+        )),
+    )
+    result.raw_url, result.platform = url, Platform.LINUXDO
+    photo_ids = [11, 22] if own_photo else [22]
+    media = inline_rich.build_rich_media(result.media, [
+        ProcessedMedia(ImageFile(path=_photo_id(i), width=8, height=8)) for i in photo_ids
+    ])
+    blocks = _blocks(result, media, raw_url=url)
+
+    async def edit():
+        invoke = AsyncMock(return_value=True)
+        cli = SimpleNamespace(get_session=AsyncMock(return_value=SimpleNamespace(invoke=invoke)))
+        inline_id = tg_utils.pack_inline_message_id(tl.InputBotInlineMessageID(dc_id=2, id=17, access_hash=33))
+        assert await inline_rich.edit_inline_rich_message(cli, inline_id, blocks=blocks)
+        invoke.assert_awaited_once()
+        call = invoke.await_args
+        assert call is not None
+        return _decode(call.args[0]).rich_message
+
+    cold = asyncio.run(edit())
+    (card,) = (b for b in cold.blocks if isinstance(b, tl.PageBlockBlockquoteBlocks))
+    assert _photos(card) == [22]
+    assert isinstance(card.blocks[-2], tl.PageBlockPhoto) and isinstance(card.blocks[-1], tl.PageBlockParagraph)
+    assert _photos(cold) == ([22, 11] if own_photo else [22])
+    assert _text(cold).index("First-floor text") < _text(cold).index("Second-floor text") < _text(cold).index("#纯水")
+    assert isinstance(cold.blocks[-1], tl.PageBlockFooter)
+    assert "https://linux.do/tag/%E7%BA%AF%E6%B0%B4" in _urls(cold)
+
+    entry = inline_rich.rich_cache_entry(result, [_cache_photo(i) for i in photo_ids], urls=media[-1])
+    assert entry is not None and entry.parse_result.reply_media_count == 0
+    hit = cache.CacheEntry.model_validate_json(entry.model_dump_json())
+    warm, _, _ = inline_rich.build_cached_rich_content(hit, url, config=CONFIG, lang="en-us")
+    assert _wire(warm).write() == cold.write()
+
+    hidden, _, _ = inline_rich.build_cached_rich_content(
+        hit, url, config=CONFIG.model_copy(update={"hide_desc": True}), lang="en-us",
+    )
+    assert 22 not in _photos(_wire(hidden))  # Hiding the card cannot leave its image in the gallery.

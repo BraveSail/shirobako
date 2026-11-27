@@ -427,9 +427,10 @@ def build_document_blocks(
     platform = platform or (ParseHub().get_platform(raw_url) if raw_url else None)
     render = _Renderer(lang, getattr(result, "polls", None) or (), fold=not hide_content)
     main = _Media(main_media)
-    # Bilibili comment chains store the video in the reply bucket but earlier
-    # comment photos in main. Only explicitly addressed nodes may reach into it.
-    buckets = {"reply": _Media(reply_media, fallback=main if platform == Platform.BILIBILI else None),
+    # Bilibili comment chains and Linux.do context floors also address media in main.
+    # Resolve those references in the card so they cannot fall into the trailing gallery.
+    shared_reply_media = main if platform in {Platform.BILIBILI, Platform.LINUXDO} else None
+    buckets = {"reply": _Media(reply_media, fallback=shared_reply_media),
                "quoted": _Media(quoted_media)}
     banners: list[InputRichBlock] = []
     flow: list[Block] = []
